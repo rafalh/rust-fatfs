@@ -1,5 +1,5 @@
 [root]
-name = "rust-fat"
+name = "rustfat"
 version = "0.1.0"
 dependencies = [
  "byteorder 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",

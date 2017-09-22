@@ -1,11 +1,12 @@
 use std::io::prelude::*;
 use std::io;
+use std::io::Cursor;
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
+use chrono::{DateTime, Date, TimeZone, Local};
+
 use fs::FatFileSystem;
 use file::FatFile;
-use std::io::Cursor;
-use chrono::{DateTime, Date, TimeZone, Local};
 
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]

@@ -1,8 +1,9 @@
 use std::io::prelude::*;
+use std::io::{Error, ErrorKind, SeekFrom};
 use std::io;
 use std::str;
-use std::io::{Error, ErrorKind, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
+
 use file::FatFile;
 
 // FAT implementation based on:
