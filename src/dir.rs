@@ -1,11 +1,11 @@
-use std::fs::File;
 use std::io::prelude::*;
-use std::io::BufReader;
 use std::io;
 use std::str;
-use std::io::{Error, ErrorKind, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
-use fs::{FatFileSystem, FatType};
+use fs::FatFileSystem;
+use file::FatFile;
+use std::io::Cursor;
+use chrono::{DateTime, Date, TimeZone, Local};
 
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
@@ -24,50 +24,74 @@ pub struct FatDirEntry {
     name: [u8; 11],
     attrs: u8,
     reserved_0: u8,
-    creation_time_0: u8,
-    creation_time_1: u16,
-    creation_date: u16,
+    create_time_0: u8,
+    create_time_1: u16,
+    create_date: u16,
     access_date: u16,
     first_cluster_hi: u16,
-    mod_time: u16,
-    mod_date: u16,
+    modify_time: u16,
+    modify_date: u16,
     first_cluster_lo: u16,
     size: u32,
 }
 
-pub struct FatDir {
-    cluster: u32,
+fn convert_date(dos_date: u16) -> Date<Local> {
+    let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
+    Local.ymd(year as i32, month as u32, day as u32)
 }
 
-impl FatDir {
-    pub fn new(cluster: u32) -> FatDir {
-        FatDir {
-            cluster: cluster,
-        }
+fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
+    let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
+    convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
+}
+
+impl FatDirEntry {
+    
+    pub fn get_name(&self) -> String {
+        return str::from_utf8(&self.name).unwrap().trim_right().to_string();
+    }
+    
+    pub fn get_cluster(&self) -> u32 {
+        ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32
+    }
+    
+    pub fn get_file<T: Read+Seek>(&self, fs: &FatFileSystem<T>) -> FatFile {
+        FatFile::new(fs.sector_from_cluster(self.get_cluster()), self.size)
+    }
+    
+    pub fn get_size(&self) -> u32 {
+        self.size
+    }
+    
+    pub fn get_create_time(&self) -> DateTime<Local> {
+        convert_date_time(self.create_date, self.create_time_1)
+    }
+    
+    pub fn get_access_date(&self) -> Date<Local> {
+        convert_date(self.access_date)
+    }
+    
+    pub fn get_modify_time(&self) -> DateTime<Local> {
+        convert_date_time(self.modify_date, self.modify_time)
     }
 }
 
-trait DirEntry {
-    fn get_name(&self) -> str;
-}
-
-trait ReadDir {
-    fn read_dir(&mut self, dir: &FatDir) -> io::Result<Vec<FatDirEntry>>;
-}
-
 impl<T: Read+Seek> FatFileSystem<T> {
-    pub fn read_dir(&mut self, dir: FatDir) -> io::Result<Vec<FatDirEntry>> {
+    pub fn read_dir(&mut self, dir: &mut FatFile) -> io::Result<Vec<FatDirEntry>> {
+        
+        let mut cur = Cursor::new(vec![0; 512]);
+        self.read(dir, cur.get_mut())?;
+        
         let mut entries = Vec::new();
         loop {
-            let entry = read_dir_entry(&mut self.rdr)?;
+            let entry = read_dir_entry(&mut cur)?;
             if entry.name[0] == 0 {
                 break; // end of dir
             }
             if entry.name[0] == 0xE5 {
                 continue; // deleted
             }
-            let name_str = str::from_utf8(&entry.name).unwrap().trim_right();
-            println!("name {} size {} cluster {}", name_str, entry.size, entry.first_cluster_lo);
+            entries.push(entry);
         }
         Ok(entries)
     }
@@ -80,41 +104,14 @@ fn read_dir_entry(rdr: &mut Read) -> io::Result<FatDirEntry> {
         name:             name,
         attrs:            rdr.read_u8()?,
         reserved_0:       rdr.read_u8()?,
-        creation_time_0:  rdr.read_u8()?,
-        creation_time_1:  rdr.read_u16::<LittleEndian>()?,
-        creation_date:    rdr.read_u16::<LittleEndian>()?,
+        create_time_0:    rdr.read_u8()?,
+        create_time_1:    rdr.read_u16::<LittleEndian>()?,
+        create_date:      rdr.read_u16::<LittleEndian>()?,
         access_date:      rdr.read_u16::<LittleEndian>()?,
         first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
-        mod_time:         rdr.read_u16::<LittleEndian>()?,
-        mod_date:         rdr.read_u16::<LittleEndian>()?,
+        modify_time:      rdr.read_u16::<LittleEndian>()?,
+        modify_date:      rdr.read_u16::<LittleEndian>()?,
         first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
         size:             rdr.read_u32::<LittleEndian>()?,
     })
 }
-
-// impl FatDir {
-//     pub fn new(rdr: &mut Read) -> io::Result<FatDir> {
-//         let dir = FatDir {
-//             entries: Vec::new(),
-//         };
-//         read_dir_entry(rdr)?;
-//         Ok(dir)
-//     }
-// 
-//     pub fn print(&mut self) -> io::Result<()> {
-//         //let pos = self.rdr.seek(SeekFrom::Current(0))?;
-//         //println!("Reading dir at {}", pos);
-//         loop {
-//             let entry = self.read_dir_entry()?;
-//             if entry.name[0] == 0 {
-//                 break; // end of dir
-//             }
-//             if entry.name[0] == 0xE5 {
-//                 continue; // deleted
-//             }
-//             let name_str = str::from_utf8(&entry.name).unwrap().trim_right();
-//             println!("name {} size {} cluster {}", name_str, entry.size, entry.first_cluster_lo);
-//         }
-//         Ok(())
-//     }
-// }

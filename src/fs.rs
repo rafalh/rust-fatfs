@@ -1,11 +1,9 @@
-use std::fs::File;
 use std::io::prelude::*;
-use std::io::BufReader;
 use std::io;
 use std::str;
 use std::io::{Error, ErrorKind, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
-use dir::FatDir;
+use file::FatFile;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -16,11 +14,12 @@ pub enum FatType {
     Fat12, Fat16, Fat32, ExFat
 }
 
+#[allow(dead_code)]
 pub struct FatFileSystem<T: Read+Seek> {
     pub(crate) rdr: T,
     pub(crate) fat_type: FatType,
     pub(crate) boot: FatBootRecord,
-    pub(crate) first_fat_sector: u32,
+    first_fat_sector: u32,
     pub(crate) first_data_sector: u32,
     pub(crate) root_dir_sectors: u32,
 }
@@ -197,13 +196,17 @@ impl<T: Read+Seek> FatFileSystem<T> {
     pub fn sector_from_cluster(&self, cluster: u32) -> u32 {
         ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
     }
-
-    pub fn open_root_dir(&mut self) -> io::Result<FatDir> {
-        let first_root_dir_sector = match self.fat_type {
+    
+    pub(crate) fn get_root_dir_sector(&self) -> u32 {
+        match self.fat_type {
             FatType::Fat12 | FatType::Fat16 => self.first_data_sector - self.root_dir_sectors,
             _ => self.sector_from_cluster(self.boot.bpb.root_cluster)
-        };
-        self.seek_to_sector(first_root_dir_sector as u64)?;
-        Ok(FatDir::new(0))
+        }
+    }
+
+    pub fn root_dir(&mut self) -> FatFile {
+        let first_root_dir_sector = self.get_root_dir_sector();
+        let root_dir_size = self.root_dir_sectors * self.boot.bpb.bytes_per_sector as u32;
+        FatFile::new(first_root_dir_sector, root_dir_size)
     }
 }
