@@ -5,4 +5,5 @@ authors = ["Rafał Harabień <rafalh1992@o2.pl>"]
 
 [dependencies]
 byteorder = "1"
+bitflags = "1.0"
 chrono = "0.4"

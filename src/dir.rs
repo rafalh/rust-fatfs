@@ -8,22 +8,23 @@ use chrono::{DateTime, Date, TimeZone, Local};
 use fs::FatFileSystem;
 use file::FatFile;
 
-#[derive(Debug, PartialEq)]
-#[allow(dead_code)]
-enum FatFileAttribute {
-    READ_ONLY = 0x01,
-    HIDDEN    = 0x02,
-    SYSTEM    = 0x04,
-    VOLUME_ID = 0x08,
-    DIRECTORY = 0x10,
-    ARCHIVE   = 0x20,
-    LFN       = 0x0F,
+bitflags! {
+    pub struct FatFileAttributes: u8 {
+        const READ_ONLY  = 0x01;
+        const HIDDEN     = 0x02;
+        const SYSTEM     = 0x04;
+        const VOLUME_ID  = 0x08;
+        const DIRECTORY  = 0x10;
+        const ARCHIVE    = 0x20;
+        const LFN        = Self::READ_ONLY.bits | Self::HIDDEN.bits
+                         | Self::SYSTEM.bits | Self::VOLUME_ID.bits;
+    }
 }
 
 #[allow(dead_code)]
 pub struct FatDirEntry {
     name: [u8; 11],
-    attrs: u8,
+    attrs: FatFileAttributes,
     reserved_0: u8,
     create_time_0: u8,
     create_time_1: u16,
@@ -49,7 +50,11 @@ fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
 impl FatDirEntry {
     
     pub fn get_name(&self) -> String {
-        return str::from_utf8(&self.name).unwrap().trim_right().to_string();
+        str::from_utf8(&self.name).unwrap().trim_right().to_string()
+    }
+    
+    pub fn get_attrs(&self) -> FatFileAttributes {
+        self.attrs
     }
     
     pub fn get_cluster(&self) -> u32 {
@@ -103,7 +108,7 @@ fn read_dir_entry(rdr: &mut Read) -> io::Result<FatDirEntry> {
     rdr.read(&mut name)?;
     Ok(FatDirEntry {
         name:             name,
-        attrs:            rdr.read_u8()?,
+        attrs:            FatFileAttributes::from_bits(rdr.read_u8()?).unwrap(),
         reserved_0:       rdr.read_u8()?,
         create_time_0:    rdr.read_u8()?,
         create_time_1:    rdr.read_u16::<LittleEndian>()?,
