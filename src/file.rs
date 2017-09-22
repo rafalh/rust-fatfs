@@ -1,4 +1,6 @@
+use std::cmp;
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use std::io;
 
 use fs::FatFileSystem;
@@ -27,8 +29,12 @@ impl<T: Read+Seek> FatFileSystem<T> {
     }
     
     pub fn read(&mut self, file: &mut FatFile, buf: &mut [u8]) -> io::Result<usize> {
-        self.seek_to_sector(file.first_sector as u64)?;
-        let size = self.rdr.read(buf)?;
+        let offset = self.offset_from_sector(file.first_sector) + file.offset as u64;
+        let mut read_size = cmp::min((file.size - file.offset) as usize, buf.len());
+        // FIXME: allow only one cluster for now
+        read_size = cmp::min(read_size, (self.get_cluster_size() - file.offset) as usize);
+        self.rdr.seek(SeekFrom::Start(offset))?;
+        let size = self.rdr.read(&mut buf[..read_size])?;
         file.offset += size as u32;
         Ok(size)
     }

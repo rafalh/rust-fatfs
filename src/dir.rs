@@ -84,21 +84,27 @@ impl FatDirEntry {
 
 impl<T: Read+Seek> FatFileSystem<T> {
     pub fn read_dir(&mut self, dir: &mut FatFile) -> io::Result<Vec<FatDirEntry>> {
-        
-        let mut cur = Cursor::new(vec![0; 512]);
-        self.read(dir, cur.get_mut())?;
-        
         let mut entries = Vec::new();
+        let mut buf = vec![0; self.get_cluster_size() as usize];
         loop {
-            let entry = read_dir_entry(&mut cur)?;
-            if entry.name[0] == 0 {
-                break; // end of dir
+            let size = self.read(dir, &mut buf)?;
+            if size == 0 {
+                break;
             }
-            if entry.name[0] == 0xE5 {
-                continue; // deleted
+            
+            let mut cur = Cursor::new(&buf[..size]);
+            loop {
+                let entry = read_dir_entry(&mut cur)?;
+                if entry.name[0] == 0 {
+                    break; // end of dir
+                }
+                if entry.name[0] == 0xE5 {
+                    continue; // deleted
+                }
+                entries.push(entry);
             }
-            entries.push(entry);
         }
+        
         Ok(entries)
     }
 }

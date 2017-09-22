@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::io::{Error, ErrorKind, SeekFrom};
+use std::io::{Error, ErrorKind};
 use std::io;
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -189,13 +189,20 @@ impl<T: Read+Seek> FatFileSystem<T> {
         Ok(boot)
     }
     
-    pub fn seek_to_sector(&mut self, sector: u64) -> io::Result<()> {
-        self.rdr.seek(SeekFrom::Start(sector*512))?;
-        Ok(())
+    // pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
+    //     self.offset_from_sector(self.sector_from_cluster(cluser))
+    // }
+    
+    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
+        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
     }
     
-    pub fn sector_from_cluster(&self, cluster: u32) -> u32 {
+    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
         ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
+    }
+    
+    pub(crate) fn get_cluster_size(&self) -> u32 {
+        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
     }
     
     pub(crate) fn get_root_dir_sector(&self) -> u32 {
