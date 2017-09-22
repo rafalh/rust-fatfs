@@ -1,0 +1,7 @@
+[package]
+name = "rust-fat"
+version = "0.1.0"
+authors = ["Rafał Harabień <rafalh1992@o2.pl>"]
+
+[dependencies]
+byteorder = "1"
