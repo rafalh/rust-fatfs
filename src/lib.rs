@@ -10,6 +10,7 @@ extern crate bitflags;
 pub mod fs;
 pub mod dir;
 pub mod file;
+pub mod table;
 
 pub use fs::*;
 pub use dir::*;

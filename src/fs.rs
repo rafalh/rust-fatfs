@@ -5,6 +5,7 @@ use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::FatFile;
+use table::{FatTable, FatTable12, FatTable16, FatTable32};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -23,6 +24,7 @@ pub struct FatFileSystem<T: Read+Seek> {
     first_fat_sector: u32,
     pub(crate) first_data_sector: u32,
     pub(crate) root_dir_sectors: u32,
+    pub(crate) table: Box<FatTable>,
 }
 
 #[allow(dead_code)]
@@ -118,6 +120,16 @@ impl<T: Read+Seek> FatFileSystem<T> {
             println!("fat_type_label {}", fat_type_label_str);
         }
         
+        // FIXME: other versions
+        
+        let table_size_bytes = table_size * boot.bpb.bytes_per_sector as u32;
+        let table: Box<FatTable> = match fat_type {
+            FatType::Fat12 => Box::new(FatTable12::read(rdr, table_size_bytes as usize)?),
+            FatType::Fat16 => Box::new(FatTable16::read(rdr, table_size_bytes as usize)?),
+            FatType::Fat32 => Box::new(FatTable32::read(rdr, table_size_bytes as usize)?),
+            _ => panic!("TODO: exfat")
+        };
+        
         let fs = FatFileSystem {
             rdr: rdr,
             fat_type: fat_type,
@@ -125,6 +137,7 @@ impl<T: Read+Seek> FatFileSystem<T> {
             first_data_sector: first_data_sector,
             first_fat_sector: first_fat_sector,
             root_dir_sectors: root_dir_sectors as u32,
+            table: table,
         };
         
         Ok(fs)
