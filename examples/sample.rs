@@ -7,7 +7,7 @@ use std::str;
 use rustfat::FatFileSystem;
 
 fn main() {
-    let file = File::open("resources/floppy.img").unwrap();
+    let file = File::open("resources/fat12.img").unwrap();
     let buf_rdr = BufReader::new(file);
     let mut fs = FatFileSystem::new(Box::new(buf_rdr)).unwrap();
     let mut root_dir = fs.root_dir();
