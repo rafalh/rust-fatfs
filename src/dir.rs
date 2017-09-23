@@ -1,6 +1,5 @@
 use std::io::prelude::*;
 use std::io;
-use std::io::Cursor;
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
@@ -96,46 +95,37 @@ impl FatDir {
     
     pub fn list(&mut self) -> io::Result<Vec<FatDirEntry>> {
         let mut entries = Vec::new();
-        let cluster_size = self.state.borrow().get_cluster_size() as usize;
-        let mut buf = vec![0; cluster_size];
         loop {
-            let size = self.rdr.read(&mut buf)?;
-            if size == 0 {
-                break;
+            let entry = self.read_dir_entry()?;
+            if entry.name[0] == 0 {
+                break; // end of dir
             }
-            
-            let mut cur = Cursor::new(&buf[..size]);
-            loop {
-                let entry = self.read_dir_entry(&mut cur)?;
-                if entry.name[0] == 0 {
-                    break; // end of dir
-                }
-                if entry.name[0] == 0xE5 {
-                    continue; // deleted
-                }
-                entries.push(entry);
+            if entry.name[0] == 0xE5 {
+                continue; // deleted
             }
+            entries.push(entry);
         }
         
         Ok(entries)
     }
     
-    fn read_dir_entry(&self, rdr: &mut Read) -> io::Result<FatDirEntry> {
+    fn read_dir_entry(&mut self) -> io::Result<FatDirEntry> {
         let mut name = [0; 11];
-        rdr.read(&mut name)?;
+        self.rdr.read(&mut name)?;
+        let attrs = FatFileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes");
         Ok(FatDirEntry {
-            name:             name,
-            attrs:            FatFileAttributes::from_bits(rdr.read_u8()?).unwrap(),
-            reserved_0:       rdr.read_u8()?,
-            create_time_0:    rdr.read_u8()?,
-            create_time_1:    rdr.read_u16::<LittleEndian>()?,
-            create_date:      rdr.read_u16::<LittleEndian>()?,
-            access_date:      rdr.read_u16::<LittleEndian>()?,
-            first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
-            modify_time:      rdr.read_u16::<LittleEndian>()?,
-            modify_date:      rdr.read_u16::<LittleEndian>()?,
-            first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
-            size:             rdr.read_u32::<LittleEndian>()?,
+            name,
+            attrs,
+            reserved_0:       self.rdr.read_u8()?,
+            create_time_0:    self.rdr.read_u8()?,
+            create_time_1:    self.rdr.read_u16::<LittleEndian>()?,
+            create_date:      self.rdr.read_u16::<LittleEndian>()?,
+            access_date:      self.rdr.read_u16::<LittleEndian>()?,
+            first_cluster_hi: self.rdr.read_u16::<LittleEndian>()?,
+            modify_time:      self.rdr.read_u16::<LittleEndian>()?,
+            modify_date:      self.rdr.read_u16::<LittleEndian>()?,
+            first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
+            size:             self.rdr.read_u32::<LittleEndian>()?,
             state:            self.state.clone(),
         })
     }
