@@ -50,7 +50,9 @@ fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
 impl FatDirEntry {
     
     pub fn get_name(&self) -> String {
-        str::from_utf8(&self.name).unwrap().trim_right().to_string()
+        let name = str::from_utf8(&self.name[0..8]).unwrap().trim_right();
+        let ext = str::from_utf8(&self.name[8..11]).unwrap().trim_right();
+        if ext == "" { name.to_string() } else { format!("{}.{}", name, ext) }
     }
     
     pub fn get_attrs(&self) -> FatFileAttributes {
@@ -102,6 +104,9 @@ impl FatDir {
             }
             if entry.name[0] == 0xE5 {
                 continue; // deleted
+            }
+            if entry.attrs == FatFileAttributes::LFN {
+                continue; // FIXME: support LFN
             }
             entries.push(entry);
         }
