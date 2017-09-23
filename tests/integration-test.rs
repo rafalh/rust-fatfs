@@ -34,6 +34,21 @@ fn test_img(name: &str) {
         assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT.repeat(1000));
     }
     
+    {
+        let mut root_dir = fs.root_dir();
+        let mut dir = root_dir.get_dir("very/long/path/").unwrap();
+        let entries = dir.list().unwrap();
+        let names = entries.iter().map(|e| e.get_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", "..", "TEST.TXT"]);
+    }
+    
+    {
+        let mut root_dir = fs.root_dir();
+        let mut file = root_dir.get_file("very/long/path/test.txt").unwrap();
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).unwrap();
+        assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
+    }
 }
 
 #[test]

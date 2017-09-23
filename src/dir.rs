@@ -1,5 +1,7 @@
+use std::ascii::AsciiExt;
 use std::io::prelude::*;
 use std::io;
+use std::io::ErrorKind;
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
@@ -21,6 +23,7 @@ bitflags! {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct FatDirEntry {
     name: [u8; 11],
     attrs: FatFileAttributes,
@@ -59,12 +62,27 @@ impl FatDirEntry {
         self.attrs
     }
     
+    pub fn is_dir(&self) -> bool {
+        self.attrs.contains(FatFileAttributes::DIRECTORY)
+    }
+    
     pub fn get_cluster(&self) -> u32 {
         ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32
     }
     
     pub fn get_file(&self) -> FatFile {
+        if self.is_dir() {
+            panic!("This is a directory");
+        }
         FatFile::new(self.get_cluster(), Some(self.size), self.state.clone())
+    }
+    
+    pub fn get_dir(&self) -> FatDir {
+        if !self.is_dir() {
+            panic!("This is a file");
+        }
+        let file = FatFile::new(self.get_cluster(), None, self.state.clone());
+        FatDir::new(Box::new(file), self.state.clone())
     }
     
     pub fn get_size(&self) -> u32 {
@@ -133,5 +151,42 @@ impl FatDir {
             size:             self.rdr.read_u32::<LittleEndian>()?,
             state:            self.state.clone(),
         })
+    }
+    
+    fn split_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
+        let mut path_split = path.trim_matches('/').splitn(2, "/");
+        let comp = path_split.next().unwrap();
+        let rest_opt = path_split.next();
+        (comp, rest_opt)
+    }
+    
+    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry> {
+        // FIXME: we should seek to beggining here
+        let entries: Vec<FatDirEntry> = self.list()?;
+        for e in entries {
+            if e.get_name().eq_ignore_ascii_case(name) {
+                println!("find entry {}", name);
+                return Ok(e);
+            }
+        }
+        Err(io::Error::new(ErrorKind::NotFound, "file not found"))
+    }
+    
+    pub fn get_dir(&mut self, path: &str) -> io::Result<FatDir> {
+        let (name, rest_opt) = Self::split_path(path);
+        let e = self.find_entry(name)?;
+        match rest_opt {
+            Some(rest) => e.get_dir().get_dir(rest),
+            None => Ok(e.get_dir())
+        }
+    }
+    
+    pub fn get_file(&mut self, path: &str) -> io::Result<FatFile> {
+        let (name, rest_opt) = Self::split_path(path);
+        let e = self.find_entry(name)?;
+        match rest_opt {
+            Some(rest) => e.get_dir().get_file(rest),
+            None => Ok(e.get_file())
+        }
     }
 }
