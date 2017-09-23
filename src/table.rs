@@ -53,7 +53,7 @@ pub trait FatTable {
 impl FatTable for FatTable32 {
     fn get_next_cluster(&self, cluster: u32) -> Option<u32> {
         let val = self.table[cluster as usize] & 0x0FFFFFFF;
-        if val >= 0x0FFFFFF7 {
+        if val <= 1 || val >= 0x0FFFFFF7 {
             None
         } else {
             Some(val)
@@ -64,7 +64,7 @@ impl FatTable for FatTable32 {
 impl FatTable for FatTable16 {
     fn get_next_cluster(&self, cluster: u32) -> Option<u32> {
         let val = self.table[cluster as usize];
-        if val >= 0xFFF7 {
+        if val <= 1 || val >= 0xFFF7 {
             None
         } else {
             Some(val as u32)
@@ -83,7 +83,7 @@ impl FatTable for FatTable12 {
         } else {
             val1 | (val2 & 0x0F)
         };
-        if val >= 0xFF7 {
+        if val <= 1 || val >= 0xFF7 {
             None
         } else {
             Some(val as u32)

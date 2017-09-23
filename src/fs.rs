@@ -143,7 +143,8 @@ impl FatFileSystem {
             println!("fat_type_label {}", fat_type_label_str);
         }
         
-        // FIXME: other versions
+        let fat_offset = boot.bpb.reserved_sector_count * boot.bpb.bytes_per_sector;
+        rdr.seek(SeekFrom::Start(fat_offset as u64))?;
         let table_size_bytes = table_size * boot.bpb.bytes_per_sector as u32;
         let table: Box<FatTable> = match fat_type {
             FatType::Fat12 => Box::new(FatTable12::read(&mut rdr, table_size_bytes as usize)?),
