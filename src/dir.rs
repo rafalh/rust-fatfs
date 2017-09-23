@@ -5,7 +5,7 @@ use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
 
-use fs::FatFileSystem;
+use fs::FatSharedStateRef;
 use file::FatFile;
 
 bitflags! {
@@ -35,6 +35,7 @@ pub struct FatDirEntry {
     modify_date: u16,
     first_cluster_lo: u16,
     size: u32,
+    state: FatSharedStateRef,
 }
 
 fn convert_date(dos_date: u16) -> Date<Local> {
@@ -61,8 +62,8 @@ impl FatDirEntry {
         ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32
     }
     
-    pub fn get_file<T: Read+Seek>(&self, fs: &FatFileSystem<T>) -> FatFile {
-        FatFile::new(fs.sector_from_cluster(self.get_cluster()), self.size)
+    pub fn get_file(&self) -> FatFile {
+        FatFile::new(self.get_cluster(), self.size, self.state.clone())
     }
     
     pub fn get_size(&self) -> u32 {
@@ -82,19 +83,30 @@ impl FatDirEntry {
     }
 }
 
-impl<T: Read+Seek> FatFileSystem<T> {
-    pub fn read_dir(&mut self, dir: &mut FatFile) -> io::Result<Vec<FatDirEntry>> {
+pub struct FatDir {
+    rdr: Box<Read>,
+    state: FatSharedStateRef,
+}
+
+impl FatDir {
+    
+    pub(crate) fn new(rdr: Box<Read>, state: FatSharedStateRef) -> FatDir {
+        FatDir { rdr, state }
+    }
+    
+    pub fn list(&mut self) -> io::Result<Vec<FatDirEntry>> {
         let mut entries = Vec::new();
-        let mut buf = vec![0; self.get_cluster_size() as usize];
+        let cluster_size = self.state.borrow().get_cluster_size() as usize;
+        let mut buf = vec![0; cluster_size];
         loop {
-            let size = self.read(dir, &mut buf)?;
+            let size = self.rdr.read(&mut buf)?;
             if size == 0 {
                 break;
             }
             
             let mut cur = Cursor::new(&buf[..size]);
             loop {
-                let entry = read_dir_entry(&mut cur)?;
+                let entry = self.read_dir_entry(&mut cur)?;
                 if entry.name[0] == 0 {
                     break; // end of dir
                 }
@@ -107,23 +119,24 @@ impl<T: Read+Seek> FatFileSystem<T> {
         
         Ok(entries)
     }
-}
-
-fn read_dir_entry(rdr: &mut Read) -> io::Result<FatDirEntry> {
-    let mut name = [0; 11];
-    rdr.read(&mut name)?;
-    Ok(FatDirEntry {
-        name:             name,
-        attrs:            FatFileAttributes::from_bits(rdr.read_u8()?).unwrap(),
-        reserved_0:       rdr.read_u8()?,
-        create_time_0:    rdr.read_u8()?,
-        create_time_1:    rdr.read_u16::<LittleEndian>()?,
-        create_date:      rdr.read_u16::<LittleEndian>()?,
-        access_date:      rdr.read_u16::<LittleEndian>()?,
-        first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
-        modify_time:      rdr.read_u16::<LittleEndian>()?,
-        modify_date:      rdr.read_u16::<LittleEndian>()?,
-        first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
-        size:             rdr.read_u32::<LittleEndian>()?,
-    })
+    
+    fn read_dir_entry(&self, rdr: &mut Read) -> io::Result<FatDirEntry> {
+        let mut name = [0; 11];
+        rdr.read(&mut name)?;
+        Ok(FatDirEntry {
+            name:             name,
+            attrs:            FatFileAttributes::from_bits(rdr.read_u8()?).unwrap(),
+            reserved_0:       rdr.read_u8()?,
+            create_time_0:    rdr.read_u8()?,
+            create_time_1:    rdr.read_u16::<LittleEndian>()?,
+            create_date:      rdr.read_u16::<LittleEndian>()?,
+            access_date:      rdr.read_u16::<LittleEndian>()?,
+            first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
+            modify_time:      rdr.read_u16::<LittleEndian>()?,
+            modify_date:      rdr.read_u16::<LittleEndian>()?,
+            first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
+            size:             rdr.read_u32::<LittleEndian>()?,
+            state:            self.state.clone(),
+        })
+    }
 }

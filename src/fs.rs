@@ -1,10 +1,15 @@
+use std::cell::RefCell;
+use std::cmp;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind};
+use std::io::SeekFrom;
 use std::io;
 use std::str;
+use std::rc::Rc;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::FatFile;
+use dir::FatDir;
 use table::{FatTable, FatTable12, FatTable16, FatTable32};
 
 // FAT implementation based on:
@@ -16,15 +21,46 @@ pub enum FatType {
     Fat12, Fat16, Fat32, ExFat
 }
 
+pub trait ReadSeek: Read + Seek {}
+impl<T> ReadSeek for T where T: Read + Seek {}
+
 #[allow(dead_code)]
-pub struct FatFileSystem<T: Read+Seek> {
-    pub(crate) rdr: T,
-    pub(crate) fat_type: FatType,
-    pub(crate) boot: FatBootRecord,
-    first_fat_sector: u32,
-    pub(crate) first_data_sector: u32,
-    pub(crate) root_dir_sectors: u32,
-    pub(crate) table: Box<FatTable>,
+pub(crate) struct FatSharedState {
+    pub rdr: Box<ReadSeek>,
+    pub fat_type: FatType,
+    pub boot: FatBootRecord,
+    pub first_fat_sector: u32,
+    pub first_data_sector: u32,
+    pub root_dir_sectors: u32,
+    pub table: Box<FatTable>,
+}
+
+impl FatSharedState {
+    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
+        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
+    }
+    
+    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
+        ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
+    }
+    
+    pub(crate) fn get_cluster_size(&self) -> u32 {
+        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
+    }
+    
+    pub(crate) fn get_root_dir_sector(&self) -> u32 {
+        match self.fat_type {
+            FatType::Fat12 | FatType::Fat16 => self.first_data_sector - self.root_dir_sectors,
+            _ => self.sector_from_cluster(self.boot.bpb.root_cluster)
+        }
+    }
+}
+
+pub(crate) type FatSharedStateRef = Rc<RefCell<FatSharedState>>;
+
+#[allow(dead_code)]
+pub struct FatFileSystem {
+    pub(crate) state: FatSharedStateRef,
 }
 
 #[allow(dead_code)]
@@ -80,21 +116,11 @@ impl Default for FatBootRecord {
     }
 }
 
-impl<T: Read+Seek> FatFileSystem<T> {
-    fn fat_type_from_clusters(total_clusters: u32) -> FatType {
-        if total_clusters < 4085 {
-            FatType::Fat12
-        } else if total_clusters < 65525 {
-            FatType::Fat16
-        } else if total_clusters < 268435445 {
-            FatType::Fat32
-        } else {
-            FatType::ExFat
-        }
-    }
+impl FatFileSystem {
     
-    pub fn new(rdr: &mut T) -> io::Result<FatFileSystem<&mut T>> {
-        let boot = FatFileSystem::<T>::read_boot_record(rdr)?;
+    //pub fn new<T: ReadSeek + 'static>(rdr: T) -> io::Result<FatFileSystem> {
+    pub fn new<T: ReadSeek + 'static>(mut rdr: Box<T>) -> io::Result<FatFileSystem> {
+        let boot = Self::read_boot_record(&mut *rdr)?;
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }
@@ -106,7 +132,7 @@ impl<T: Read+Seek> FatFileSystem<T> {
         let first_fat_sector = boot.bpb.reserved_sector_count as u32;
         let data_sectors = total_sectors - (boot.bpb.reserved_sector_count as u32 + (boot.bpb.table_count as u32 * table_size) + root_dir_sectors as u32);
         let total_clusters = data_sectors / boot.bpb.sectors_per_cluster as u32;
-        let fat_type = FatFileSystem::<T>::fat_type_from_clusters(total_clusters);
+        let fat_type = Self::fat_type_from_clusters(total_clusters);
         
         {
             let oem_name_str = str::from_utf8(&boot.oem_name).unwrap().trim_right();
@@ -121,17 +147,17 @@ impl<T: Read+Seek> FatFileSystem<T> {
         }
         
         // FIXME: other versions
-        
         let table_size_bytes = table_size * boot.bpb.bytes_per_sector as u32;
         let table: Box<FatTable> = match fat_type {
-            FatType::Fat12 => Box::new(FatTable12::read(rdr, table_size_bytes as usize)?),
-            FatType::Fat16 => Box::new(FatTable16::read(rdr, table_size_bytes as usize)?),
-            FatType::Fat32 => Box::new(FatTable32::read(rdr, table_size_bytes as usize)?),
+            FatType::Fat12 => Box::new(FatTable12::read(&mut rdr, table_size_bytes as usize)?),
+            FatType::Fat16 => Box::new(FatTable16::read(&mut rdr, table_size_bytes as usize)?),
+            FatType::Fat32 => Box::new(FatTable32::read(&mut rdr, table_size_bytes as usize)?),
             _ => panic!("TODO: exfat")
         };
         
-        let fs = FatFileSystem {
-            rdr: rdr,
+        let rdr_box = Box::new(rdr);
+        let state = FatSharedState {
+            rdr: rdr_box,
             fat_type: fat_type,
             boot: boot,
             first_data_sector: first_data_sector,
@@ -140,7 +166,9 @@ impl<T: Read+Seek> FatFileSystem<T> {
             table: table,
         };
         
-        Ok(fs)
+        Ok(FatFileSystem {
+            state: Rc::new(RefCell::new(state)),
+        })
     }
     
     fn read_bpb(rdr: &mut Read) -> io::Result<FatBiosParameterBlock> {
@@ -187,11 +215,23 @@ impl<T: Read+Seek> FatFileSystem<T> {
         Ok(bpb)
     }
     
+    fn fat_type_from_clusters(total_clusters: u32) -> FatType {
+        if total_clusters < 4085 {
+            FatType::Fat12
+        } else if total_clusters < 65525 {
+            FatType::Fat16
+        } else if total_clusters < 268435445 {
+            FatType::Fat32
+        } else {
+            FatType::ExFat
+        }
+    }
+    
     fn read_boot_record(rdr: &mut Read) -> io::Result<FatBootRecord> {
         let mut boot: FatBootRecord = Default::default();
         rdr.read(&mut boot.bootjmp)?;
         rdr.read(&mut boot.oem_name)?;
-        boot.bpb = FatFileSystem::<T>::read_bpb(rdr)?;
+        boot.bpb = Self::read_bpb(rdr)?;
         
         if boot.bpb.table_size_16 == 0 {
             rdr.read_exact(&mut boot.boot_code[0..420])?;
@@ -206,28 +246,47 @@ impl<T: Read+Seek> FatFileSystem<T> {
     //     self.offset_from_sector(self.sector_from_cluster(cluser))
     // }
     
-    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
-        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
+    pub fn root_dir(&mut self) -> FatDir {
+        let state = self.state.borrow();
+        let root_rdr: Box<Read> = match state.fat_type {
+            FatType::Fat12 | FatType::Fat16 => Box::new(FatSlice::from_sectors(
+                state.first_data_sector - state.root_dir_sectors, state.root_dir_sectors, self.state.clone())),
+            _ => Box::new(FatFile::new(state.boot.bpb.root_cluster, state.root_dir_sectors, self.state.clone()))
+        };
+        FatDir::new(root_rdr, self.state.clone())
     }
-    
-    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
-        ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
-    }
-    
-    pub(crate) fn get_cluster_size(&self) -> u32 {
-        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
-    }
-    
-    pub(crate) fn get_root_dir_sector(&self) -> u32 {
-        match self.fat_type {
-            FatType::Fat12 | FatType::Fat16 => self.first_data_sector - self.root_dir_sectors,
-            _ => self.sector_from_cluster(self.boot.bpb.root_cluster)
-        }
-    }
+}
 
-    pub fn root_dir(&mut self) -> FatFile {
-        let first_root_dir_sector = self.get_root_dir_sector();
-        let root_dir_size = self.root_dir_sectors * self.boot.bpb.bytes_per_sector as u32;
-        FatFile::new(first_root_dir_sector, root_dir_size)
+struct FatSlice {
+    begin: u64,
+    size: u64,
+    offset: u64,
+    state: FatSharedStateRef,
+}
+
+impl FatSlice {
+    pub(crate) fn new(begin: u64, size: u64, state: FatSharedStateRef) -> FatSlice {
+        FatSlice { begin, size, state, offset: 0 }
+    }
+    
+    pub(crate) fn from_sectors(first_sector: u32, sectors_count: u32, state: FatSharedStateRef) -> FatSlice {
+        let bytes_per_sector = state.borrow().boot.bpb.bytes_per_sector as u64;
+        Self::new(first_sector as u64 * bytes_per_sector, sectors_count as u64 * bytes_per_sector, state)
+    }
+}
+
+impl Read for FatSlice {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let (offset, read_size) = {
+            let state = self.state.borrow();
+            let offset = self.begin + self.offset;
+            let mut read_size = cmp::min((self.size - self.offset) as usize, buf.len());
+            (offset, read_size)
+        };
+        let mut state = self.state.borrow_mut();
+        state.rdr.seek(SeekFrom::Start(offset))?;
+        let size = state.rdr.read(&mut buf[..read_size])?;
+        self.offset += size as u64;
+        Ok(size)
     }
 }
