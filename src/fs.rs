@@ -244,7 +244,7 @@ impl FatFileSystem {
         let root_rdr: Box<Read> = match state.fat_type {
             FatType::Fat12 | FatType::Fat16 => Box::new(FatSlice::from_sectors(
                 state.first_data_sector - state.root_dir_sectors, state.root_dir_sectors, self.state.clone())),
-            _ => Box::new(FatFile::new(state.boot.bpb.root_cluster, state.root_dir_sectors, self.state.clone()))
+            _ => Box::new(FatFile::new(state.boot.bpb.root_cluster, None, self.state.clone())) // FIXME
         };
         FatDir::new(root_rdr, self.state.clone())
     }

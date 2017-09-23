@@ -64,7 +64,7 @@ impl FatDirEntry {
     }
     
     pub fn get_file(&self) -> FatFile {
-        FatFile::new(self.get_cluster(), self.size, self.state.clone())
+        FatFile::new(self.get_cluster(), Some(self.size), self.state.clone())
     }
     
     pub fn get_size(&self) -> u32 {

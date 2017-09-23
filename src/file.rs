@@ -8,14 +8,14 @@ use fs::FatSharedStateRef;
 #[allow(dead_code)]
 pub struct FatFile {
     first_cluster: u32,
-    size: u32,
+    size: Option<u32>,
     offset: u32,
     current_cluster: Option<u32>,
     state: FatSharedStateRef,
 }
 
 impl FatFile {
-    pub(crate) fn new(first_cluster: u32, size: u32, state: FatSharedStateRef) -> FatFile {
+    pub(crate) fn new(first_cluster: u32, size: Option<u32>, state: FatSharedStateRef) -> FatFile {
         FatFile {
             first_cluster, size, state,
             current_cluster: Some(first_cluster),
@@ -32,9 +32,9 @@ impl Read for FatFile {
         loop {
             let offset_in_cluster = self.offset % cluster_size;
             let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
-            let bytes_left_in_file = (self.size - self.offset) as usize;
+            let bytes_left_in_file = self.size.map(|size| (size - self.offset) as usize).unwrap_or(bytes_left_in_cluster);
             let bytes_left_in_buf = buf.len() - buf_offset;
-            let read_size = cmp::min(cmp::min(bytes_left_in_file, bytes_left_in_cluster), bytes_left_in_buf);
+            let read_size = cmp::min(cmp::min(bytes_left_in_buf, bytes_left_in_cluster), bytes_left_in_file);
             if read_size == 0 {
                 break;
             }
