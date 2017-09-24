@@ -1,5 +1,5 @@
 [package]
-name = "rustfat"
+name = "rfat"
 version = "0.1.0"
 authors = ["Rafał Harabień <rafalh1992@o2.pl>"]
 
