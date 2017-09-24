@@ -115,22 +115,7 @@ impl FatDir {
     
     pub fn list(&mut self) -> io::Result<Vec<FatDirEntry>> {
         self.rewind();
-        let mut entries = Vec::new();
-        loop {
-            let entry = self.read_dir_entry()?;
-            if entry.name[0] == 0 {
-                break; // end of dir
-            }
-            if entry.name[0] == 0xE5 {
-                continue; // deleted
-            }
-            if entry.attrs == FatFileAttributes::LFN {
-                continue; // FIXME: support LFN
-            }
-            entries.push(entry);
-        }
-        
-        Ok(entries)
+        Ok(self.map(|x| x.unwrap()).collect())
     }
     
     pub fn rewind(&mut self) {
@@ -191,6 +176,30 @@ impl FatDir {
         match rest_opt {
             Some(rest) => e.get_dir().get_file(rest),
             None => Ok(e.get_file())
+        }
+    }
+}
+
+impl Iterator for FatDir {
+    type Item = io::Result<FatDirEntry>;
+
+    fn next(&mut self) -> Option<io::Result<FatDirEntry>> {
+        loop {
+            let r = self.read_dir_entry();
+            let e = match r {
+                Ok(e) => e,
+                Err(_) => return Some(r),
+            };
+            if e.name[0] == 0 {
+                return None; // end of dir
+            }
+            if e.name[0] == 0xE5 {
+                continue; // deleted
+            }
+            if e.attrs == FatFileAttributes::LFN {
+                continue; // FIXME: support LFN
+            }
+            return Some(Ok(e))
         }
     }
 }
