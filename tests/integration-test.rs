@@ -21,11 +21,11 @@ fn open_fs(filename: &str) -> FatFileSystem {
 fn test_root_dir(mut fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let entries = root_dir.list().unwrap();
-    let names = entries.iter().map(|e| e.get_name()).collect::<Vec<String>>();
+    let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
     assert_eq!(names, ["LONG.TXT", "SHORT.TXT", "VERY"]);
     // Try read again
     let entries = root_dir.list().unwrap();
-    let names2 = entries.iter().map(|e| e.get_name()).collect::<Vec<String>>();
+    let names2 = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
     assert_eq!(names2, names);
 }
 
@@ -105,7 +105,7 @@ fn test_get_dir_by_path(mut fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let mut dir = root_dir.get_dir("very/long/path/").unwrap();
     let entries = dir.list().unwrap();
-    let names = entries.iter().map(|e| e.get_name()).collect::<Vec<String>>();
+    let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "TEST.TXT"]);
 }
 

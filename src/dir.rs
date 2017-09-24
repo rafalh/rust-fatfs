@@ -47,13 +47,13 @@ pub struct FatDirEntry {
 }
 
 impl FatDirEntry {
-    pub fn get_name(&self) -> String {
+    pub fn file_name(&self) -> String {
         let name = str::from_utf8(&self.data.name[0..8]).unwrap().trim_right();
         let ext = str::from_utf8(&self.data.name[8..11]).unwrap().trim_right();
         if ext == "" { name.to_string() } else { format!("{}.{}", name, ext) }
     }
     
-    pub fn get_attrs(&self) -> FatFileAttributes {
+    pub fn attributes(&self) -> FatFileAttributes {
         self.data.attrs
     }
     
@@ -61,38 +61,42 @@ impl FatDirEntry {
         self.data.attrs.contains(FatFileAttributes::DIRECTORY)
     }
     
-    pub fn get_cluster(&self) -> u32 {
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
+    
+    pub(crate) fn first_cluster(&self) -> u32 {
         ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32
     }
     
-    pub fn get_file(&self) -> FatFile {
+    pub fn to_file(&self) -> FatFile {
         if self.is_dir() {
             panic!("This is a directory");
         }
-        FatFile::new(self.get_cluster(), Some(self.data.size), self.state.clone())
+        FatFile::new(self.first_cluster(), Some(self.data.size), self.state.clone())
     }
     
-    pub fn get_dir(&self) -> FatDir {
+    pub fn to_dir(&self) -> FatDir {
         if !self.is_dir() {
             panic!("This is a file");
         }
-        let file = FatFile::new(self.get_cluster(), None, self.state.clone());
+        let file = FatFile::new(self.first_cluster(), None, self.state.clone());
         FatDir::new(Box::new(file), self.state.clone())
     }
     
-    pub fn get_size(&self) -> u32 {
-        self.data.size
+    pub fn len(&self) -> u64 {
+        self.data.size as u64
     }
     
-    pub fn get_create_time(&self) -> DateTime<Local> {
+    pub fn created(&self) -> DateTime<Local> {
         Self::convert_date_time(self.data.create_date, self.data.create_time_1)
     }
     
-    pub fn get_access_date(&self) -> Date<Local> {
+    pub fn accessed(&self) -> Date<Local> {
         Self::convert_date(self.data.access_date)
     }
     
-    pub fn get_modify_time(&self) -> DateTime<Local> {
+    pub fn modified(&self) -> DateTime<Local> {
         Self::convert_date_time(self.data.modify_date, self.data.modify_time)
     }
     
@@ -100,7 +104,7 @@ impl FatDirEntry {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Local.ymd(year as i32, month as u32, day as u32)
     }
-
+    
     fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
         Self::convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
@@ -163,8 +167,7 @@ impl FatDir {
     fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry> {
         let entries: Vec<FatDirEntry> = self.list()?;
         for e in entries {
-            if e.get_name().eq_ignore_ascii_case(name) {
-                println!("find entry {}", name);
+            if e.file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
             }
         }
@@ -175,8 +178,8 @@ impl FatDir {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
-            Some(rest) => e.get_dir().get_dir(rest),
-            None => Ok(e.get_dir())
+            Some(rest) => e.to_dir().get_dir(rest),
+            None => Ok(e.to_dir())
         }
     }
     
@@ -184,8 +187,8 @@ impl FatDir {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
-            Some(rest) => e.get_dir().get_file(rest),
-            None => Ok(e.get_file())
+            Some(rest) => e.to_dir().get_file(rest),
+            None => Ok(e.to_file())
         }
     }
 }
