@@ -2,7 +2,7 @@ use std::ascii::AsciiExt;
 use std::fmt;
 use std::io::prelude::*;
 use std::io;
-use std::io::{ErrorKind, SeekFrom};
+use std::io::{Cursor, ErrorKind, SeekFrom};
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
@@ -11,6 +11,7 @@ use fs::{FatSharedStateRef, ReadSeek};
 use file::FatFile;
 
 bitflags! {
+    #[derive(Default)]
     pub struct FatFileAttributes: u8 {
         const READ_ONLY  = 0x01;
         const HIDDEN     = 0x02;
@@ -24,8 +25,8 @@ bitflags! {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
-pub struct FatDirEntryData {
+#[derive(Clone, Debug, Default)]
+struct FatDirFileEntryData {
     name: [u8; 11],
     attrs: FatFileAttributes,
     reserved_0: u8,
@@ -40,17 +41,45 @@ pub struct FatDirEntryData {
     size: u32,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default)]
+struct FatDirLfnEntryData {
+    order: u8,
+    name_0: [u16; 5],
+    attrs: FatFileAttributes,
+    entry_type: u8,
+    checksum: u8,
+    name_1: [u16; 6],
+    reserved_0: u16,
+    name_2: [u16; 2],
+}
+
+#[derive(Clone, Debug)]
+enum FatDirEntryData {
+    File(FatDirFileEntryData),
+    Lfn(FatDirLfnEntryData),
+}
+
 #[derive(Clone)]
 pub struct FatDirEntry {
-    data: FatDirEntryData,
+    data: FatDirFileEntryData,
+    lfn: Vec<u16>,
     state: FatSharedStateRef,
 }
 
 impl FatDirEntry {
-    pub fn file_name(&self) -> String {
+    pub fn short_file_name(&self) -> String {
         let name = str::from_utf8(&self.data.name[0..8]).unwrap().trim_right();
         let ext = str::from_utf8(&self.data.name[8..11]).unwrap().trim_right();
         if ext == "" { name.to_string() } else { format!("{}.{}", name, ext) }
+    }
+    
+    pub fn file_name(&self) -> String {
+        if self.lfn.len() > 0 {
+            String::from_utf16(&self.lfn).unwrap()
+        } else {
+            self.short_file_name()
+        }
     }
     
     pub fn attributes(&self) -> FatFileAttributes {
@@ -141,20 +170,36 @@ impl FatDir {
         let mut name = [0; 11];
         self.rdr.read(&mut name)?;
         let attrs = FatFileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes");
-        Ok(FatDirEntryData {
-            name,
-            attrs,
-            reserved_0:       self.rdr.read_u8()?,
-            create_time_0:    self.rdr.read_u8()?,
-            create_time_1:    self.rdr.read_u16::<LittleEndian>()?,
-            create_date:      self.rdr.read_u16::<LittleEndian>()?,
-            access_date:      self.rdr.read_u16::<LittleEndian>()?,
-            first_cluster_hi: self.rdr.read_u16::<LittleEndian>()?,
-            modify_time:      self.rdr.read_u16::<LittleEndian>()?,
-            modify_date:      self.rdr.read_u16::<LittleEndian>()?,
-            first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
-            size:             self.rdr.read_u32::<LittleEndian>()?,
-        })
+        if attrs == FatFileAttributes::LFN {
+            let mut data = FatDirLfnEntryData {
+                attrs, ..Default::default()
+            };
+            let mut cur = Cursor::new(&name);
+            data.order = cur.read_u8()?;
+            cur.read_u16_into::<LittleEndian>(&mut data.name_0)?;
+            data.entry_type = self.rdr.read_u8()?;
+            data.checksum = self.rdr.read_u8()?;
+            self.rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
+            data.reserved_0 = self.rdr.read_u16::<LittleEndian>()?;
+            self.rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
+            Ok(FatDirEntryData::Lfn(data))
+        } else {
+            let data = FatDirFileEntryData {
+                name,
+                attrs,
+                reserved_0:       self.rdr.read_u8()?,
+                create_time_0:    self.rdr.read_u8()?,
+                create_time_1:    self.rdr.read_u16::<LittleEndian>()?,
+                create_date:      self.rdr.read_u16::<LittleEndian>()?,
+                access_date:      self.rdr.read_u16::<LittleEndian>()?,
+                first_cluster_hi: self.rdr.read_u16::<LittleEndian>()?,
+                modify_time:      self.rdr.read_u16::<LittleEndian>()?,
+                modify_date:      self.rdr.read_u16::<LittleEndian>()?,
+                first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
+                size:             self.rdr.read_u32::<LittleEndian>()?,
+            };
+            Ok(FatDirEntryData::File(data))
+        }
     }
     
     fn split_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
@@ -174,20 +219,20 @@ impl FatDir {
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
     
-    pub fn get_dir(&mut self, path: &str) -> io::Result<FatDir> {
+    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
-            Some(rest) => e.to_dir().get_dir(rest),
+            Some(rest) => e.to_dir().open_dir(rest),
             None => Ok(e.to_dir())
         }
     }
     
-    pub fn get_file(&mut self, path: &str) -> io::Result<FatFile> {
+    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
-            Some(rest) => e.to_dir().get_file(rest),
+            Some(rest) => e.to_dir().open_file(rest),
             None => Ok(e.to_file())
         }
     }
@@ -197,25 +242,61 @@ impl Iterator for FatDir {
     type Item = io::Result<FatDirEntry>;
 
     fn next(&mut self) -> Option<io::Result<FatDirEntry>> {
+        let mut lfn_buf = Vec::<u16>::new();
         loop {
             let res = self.read_dir_entry_data();
             let data = match res {
                 Ok(data) => data,
                 Err(err) => return Some(Err(err)),
             };
-            if data.name[0] == 0 {
-                return None; // end of dir
-            }
-            if data.name[0] == 0xE5 {
-                continue; // deleted
-            }
-            if data.attrs == FatFileAttributes::LFN {
-                continue; // FIXME: support LFN
-            }
-            return Some(Ok(FatDirEntry {
-                data,
-                state: self.state.clone(),
-            }));
+            match data {
+                FatDirEntryData::File(data) => {
+                    // Check if this is end of dif
+                    if data.name[0] == 0 {
+                        return None;
+                    }
+                    // Check if this is deleted or volume ID entry
+                    if data.name[0] == 0xE5 || data.attrs.contains(FatFileAttributes::VOLUME_ID) {
+                        lfn_buf.clear();
+                        continue;
+                    }
+                    // Truncate 0 and 0xFFFF characters from LFN buffer
+                    let mut lfn_len = lfn_buf.len();
+                    loop {
+                        if lfn_len == 0 {
+                            break;
+                        }
+                        match lfn_buf[lfn_len-1] {
+                            0xFFFF | 0 => lfn_len -= 1,
+                            _ => break,
+                        }
+                    }
+                    lfn_buf.truncate(lfn_len);
+                    return Some(Ok(FatDirEntry {
+                        data,
+                        lfn: lfn_buf,
+                        state: self.state.clone(),
+                    }));
+                },
+                FatDirEntryData::Lfn(data) => {
+                    // Check if this is deleted entry
+                    if data.order == 0xE5 {
+                        lfn_buf.clear();
+                        continue;
+                    }
+                    const LFN_PART_LEN: usize = 13;
+                    let index = (data.order & 0x1F) - 1;
+                    let pos = LFN_PART_LEN * index as usize;
+                    // resize LFN buffer to have enough space for entire name
+                    if lfn_buf.len() < pos + LFN_PART_LEN {
+                       lfn_buf.resize(pos + LFN_PART_LEN, 0);
+                    }
+                    // copy name parts into LFN buffer
+                    lfn_buf[pos+0..pos+5].clone_from_slice(&data.name_0);
+                    lfn_buf[pos+5..pos+11].clone_from_slice(&data.name_1);
+                    lfn_buf[pos+11..pos+13].clone_from_slice(&data.name_2);
+                }
+            };
         }
     }
 }

@@ -30,7 +30,7 @@ fn main() {
     let mut dir = match env::args().nth(1) {
         None => root_dir,
         Some(ref path) if path == "." => root_dir,
-        Some(ref path) => root_dir.get_dir(&path).unwrap(),
+        Some(ref path) => root_dir.open_dir(&path).unwrap(),
     };
     let entries = dir.list().unwrap();
     for e in entries {

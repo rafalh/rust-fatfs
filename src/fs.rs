@@ -154,15 +154,15 @@ impl FatFileSystem {
         })
     }
     
-    pub fn get_type(&self) -> FatType {
+    pub fn fat_type(&self) -> FatType {
         self.state.borrow().fat_type
     }
     
-    pub fn get_volume_id(&self) -> u32 {
+    pub fn volume_id(&self) -> u32 {
         self.state.borrow().boot.bpb.volume_id
     }
     
-    pub fn get_volume_label(&self) -> String {
+    pub fn volume_label(&self) -> String {
         str::from_utf8(&self.state.borrow().boot.bpb.volume_label).unwrap().trim_right().to_string()
     }
     
