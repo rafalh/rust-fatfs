@@ -1,6 +1,6 @@
 use std::cmp;
 use std::io::prelude::*;
-use std::io::SeekFrom;
+use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
 use fs::FatSharedStateRef;
@@ -52,5 +52,28 @@ impl Read for FatFile {
             }
         }
         Ok(buf_offset)
+    }
+}
+
+impl Seek for FatFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_offset = match pos {
+            SeekFrom::Current(x) => self.offset as i64 + x,
+            SeekFrom::Start(x) => x as i64,
+            SeekFrom::End(x) => self.size.unwrap() as i64 + x,
+        };
+        if new_offset < 0 || (self.size.is_some() && new_offset as u64 > self.size.unwrap() as u64) {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
+        }
+        let cluster_size = self.state.borrow().get_cluster_size();
+        let cluster_count = (new_offset / cluster_size as i64) as usize;
+        let mut new_cluster = Some(self.first_cluster);
+        let state = self.state.borrow_mut();
+        for _ in 0..cluster_count {
+            new_cluster = state.table.get_next_cluster(new_cluster.unwrap());
+        }
+        self.offset = new_offset as u32;
+        self.current_cluster = new_cluster;
+        Ok(self.offset as u64)
     }
 }

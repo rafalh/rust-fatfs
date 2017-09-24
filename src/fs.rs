@@ -242,7 +242,7 @@ impl FatFileSystem {
     
     pub fn root_dir(&mut self) -> FatDir {
         let state = self.state.borrow();
-        let root_rdr: Box<Read> = match state.fat_type {
+        let root_rdr: Box<ReadSeek> = match state.fat_type {
             FatType::Fat12 | FatType::Fat16 => Box::new(FatSlice::from_sectors(
                 state.first_data_sector - state.root_dir_sectors, state.root_dir_sectors, self.state.clone())),
             _ => Box::new(FatFile::new(state.boot.bpb.root_cluster, None, self.state.clone())) // FIXME
@@ -278,5 +278,21 @@ impl Read for FatSlice {
         let size = state.rdr.read(&mut buf[..read_size])?;
         self.offset += size as u64;
         Ok(size)
+    }
+}
+
+impl Seek for FatSlice {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_offset = match pos {
+            SeekFrom::Current(x) => self.offset as i64 + x,
+            SeekFrom::Start(x) => x as i64,
+            SeekFrom::End(x) => self.size as i64 + x,
+        };
+        if new_offset < 0 || new_offset as u64 > self.size {
+            Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"))
+        } else {
+            self.offset = new_offset as u64;
+            Ok(self.offset)
+        }
     }
 }

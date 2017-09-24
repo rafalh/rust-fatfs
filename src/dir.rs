@@ -1,12 +1,12 @@
 use std::ascii::AsciiExt;
 use std::io::prelude::*;
 use std::io;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, SeekFrom};
 use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
 
-use fs::FatSharedStateRef;
+use fs::{FatSharedStateRef, ReadSeek};
 use file::FatFile;
 
 bitflags! {
@@ -103,17 +103,18 @@ impl FatDirEntry {
 }
 
 pub struct FatDir {
-    rdr: Box<Read>,
+    rdr: Box<ReadSeek>,
     state: FatSharedStateRef,
 }
 
 impl FatDir {
     
-    pub(crate) fn new(rdr: Box<Read>, state: FatSharedStateRef) -> FatDir {
+    pub(crate) fn new(rdr: Box<ReadSeek>, state: FatSharedStateRef) -> FatDir {
         FatDir { rdr, state }
     }
     
     pub fn list(&mut self) -> io::Result<Vec<FatDirEntry>> {
+        self.rewind();
         let mut entries = Vec::new();
         loop {
             let entry = self.read_dir_entry()?;
@@ -130,6 +131,10 @@ impl FatDir {
         }
         
         Ok(entries)
+    }
+    
+    pub fn rewind(&mut self) {
+        self.rdr.seek(SeekFrom::Start(0)).unwrap();
     }
     
     fn read_dir_entry(&mut self) -> io::Result<FatDirEntry> {
@@ -161,7 +166,6 @@ impl FatDir {
     }
     
     fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry> {
-        // FIXME: we should seek to beggining here
         let entries: Vec<FatDirEntry> = self.list()?;
         for e in entries {
             if e.get_name().eq_ignore_ascii_case(name) {
