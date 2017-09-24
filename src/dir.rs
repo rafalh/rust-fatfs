@@ -1,4 +1,5 @@
 use std::ascii::AsciiExt;
+use std::fmt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{ErrorKind, SeekFrom};
@@ -23,8 +24,8 @@ bitflags! {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
-pub struct FatDirEntry {
+#[derive(Clone, Copy, Debug)]
+pub struct FatDirEntryData {
     name: [u8; 11],
     attrs: FatFileAttributes,
     reserved_0: u8,
@@ -37,44 +38,38 @@ pub struct FatDirEntry {
     modify_date: u16,
     first_cluster_lo: u16,
     size: u32,
+}
+
+#[derive(Clone)]
+pub struct FatDirEntry {
+    data: FatDirEntryData,
     state: FatSharedStateRef,
 }
 
-fn convert_date(dos_date: u16) -> Date<Local> {
-    let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-    Local.ymd(year as i32, month as u32, day as u32)
-}
-
-fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
-    let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-    convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
-}
-
 impl FatDirEntry {
-    
     pub fn get_name(&self) -> String {
-        let name = str::from_utf8(&self.name[0..8]).unwrap().trim_right();
-        let ext = str::from_utf8(&self.name[8..11]).unwrap().trim_right();
+        let name = str::from_utf8(&self.data.name[0..8]).unwrap().trim_right();
+        let ext = str::from_utf8(&self.data.name[8..11]).unwrap().trim_right();
         if ext == "" { name.to_string() } else { format!("{}.{}", name, ext) }
     }
     
     pub fn get_attrs(&self) -> FatFileAttributes {
-        self.attrs
+        self.data.attrs
     }
     
     pub fn is_dir(&self) -> bool {
-        self.attrs.contains(FatFileAttributes::DIRECTORY)
+        self.data.attrs.contains(FatFileAttributes::DIRECTORY)
     }
     
     pub fn get_cluster(&self) -> u32 {
-        ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32
+        ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32
     }
     
     pub fn get_file(&self) -> FatFile {
         if self.is_dir() {
             panic!("This is a directory");
         }
-        FatFile::new(self.get_cluster(), Some(self.size), self.state.clone())
+        FatFile::new(self.get_cluster(), Some(self.data.size), self.state.clone())
     }
     
     pub fn get_dir(&self) -> FatDir {
@@ -86,19 +81,35 @@ impl FatDirEntry {
     }
     
     pub fn get_size(&self) -> u32 {
-        self.size
+        self.data.size
     }
     
     pub fn get_create_time(&self) -> DateTime<Local> {
-        convert_date_time(self.create_date, self.create_time_1)
+        Self::convert_date_time(self.data.create_date, self.data.create_time_1)
     }
     
     pub fn get_access_date(&self) -> Date<Local> {
-        convert_date(self.access_date)
+        Self::convert_date(self.data.access_date)
     }
     
     pub fn get_modify_time(&self) -> DateTime<Local> {
-        convert_date_time(self.modify_date, self.modify_time)
+        Self::convert_date_time(self.data.modify_date, self.data.modify_time)
+    }
+    
+    fn convert_date(dos_date: u16) -> Date<Local> {
+        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
+        Local.ymd(year as i32, month as u32, day as u32)
+    }
+
+    fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
+        let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
+        Self::convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
+    }
+}
+
+impl fmt::Debug for FatDirEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.data.fmt(f)
     }
 }
 
@@ -122,11 +133,11 @@ impl FatDir {
         self.rdr.seek(SeekFrom::Start(0)).unwrap();
     }
     
-    fn read_dir_entry(&mut self) -> io::Result<FatDirEntry> {
+    fn read_dir_entry_data(&mut self) -> io::Result<FatDirEntryData> {
         let mut name = [0; 11];
         self.rdr.read(&mut name)?;
         let attrs = FatFileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes");
-        Ok(FatDirEntry {
+        Ok(FatDirEntryData {
             name,
             attrs,
             reserved_0:       self.rdr.read_u8()?,
@@ -139,7 +150,6 @@ impl FatDir {
             modify_date:      self.rdr.read_u16::<LittleEndian>()?,
             first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
             size:             self.rdr.read_u32::<LittleEndian>()?,
-            state:            self.state.clone(),
         })
     }
     
@@ -185,21 +195,24 @@ impl Iterator for FatDir {
 
     fn next(&mut self) -> Option<io::Result<FatDirEntry>> {
         loop {
-            let r = self.read_dir_entry();
-            let e = match r {
-                Ok(e) => e,
-                Err(_) => return Some(r),
+            let res = self.read_dir_entry_data();
+            let data = match res {
+                Ok(data) => data,
+                Err(err) => return Some(Err(err)),
             };
-            if e.name[0] == 0 {
+            if data.name[0] == 0 {
                 return None; // end of dir
             }
-            if e.name[0] == 0xE5 {
+            if data.name[0] == 0xE5 {
                 continue; // deleted
             }
-            if e.attrs == FatFileAttributes::LFN {
+            if data.attrs == FatFileAttributes::LFN {
                 continue; // FIXME: support LFN
             }
-            return Some(Ok(e))
+            return Some(Ok(FatDirEntry {
+                data,
+                state: self.state.clone(),
+            }));
         }
     }
 }

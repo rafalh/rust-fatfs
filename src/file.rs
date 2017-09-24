@@ -5,7 +5,7 @@ use std::io;
 
 use fs::FatSharedStateRef;
 
-#[allow(dead_code)]
+
 pub struct FatFile {
     first_cluster: u32,
     size: Option<u32>,
