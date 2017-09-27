@@ -1,6 +1,8 @@
 Rust FAT
 ========
 
+[![Travis Build Status](https://travis-ci.org/rafalh/rust-fat.svg?branch=master)](https://travis-ci.org/rafalh/rust-fat)
+
 Introduction
 ------------
 
