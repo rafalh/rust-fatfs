@@ -1,5 +1,5 @@
 use core::cell::RefCell;
-use std::cmp;
+use core::cmp;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind, SeekFrom};
 use std::io;
@@ -26,7 +26,6 @@ pub(crate) struct FatSharedState<'a> {
     pub(crate) rdr: &'a mut ReadSeek,
     pub(crate) fat_type: FatType,
     pub(crate) boot: FatBootRecord,
-    pub(crate) first_fat_sector: u32,
     pub(crate) first_data_sector: u32,
     pub(crate) root_dir_sectors: u32,
     pub(crate) table: Box<FatTable>,
@@ -122,7 +121,6 @@ impl <'a> FatFileSystem<'a> {
         let table_size = if boot.bpb.table_size_16 == 0 { boot.bpb.table_size_32 } else { boot.bpb.table_size_16 as u32 };
         let root_dir_sectors = (((boot.bpb.root_entry_count * 32) + (boot.bpb.bytes_per_sector - 1)) / boot.bpb.bytes_per_sector) as u32;
         let first_data_sector = boot.bpb.reserved_sector_count as u32 + (boot.bpb.table_count as u32 * table_size) + root_dir_sectors;
-        let first_fat_sector = boot.bpb.reserved_sector_count as u32;
         let data_sectors = total_sectors - (boot.bpb.reserved_sector_count as u32 + (boot.bpb.table_count as u32 * table_size) + root_dir_sectors as u32);
         let total_clusters = data_sectors / boot.bpb.sectors_per_cluster as u32;
         let fat_type = Self::fat_type_from_clusters(total_clusters);
@@ -142,7 +140,6 @@ impl <'a> FatFileSystem<'a> {
             fat_type,
             boot,
             first_data_sector,
-            first_fat_sector,
             root_dir_sectors,
             table,
         };
