@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::FatFile;
 use dir::{FatDirReader, FatDir};
-use table::{FatTable, FatTable12, FatTable16, FatTable32};
+use table::FatTable;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -28,7 +28,7 @@ pub(crate) struct FatSharedState<'a> {
     pub(crate) boot: FatBootRecord,
     pub(crate) first_data_sector: u32,
     pub(crate) root_dir_sectors: u32,
-    pub(crate) table: Box<FatTable>,
+    pub(crate) table: FatTable,
 }
 
 impl <'a> FatSharedState<'a> {
@@ -128,12 +128,7 @@ impl <'a> FatFileSystem<'a> {
         let fat_offset = boot.bpb.reserved_sector_count * boot.bpb.bytes_per_sector;
         rdr.seek(SeekFrom::Start(fat_offset as u64))?;
         let table_size_bytes = table_size * boot.bpb.bytes_per_sector as u32;
-        let table: Box<FatTable> = match fat_type {
-            FatType::Fat12 => Box::new(FatTable12::read(rdr, table_size_bytes as usize)?),
-            FatType::Fat16 => Box::new(FatTable16::read(rdr, table_size_bytes as usize)?),
-            FatType::Fat32 => Box::new(FatTable32::read(rdr, table_size_bytes as usize)?),
-            _ => panic!("TODO: exfat")
-        };
+        let table = FatTable::from_read(rdr, fat_type, table_size_bytes as usize)?;
         
         let state = FatSharedState {
             rdr,

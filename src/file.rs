@@ -4,6 +4,7 @@ use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
 use fs::FatSharedStateRef;
+use table::FatNextCluster;
 
 
 pub struct FatFile<'a, 'b: 'a> {
