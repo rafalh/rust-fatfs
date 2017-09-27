@@ -6,16 +6,16 @@ use std::io;
 use fs::FatSharedStateRef;
 
 
-pub struct FatFile {
+pub struct FatFile<'a, 'b: 'a> {
     first_cluster: u32,
     size: Option<u32>,
     offset: u32,
     current_cluster: Option<u32>,
-    state: FatSharedStateRef,
+    state: FatSharedStateRef<'a, 'b>,
 }
 
-impl FatFile {
-    pub(crate) fn new(first_cluster: u32, size: Option<u32>, state: FatSharedStateRef) -> FatFile {
+impl <'a, 'b> FatFile<'a, 'b> {
+    pub(crate) fn new(first_cluster: u32, size: Option<u32>, state: FatSharedStateRef<'a, 'b>) -> Self {
         FatFile {
             first_cluster, size, state,
             current_cluster: Some(first_cluster),
@@ -24,7 +24,7 @@ impl FatFile {
     }
 }
 
-impl Read for FatFile {
+impl <'a, 'b> Read for FatFile<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut buf_offset: usize = 0;
         let cluster_size = self.state.borrow().get_cluster_size();
@@ -55,7 +55,7 @@ impl Read for FatFile {
     }
 }
 
-impl Seek for FatFile {
+impl <'a, 'b> Seek for FatFile<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

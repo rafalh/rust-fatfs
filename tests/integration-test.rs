@@ -7,18 +7,19 @@ use std::str;
 
 use rfat::{FatFileSystem, FatType};
 
-const TEST_TEXT: &'static str = "Rust is cool!\n";
-const FAT12_IMG: &'static str = "resources/fat12.img";
-const FAT16_IMG: &'static str = "resources/fat16.img";
-const FAT32_IMG: &'static str = "resources/fat32.img";
+const TEST_TEXT: &str = "Rust is cool!\n";
+const FAT12_IMG: &str = "resources/fat12.img";
+const FAT16_IMG: &str = "resources/fat16.img";
+const FAT32_IMG: &str = "resources/fat32.img";
 
-fn open_fs(filename: &str) -> FatFileSystem {
+fn call_with_fs(f: &Fn(FatFileSystem) -> (), filename: &str) {
     let file = File::open(filename).unwrap();
-    let buf_rdr = BufReader::new(file);
-    FatFileSystem::new(Box::new(buf_rdr)).unwrap()
+    let mut buf_rdr = BufReader::new(file);
+    let fs = FatFileSystem::new(&mut buf_rdr).unwrap();
+    f(fs);
 }
 
-fn test_root_dir(mut fs: FatFileSystem) {
+fn test_root_dir(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let entries = root_dir.list().unwrap();
     let short_names = entries.iter().map(|e| e.short_file_name()).collect::<Vec<String>>();
@@ -33,20 +34,20 @@ fn test_root_dir(mut fs: FatFileSystem) {
 
 #[test]
 fn test_root_dir_fat12() {
-    test_root_dir(open_fs(FAT12_IMG));
+    call_with_fs(&test_root_dir, FAT12_IMG)
 }
 
 #[test]
 fn test_root_dir_fat16() {
-    test_root_dir(open_fs(FAT16_IMG));
+    call_with_fs(&test_root_dir, FAT16_IMG)
 }
 
 #[test]
 fn test_root_dir_fat32() {
-    test_root_dir(open_fs(FAT32_IMG));
+    call_with_fs(&test_root_dir, FAT32_IMG)
 }
 
-fn test_read_seek_short_file(mut fs: FatFileSystem) {
+fn test_read_seek_short_file(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let mut short_file = root_dir.open_file("short.txt").unwrap();
     let mut buf = Vec::new();
@@ -61,20 +62,20 @@ fn test_read_seek_short_file(mut fs: FatFileSystem) {
 
 #[test]
 fn test_read_seek_short_file_fat12() {
-    test_read_seek_short_file(open_fs(FAT12_IMG))
+    call_with_fs(&test_read_seek_short_file, FAT12_IMG)
 }
 
 #[test]
 fn test_read_seek_short_file_fat16() {
-    test_read_seek_short_file(open_fs(FAT16_IMG))
+    call_with_fs(&test_read_seek_short_file, FAT16_IMG)
 }
 
 #[test]
 fn test_read_seek_short_file_fat32() {
-    test_read_seek_short_file(open_fs(FAT32_IMG))
+    call_with_fs(&test_read_seek_short_file, FAT32_IMG)
 }
 
-fn test_read_long_file(mut fs: FatFileSystem) {
+fn test_read_long_file(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let mut long_file = root_dir.open_file("long.txt").unwrap();
     let mut buf = Vec::new();
@@ -90,20 +91,20 @@ fn test_read_long_file(mut fs: FatFileSystem) {
 
 #[test]
 fn test_read_long_file_fat12() {
-    test_read_long_file(open_fs(FAT12_IMG))
+    call_with_fs(&test_read_long_file, FAT12_IMG)
 }
 
 #[test]
 fn test_read_long_file_fat16() {
-    test_read_long_file(open_fs(FAT16_IMG))
+    call_with_fs(&test_read_long_file, FAT16_IMG)
 }
 
 #[test]
 fn test_read_long_file_fat32() {
-    test_read_long_file(open_fs(FAT32_IMG))
+    call_with_fs(&test_read_long_file, FAT32_IMG)
 }
 
-fn test_get_dir_by_path(mut fs: FatFileSystem) {
+fn test_get_dir_by_path(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let mut dir = root_dir.open_dir("very/long/path/").unwrap();
     let entries = dir.list().unwrap();
@@ -113,20 +114,20 @@ fn test_get_dir_by_path(mut fs: FatFileSystem) {
 
 #[test]
 fn test_get_dir_by_path_fat12() {
-    test_get_dir_by_path(open_fs(FAT12_IMG))
+    call_with_fs(&test_get_dir_by_path, FAT12_IMG)
 }
 
 #[test]
 fn test_get_dir_by_path_fat16() {
-    test_get_dir_by_path(open_fs(FAT16_IMG))
+    call_with_fs(&test_get_dir_by_path, FAT16_IMG)
 }
 
 #[test]
 fn test_get_dir_by_path_fat32() {
-    test_get_dir_by_path(open_fs(FAT32_IMG))
+    call_with_fs(&test_get_dir_by_path, FAT32_IMG)
 }
 
-fn test_get_file_by_path(mut fs: FatFileSystem) {
+fn test_get_file_by_path(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.open_file("very/long/path/test.txt").unwrap();
     let mut buf = Vec::new();
@@ -141,17 +142,17 @@ fn test_get_file_by_path(mut fs: FatFileSystem) {
 
 #[test]
 fn test_get_file_by_path_fat12() {
-    test_get_file_by_path(open_fs(FAT12_IMG))
+    call_with_fs(&test_get_file_by_path, FAT12_IMG)
 }
 
 #[test]
 fn test_get_file_by_path_fat16() {
-    test_get_file_by_path(open_fs(FAT16_IMG))
+    call_with_fs(&test_get_file_by_path, FAT16_IMG)
 }
 
 #[test]
 fn test_get_file_by_path_fat32() {
-    test_get_file_by_path(open_fs(FAT32_IMG))
+    call_with_fs(&test_get_file_by_path, FAT32_IMG)
 }
 
 fn test_volume_metadata(fs: FatFileSystem, fat_type: FatType) {
@@ -162,15 +163,15 @@ fn test_volume_metadata(fs: FatFileSystem, fat_type: FatType) {
 
 #[test]
 fn test_volume_metadata_fat12() {
-    test_volume_metadata(open_fs(FAT12_IMG), FatType::Fat12)
+    call_with_fs(&|fs| test_volume_metadata(fs, FatType::Fat12), FAT12_IMG)
 }
 
 #[test]
 fn test_volume_metadata_fat16() {
-    test_volume_metadata(open_fs(FAT16_IMG), FatType::Fat16)
+    call_with_fs(&|fs| test_volume_metadata(fs, FatType::Fat16), FAT16_IMG)
 }
 
 #[test]
 fn test_volume_metadata_fat32() {
-    test_volume_metadata(open_fs(FAT32_IMG), FatType::Fat32)
+    call_with_fs(&|fs| test_volume_metadata(fs, FatType::Fat32), FAT32_IMG)
 }

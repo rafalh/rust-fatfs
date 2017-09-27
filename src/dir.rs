@@ -7,8 +7,33 @@ use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
 
-use fs::{FatSharedStateRef, ReadSeek};
+use fs::{FatSharedStateRef, FatSlice};
 use file::FatFile;
+
+pub(crate) enum FatDirReader<'a, 'b: 'a> {
+    File(FatFile<'a, 'b>),
+    Root(FatSlice<'a, 'b>),
+}
+
+impl <'a, 'b> Read for FatDirReader<'a, 'b> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            &mut FatDirReader::File(ref mut file) => file.read(buf),
+            &mut FatDirReader::Root(ref mut raw) => raw.read(buf),
+        }
+    }
+}
+
+impl <'a, 'b> Seek for FatDirReader<'a, 'b> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match self {
+            &mut FatDirReader::File(ref mut file) => file.seek(pos),
+            &mut FatDirReader::Root(ref mut raw) => raw.seek(pos),
+        }
+    }
+}
+
+
 
 bitflags! {
     #[derive(Default)]
@@ -61,13 +86,13 @@ enum FatDirEntryData {
 }
 
 #[derive(Clone)]
-pub struct FatDirEntry {
+pub struct FatDirEntry<'a, 'b: 'a> {
     data: FatDirFileEntryData,
     lfn: Vec<u16>,
-    state: FatSharedStateRef,
+    state: FatSharedStateRef<'a, 'b>,
 }
 
-impl FatDirEntry {
+impl <'a, 'b> FatDirEntry<'a, 'b> {
     pub fn short_file_name(&self) -> String {
         let name = str::from_utf8(&self.data.name[0..8]).unwrap().trim_right();
         let ext = str::from_utf8(&self.data.name[8..11]).unwrap().trim_right();
@@ -98,19 +123,19 @@ impl FatDirEntry {
         ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32
     }
     
-    pub fn to_file(&self) -> FatFile {
+    pub fn to_file(&self) -> FatFile<'a, 'b> {
         if self.is_dir() {
             panic!("This is a directory");
         }
-        FatFile::new(self.first_cluster(), Some(self.data.size), self.state.clone())
+        FatFile::new(self.first_cluster(), Some(self.data.size), self.state)
     }
     
-    pub fn to_dir(&self) -> FatDir {
+    pub fn to_dir(&self) -> FatDir<'a, 'b> {
         if !self.is_dir() {
             panic!("This is a file");
         }
-        let file = FatFile::new(self.first_cluster(), None, self.state.clone());
-        FatDir::new(Box::new(file), self.state.clone())
+        let file = FatFile::new(self.first_cluster(), None, self.state);
+        FatDir::new(FatDirReader::File(file), self.state)
     }
     
     pub fn len(&self) -> u64 {
@@ -136,28 +161,28 @@ impl FatDirEntry {
     
     fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-        Self::convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
+        FatDirEntry::convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
     }
 }
 
-impl fmt::Debug for FatDirEntry {
+impl <'a, 'b> fmt::Debug for FatDirEntry<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }
 }
 
-pub struct FatDir {
-    rdr: Box<ReadSeek>,
-    state: FatSharedStateRef,
+pub struct FatDir<'a, 'b: 'a> {
+    rdr: FatDirReader<'a, 'b>,
+    state: FatSharedStateRef<'a, 'b>,
 }
 
-impl FatDir {
+impl <'a, 'b> FatDir<'a, 'b> {
     
-    pub(crate) fn new(rdr: Box<ReadSeek>, state: FatSharedStateRef) -> FatDir {
+    pub(crate) fn new(rdr: FatDirReader<'a, 'b>, state: FatSharedStateRef<'a, 'b>) -> FatDir<'a, 'b> {
         FatDir { rdr, state }
     }
     
-    pub fn list(&mut self) -> io::Result<Vec<FatDirEntry>> {
+    pub fn list(&mut self) -> io::Result<Vec<FatDirEntry<'a, 'b>>> {
         self.rewind();
         Ok(self.map(|x| x.unwrap()).collect())
     }
@@ -202,15 +227,15 @@ impl FatDir {
         }
     }
     
-    fn split_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
+    fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
         let mut path_split = path.trim_matches('/').splitn(2, "/");
         let comp = path_split.next().unwrap();
         let rest_opt = path_split.next();
         (comp, rest_opt)
     }
     
-    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry> {
-        let entries: Vec<FatDirEntry> = self.list()?;
+    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry<'a, 'b>> {
+        let entries: Vec<FatDirEntry<'a, 'b>> = self.list()?;
         for e in entries {
             if e.file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
@@ -219,7 +244,7 @@ impl FatDir {
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
     
-    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir> {
+    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
@@ -228,7 +253,7 @@ impl FatDir {
         }
     }
     
-    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile> {
+    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
@@ -238,10 +263,10 @@ impl FatDir {
     }
 }
 
-impl Iterator for FatDir {
-    type Item = io::Result<FatDirEntry>;
+impl <'a, 'b> Iterator for FatDir<'a, 'b> {
+    type Item = io::Result<FatDirEntry<'a, 'b>>;
 
-    fn next(&mut self) -> Option<io::Result<FatDirEntry>> {
+    fn next(&mut self) -> Option<io::Result<FatDirEntry<'a, 'b>>> {
         let mut lfn_buf = Vec::<u16>::new();
         loop {
             let res = self.read_dir_entry_data();
