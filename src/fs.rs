@@ -16,7 +16,7 @@ use table::FatTable;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FatType {
-    Fat12, Fat16, Fat32, ExFat
+    Fat12, Fat16, Fat32,
 }
 
 pub trait ReadSeek: Read + Seek {}
@@ -114,7 +114,7 @@ impl <'a> FatFileSystem<'a> {
     pub fn new<T: ReadSeek>(mut rdr: &'a mut T) -> io::Result<FatFileSystem<'a>> {
         let boot = Self::read_boot_record(&mut *rdr)?;
         if boot.boot_sig != [0x55, 0xAA] {
-            return Err(Error::new(ErrorKind::Other, "invBox::newalid signature"));
+            return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }
         
         let total_sectors = if boot.bpb.total_sectors_16 == 0 { boot.bpb.total_sectors_32 } else { boot.bpb.total_sectors_16 as u32 };
@@ -213,10 +213,8 @@ impl <'a> FatFileSystem<'a> {
             FatType::Fat12
         } else if total_clusters < 65525 {
             FatType::Fat16
-        } else if total_clusters < 268435445 {
-            FatType::Fat32
         } else {
-            FatType::ExFat
+            FatType::Fat32
         }
     }
     

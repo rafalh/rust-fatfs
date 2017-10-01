@@ -32,7 +32,6 @@ impl FatTable {
             FatType::Fat12 => FatTable::Fat12(FatTable12::from_read(rdr, size)?),
             FatType::Fat16 => FatTable::Fat16(FatTable16::from_read(rdr, size)?),
             FatType::Fat32 => FatTable::Fat32(FatTable32::from_read(rdr, size)?),
-            _ => panic!("TODO: exfat")
         };
         Ok(table)
     }
