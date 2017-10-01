@@ -2,6 +2,7 @@ use std::io::prelude::*;
 use std::io;
 use byteorder::{LittleEndian, ReadBytesExt};
 use fs::FatType;
+use core::iter;
 
 pub(crate) struct FatTableData<T> {
     table: Box<[T]>,
@@ -35,9 +36,17 @@ impl FatTable {
         };
         Ok(table)
     }
+    
+    pub fn cluster_iter(&self, cluster: u32) -> iter::Chain<iter::Once<u32>, FatClusterIterator> {
+        let iter = FatClusterIterator {
+            table: self,
+            cluster: Some(cluster),
+        };
+        iter::once(cluster).chain(iter)
+    }
 }
 
-pub(crate) trait FatNextCluster {
+trait FatNextCluster {
     fn get_next_cluster(&self, cluster: u32) -> Option<u32>;
 }
 
@@ -113,5 +122,19 @@ impl FatNextCluster for FatTable32 {
         } else {
             Some(val)
         }
+    }
+}
+
+pub(crate) struct FatClusterIterator<'a> {
+    table: &'a FatTable,
+    cluster: Option<u32>,
+}
+
+impl <'a> Iterator for FatClusterIterator<'a> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cluster = self.table.get_next_cluster(self.cluster.unwrap());
+        self.cluster
     }
 }

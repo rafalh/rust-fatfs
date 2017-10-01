@@ -4,7 +4,6 @@ use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
 use fs::FatSharedStateRef;
-use table::FatNextCluster;
 
 
 pub struct FatFile<'a, 'b: 'a> {
@@ -49,7 +48,7 @@ impl <'a, 'b> Read for FatFile<'a, 'b> {
             self.offset += read_bytes as u32;
             buf_offset += read_bytes;
             if self.offset % cluster_size == 0 {
-                self.current_cluster = state.table.get_next_cluster(current_cluster);
+                self.current_cluster = state.table.cluster_iter(current_cluster).skip(1).next();
             }
         }
         Ok(buf_offset)
@@ -70,8 +69,8 @@ impl <'a, 'b> Seek for FatFile<'a, 'b> {
         let cluster_count = (new_offset / cluster_size as i64) as usize;
         let mut new_cluster = Some(self.first_cluster);
         let state = self.state.borrow_mut();
-        for _ in 0..cluster_count {
-            new_cluster = state.table.get_next_cluster(new_cluster.unwrap());
+        if cluster_count > 0 {
+            new_cluster = state.table.cluster_iter(new_cluster.unwrap()).skip(cluster_count).next();
         }
         self.offset = new_offset as u32;
         self.current_cluster = new_cluster;

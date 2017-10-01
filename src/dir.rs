@@ -262,7 +262,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
 impl <'a, 'b> Iterator for FatDir<'a, 'b> {
     type Item = io::Result<FatDirEntry<'a, 'b>>;
 
-    fn next(&mut self) -> Option<io::Result<FatDirEntry<'a, 'b>>> {
+    fn next(&mut self) -> Option<Self::Item> {
         let mut lfn_buf = Vec::<u16>::new();
         loop {
             let res = self.read_dir_entry_data();
