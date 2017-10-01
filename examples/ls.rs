@@ -27,13 +27,13 @@ fn main() {
     let mut buf_rdr = BufReader::new(file);
     let fs = FatFileSystem::new(&mut buf_rdr).unwrap();
     let mut root_dir = fs.root_dir();
-    let mut dir = match env::args().nth(1) {
+    let dir = match env::args().nth(1) {
         None => root_dir,
         Some(ref path) if path == "." => root_dir,
         Some(ref path) => root_dir.open_dir(&path).unwrap(),
     };
-    let entries = dir.list().unwrap();
-    for e in entries {
+    for r in dir {
+        let e = r.unwrap();
         let modified = e.modified().format("%Y-%m-%d %H:%M:%S").to_string();
         println!("{:4}  {}  {}", format_file_size(e.len()), modified, e.file_name());
     }

@@ -182,11 +182,6 @@ impl <'a, 'b> FatDir<'a, 'b> {
         FatDir { rdr, state }
     }
     
-    pub fn list(&mut self) -> io::Result<Vec<FatDirEntry<'a, 'b>>> {
-        self.rewind();
-        Ok(self.map(|x| x.unwrap()).collect())
-    }
-    
     pub fn rewind(&mut self) {
         self.rdr.seek(SeekFrom::Start(0)).unwrap();
     }
@@ -235,8 +230,9 @@ impl <'a, 'b> FatDir<'a, 'b> {
     }
     
     fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry<'a, 'b>> {
-        let entries: Vec<FatDirEntry<'a, 'b>> = self.list()?;
-        for e in entries {
+        self.rewind();
+        for r in self {
+            let e = r?;
             if e.file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
             }

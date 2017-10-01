@@ -5,7 +5,7 @@ use std::io::{BufReader, SeekFrom};
 use std::io::prelude::*;
 use std::str;
 
-use rfat::{FatFileSystem, FatType};
+use rfat::{FatFileSystem, FatType, FatDirEntry};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";
@@ -20,16 +20,15 @@ fn call_with_fs(f: &Fn(FatFileSystem) -> (), filename: &str) {
 }
 
 fn test_root_dir(fs: FatFileSystem) {
-    let mut root_dir = fs.root_dir();
-    let entries = root_dir.list().unwrap();
+    let root_dir = fs.root_dir();
+    let entries = root_dir.map(|r| r.unwrap()).collect::<Vec<FatDirEntry>>();
     let short_names = entries.iter().map(|e| e.short_file_name()).collect::<Vec<String>>();
     assert_eq!(short_names, ["LONG.TXT", "SHORT.TXT", "VERY", "VERY-L~1"]);
     let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
     assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name"]);
     // Try read again
-    let entries = root_dir.list().unwrap();
-    let names2 = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
-    assert_eq!(names2, names);
+    //let names2 = root_dir.map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    //assert_eq!(names2, names);
 }
 
 #[test]
@@ -106,9 +105,8 @@ fn test_read_long_file_fat32() {
 
 fn test_get_dir_by_path(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
-    let mut dir = root_dir.open_dir("very/long/path/").unwrap();
-    let entries = dir.list().unwrap();
-    let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
+    let dir = root_dir.open_dir("very/long/path/").unwrap();
+    let names = dir.map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
 }
 
