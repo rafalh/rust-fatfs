@@ -1,5 +1,6 @@
 use core::cell::RefCell;
 use core::cmp;
+use core::iter;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind, SeekFrom};
 use std::io;
@@ -8,7 +9,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::FatFile;
 use dir::{FatDirReader, FatDir};
-use table::FatTable;
+use table::FatClusterIterator;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -21,33 +22,6 @@ pub enum FatType {
 
 pub trait ReadSeek: Read + Seek {}
 impl<T> ReadSeek for T where T: Read + Seek {}
-
-pub(crate) struct FatSharedState<'a> {
-    pub(crate) rdr: &'a mut ReadSeek,
-    pub(crate) fat_type: FatType,
-    pub(crate) boot: FatBootRecord,
-    pub(crate) first_data_sector: u32,
-    pub(crate) root_dir_sectors: u32,
-    pub(crate) table: FatTable,
-}
-
-impl <'a> FatSharedState<'a> {
-    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
-        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
-    }
-    
-    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
-        ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
-    }
-    
-    pub(crate) fn get_cluster_size(&self) -> u32 {
-        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
-    }
-    
-    pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
-        self.offset_from_sector(self.sector_from_cluster(cluser))
-    }
-}
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
@@ -102,11 +76,14 @@ impl Default for FatBootRecord {
     }
 }
 
-pub(crate) type FatSharedStateCell<'a> = RefCell<FatSharedState<'a>>;
-pub(crate) type FatSharedStateRef<'a, 'b: 'a> = &'a RefCell<FatSharedState<'b>>;
+pub(crate) type FatFileSystemRef<'a, 'b: 'a> = &'a FatFileSystem<'b>;
 
 pub struct FatFileSystem<'a> {
-    pub(crate) state: FatSharedStateCell<'a>,
+    pub(crate) rdr: RefCell<&'a mut ReadSeek>,
+    pub(crate) fat_type: FatType,
+    pub(crate) boot: FatBootRecord,
+    pub(crate) first_data_sector: u32,
+    pub(crate) root_dir_sectors: u32,
 }
 
 impl <'a> FatFileSystem<'a> {
@@ -125,47 +102,36 @@ impl <'a> FatFileSystem<'a> {
         let total_clusters = data_sectors / boot.bpb.sectors_per_cluster as u32;
         let fat_type = Self::fat_type_from_clusters(total_clusters);
         
-        let fat_offset = boot.bpb.reserved_sectors * boot.bpb.bytes_per_sector;
-        rdr.seek(SeekFrom::Start(fat_offset as u64))?;
-        let fat_size = sectors_per_fat * boot.bpb.bytes_per_sector as u32;
-        let table = FatTable::from_read(rdr, fat_type, fat_size as usize)?;
-        
-        let state = FatSharedState {
-            rdr,
+        Ok(FatFileSystem {
+            rdr: RefCell::new(rdr),
             fat_type,
             boot,
             first_data_sector,
             root_dir_sectors,
-            table,
-        };
-        
-        Ok(FatFileSystem {
-            state: RefCell::new(state),
         })
     }
     
     pub fn fat_type(&self) -> FatType {
-        self.state.borrow().fat_type
+        self.fat_type
     }
     
     pub fn volume_id(&self) -> u32 {
-        self.state.borrow().boot.bpb.volume_id
+        self.boot.bpb.volume_id
     }
     
     pub fn volume_label(&self) -> String {
-        str::from_utf8(&self.state.borrow().boot.bpb.volume_label).unwrap().trim_right().to_string()
+        str::from_utf8(&self.boot.bpb.volume_label).unwrap().trim_right().to_string()
     }
     
     pub fn root_dir<'b>(&'b self) -> FatDir<'b, 'a> {
         let root_rdr = {
-            let state = self.state.borrow();
-            match state.fat_type {
+            match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => FatDirReader::Root(FatSlice::from_sectors(
-                   state.first_data_sector - state.root_dir_sectors, state.root_dir_sectors, &self.state)),
-                _ => FatDirReader::File(FatFile::new(state.boot.bpb.root_dir_first_cluster, None, &self.state)),
+                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, self)),
+                _ => FatDirReader::File(FatFile::new(self.boot.bpb.root_dir_first_cluster, None, self)),
             }
         };
-        FatDir::new(root_rdr, &self.state)
+        FatDir::new(root_rdr, self)
     }
     
     fn read_bpb(rdr: &mut Read) -> io::Result<FatBiosParameterBlock> {
@@ -232,23 +198,50 @@ impl <'a> FatFileSystem<'a> {
         rdr.read(&mut boot.boot_sig)?;
         Ok(boot)
     }
+    
+    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
+        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
+    }
+    
+    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
+        ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
+    }
+    
+    pub(crate) fn get_cluster_size(&self) -> u32 {
+        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
+    }
+    
+    pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
+        self.offset_from_sector(self.sector_from_cluster(cluser))
+    }
+    
+    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> iter::Chain<iter::Once<u32>, FatClusterIterator<'b, 'a>> {
+        let bytes_per_sector = self.boot.bpb.bytes_per_sector as u64;
+        let fat_offset = self.boot.bpb.reserved_sectors as u64 * bytes_per_sector;
+        let sectors_per_fat =
+            if self.boot.bpb.sectors_per_fat_16 == 0 { self.boot.bpb.sectors_per_fat_32 }
+            else { self.boot.bpb.sectors_per_fat_16 as u32 };
+        let fat_size = sectors_per_fat as u64 * bytes_per_sector;
+        let fat_slice = FatSlice::new(fat_offset, fat_size, self);
+        FatClusterIterator::new(fat_slice, self.fat_type, cluster)
+    }
 }
 
 pub(crate) struct FatSlice<'a, 'b: 'a> {
     begin: u64,
     size: u64,
     offset: u64,
-    state: FatSharedStateRef<'a, 'b>,
+    fs: &'a FatFileSystem<'b>,
 }
 
 impl <'a, 'b> FatSlice<'a, 'b> {
-    pub(crate) fn new(begin: u64, size: u64, state: FatSharedStateRef<'a, 'b>) -> Self {
-        FatSlice { begin, size, state, offset: 0 }
+    pub(crate) fn new(begin: u64, size: u64, fs: FatFileSystemRef<'a, 'b>) -> Self {
+        FatSlice { begin, size, fs, offset: 0 }
     }
     
-    pub(crate) fn from_sectors(first_sector: u32, sectors_count: u32, state: FatSharedStateRef<'a, 'b>) -> Self {
-        let bytes_per_sector = state.borrow().boot.bpb.bytes_per_sector as u64;
-        Self::new(first_sector as u64 * bytes_per_sector, sectors_count as u64 * bytes_per_sector, state)
+    pub(crate) fn from_sectors(first_sector: u32, sectors_count: u32, fs: FatFileSystemRef<'a, 'b>) -> Self {
+        let bytes_per_sector = fs.boot.bpb.bytes_per_sector as u64;
+        Self::new(first_sector as u64 * bytes_per_sector, sectors_count as u64 * bytes_per_sector, fs)
     }
 }
 
@@ -256,9 +249,9 @@ impl <'a, 'b> Read for FatSlice<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
-        let mut state = self.state.borrow_mut();
-        state.rdr.seek(SeekFrom::Start(offset))?;
-        let size = state.rdr.read(&mut buf[..read_size])?;
+        let mut rdr = self.fs.rdr.borrow_mut();
+        rdr.seek(SeekFrom::Start(offset))?;
+        let size = rdr.read(&mut buf[..read_size])?;
         self.offset += size as u64;
         Ok(size)
     }

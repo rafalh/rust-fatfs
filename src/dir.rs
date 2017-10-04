@@ -7,7 +7,7 @@ use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
 
-use fs::{FatSharedStateRef, FatSlice};
+use fs::{FatFileSystemRef, FatSlice};
 use file::FatFile;
 
 pub(crate) enum FatDirReader<'a, 'b: 'a> {
@@ -32,8 +32,6 @@ impl <'a, 'b> Seek for FatDirReader<'a, 'b> {
         }
     }
 }
-
-
 
 bitflags! {
     #[derive(Default)]
@@ -89,7 +87,7 @@ enum FatDirEntryData {
 pub struct FatDirEntry<'a, 'b: 'a> {
     data: FatDirFileEntryData,
     lfn: Vec<u16>,
-    state: FatSharedStateRef<'a, 'b>,
+    fs: FatFileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> FatDirEntry<'a, 'b> {
@@ -127,15 +125,15 @@ impl <'a, 'b> FatDirEntry<'a, 'b> {
         if self.is_dir() {
             panic!("This is a directory");
         }
-        FatFile::new(self.first_cluster(), Some(self.data.size), self.state)
+        FatFile::new(self.first_cluster(), Some(self.data.size), self.fs)
     }
     
     pub fn to_dir(&self) -> FatDir<'a, 'b> {
         if !self.is_dir() {
             panic!("This is a file");
         }
-        let file = FatFile::new(self.first_cluster(), None, self.state);
-        FatDir::new(FatDirReader::File(file), self.state)
+        let file = FatFile::new(self.first_cluster(), None, self.fs);
+        FatDir::new(FatDirReader::File(file), self.fs)
     }
     
     pub fn len(&self) -> u64 {
@@ -173,13 +171,13 @@ impl <'a, 'b> fmt::Debug for FatDirEntry<'a, 'b> {
 
 pub struct FatDir<'a, 'b: 'a> {
     rdr: FatDirReader<'a, 'b>,
-    state: FatSharedStateRef<'a, 'b>,
+    fs: FatFileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> FatDir<'a, 'b> {
     
-    pub(crate) fn new(rdr: FatDirReader<'a, 'b>, state: FatSharedStateRef<'a, 'b>) -> FatDir<'a, 'b> {
-        FatDir { rdr, state }
+    pub(crate) fn new(rdr: FatDirReader<'a, 'b>, fs: FatFileSystemRef<'a, 'b>) -> FatDir<'a, 'b> {
+        FatDir { rdr, fs }
     }
     
     pub fn rewind(&mut self) {
@@ -296,7 +294,7 @@ impl <'a, 'b> Iterator for FatDir<'a, 'b> {
                     return Some(Ok(FatDirEntry {
                         data,
                         lfn: lfn_buf,
-                        state: self.state.clone(),
+                        fs: self.fs,
                     }));
                 },
                 FatDirEntryData::Lfn(data) => {
