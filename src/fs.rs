@@ -4,7 +4,6 @@ use core::iter;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind, SeekFrom};
 use std::io;
-use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::FatFile;
@@ -120,7 +119,7 @@ impl <'a> FatFileSystem<'a> {
     }
     
     pub fn volume_label(&self) -> String {
-        str::from_utf8(&self.boot.bpb.volume_label).unwrap().trim_right().to_string()
+        String::from_utf8_lossy(&self.boot.bpb.volume_label).trim_right().to_string()
     }
     
     pub fn root_dir<'b>(&'b self) -> FatDir<'b, 'a> {

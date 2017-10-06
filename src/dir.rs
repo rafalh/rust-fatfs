@@ -3,7 +3,6 @@ use std::fmt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{Cursor, ErrorKind, SeekFrom};
-use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 use chrono::{DateTime, Date, TimeZone, Local};
 
@@ -92,14 +91,20 @@ pub struct FatDirEntry<'a, 'b: 'a> {
 
 impl <'a, 'b> FatDirEntry<'a, 'b> {
     pub fn short_file_name(&self) -> String {
-        let name = str::from_utf8(&self.data.name[0..8]).unwrap().trim_right();
-        let ext = str::from_utf8(&self.data.name[8..11]).unwrap().trim_right();
-        if ext == "" { name.to_string() } else { format!("{}.{}", name, ext) }
+        let name_str = String::from_utf8_lossy(&self.data.name[0..8]);
+        let ext_str = String::from_utf8_lossy(&self.data.name[8..11]);
+        let name_trimmed = name_str.trim_right();
+        let ext_trimmed = ext_str.trim_right();
+        if ext_trimmed.is_empty() {
+            name_trimmed.to_string()
+        } else {
+            format!("{}.{}", name_trimmed, ext_trimmed)
+        }
     }
     
     pub fn file_name(&self) -> String {
         if self.lfn.len() > 0 {
-            String::from_utf16(&self.lfn).unwrap()
+            String::from_utf16_lossy(&self.lfn)
         } else {
             self.short_file_name()
         }
