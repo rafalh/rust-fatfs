@@ -2,11 +2,13 @@
 #![crate_name = "rfat"]
 
 extern crate byteorder;
-extern crate chrono;
 extern crate core;
 
 #[macro_use]
 extern crate bitflags;
+
+#[cfg(feature = "chrono")]
+extern crate chrono;
 
 mod fs;
 mod dir;

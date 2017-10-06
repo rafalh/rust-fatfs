@@ -4,6 +4,8 @@ use std::io::prelude::*;
 use std::io;
 use std::io::{Cursor, ErrorKind, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
+
+#[cfg(feature = "chrono")]
 use chrono::{DateTime, Date, TimeZone, Local};
 
 use fs::{FatFileSystemRef, FatSlice};
@@ -90,6 +92,61 @@ pub struct FatDirEntry<'a, 'b: 'a> {
     fs: FatFileSystemRef<'a, 'b>,
 }
 
+pub struct DosDate {
+    pub year: u16,
+    pub month: u16,
+    pub day: u16,
+}
+
+pub struct DosTime {
+    pub hour: u16,
+    pub min: u16,
+    pub sec: u16,
+}
+
+pub struct DosDateTime {
+    pub date: DosDate,
+    pub time: DosTime,
+}
+
+impl DosDate {
+    pub(crate) fn from_word(dos_date: u16) -> Self {
+        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
+        DosDate { year, month, day }
+    }
+}
+
+impl DosTime {
+    pub(crate) fn from_word(dos_time: u16) -> Self {
+        let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
+        DosTime { hour, min, sec }
+    }
+}
+
+impl DosDateTime {
+    pub(crate) fn from_words(dos_date: u16, dos_time: u16) -> Self {
+        DosDateTime {
+            date: DosDate::from_word(dos_date),
+            time: DosTime::from_word(dos_time),
+        }
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<DosDate> for Date<Local> {
+    fn from(date: DosDate) -> Self {
+        Local.ymd(date.year as i32, date.month as u32, date.day as u32)
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<DosDateTime> for DateTime<Local> {
+    fn from(date_time: DosDateTime) -> Self {
+        Date::<Local>::from(date_time.date)
+            .and_hms(date_time.time.hour as u32, date_time.time.min as u32, date_time.time.sec as u32)
+    }
+}
+
 impl <'a, 'b> FatDirEntry<'a, 'b> {
     pub fn short_file_name(&self) -> String {
         let name_str = String::from_utf8_lossy(&self.data.name[0..8]);
@@ -146,26 +203,16 @@ impl <'a, 'b> FatDirEntry<'a, 'b> {
         self.data.size as u64
     }
     
-    pub fn created(&self) -> DateTime<Local> {
-        Self::convert_date_time(self.data.create_date, self.data.create_time_1)
+    pub fn created(&self) -> DosDateTime {
+        DosDateTime::from_words(self.data.create_date, self.data.create_time_1)
     }
     
-    pub fn accessed(&self) -> Date<Local> {
-        Self::convert_date(self.data.access_date)
+    pub fn accessed(&self) -> DosDate {
+        DosDate::from_word(self.data.access_date)
     }
     
-    pub fn modified(&self) -> DateTime<Local> {
-        Self::convert_date_time(self.data.modify_date, self.data.modify_time)
-    }
-    
-    fn convert_date(dos_date: u16) -> Date<Local> {
-        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        Local.ymd(year as i32, month as u32, day as u32)
-    }
-    
-    fn convert_date_time(dos_date: u16, dos_time: u16) -> DateTime<Local> {
-        let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-        FatDirEntry::convert_date(dos_date).and_hms(hour as u32, min as u32, sec as u32)
+    pub fn modified(&self) -> DosDateTime {
+        DosDateTime::from_words(self.data.modify_date, self.data.modify_time)
     }
 }
 

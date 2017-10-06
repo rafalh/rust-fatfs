@@ -1,9 +1,11 @@
 extern crate rfat;
+extern crate chrono;
 
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::str;
+use chrono::{DateTime, Local};
 
 use rfat::FatFileSystem;
 
@@ -34,7 +36,7 @@ fn main() {
     };
     for r in dir.iter() {
         let e = r.unwrap();
-        let modified = e.modified().format("%Y-%m-%d %H:%M:%S").to_string();
+        let modified = DateTime::<Local>::from(e.modified()).format("%Y-%m-%d %H:%M:%S").to_string();
         println!("{:4}  {}  {}", format_file_size(e.len()), modified, e.file_name());
     }
 }
