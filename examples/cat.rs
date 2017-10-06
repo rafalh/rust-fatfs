@@ -1,4 +1,4 @@
-extern crate rfat;
+extern crate fatfs;
 
 use std::env;
 use std::fs::File;
@@ -6,7 +6,7 @@ use std::io::BufReader;
 use std::io::prelude::*;
 use std::str;
 
-use rfat::FatFileSystem;
+use fatfs::FatFileSystem;
 
 fn main() {
     let file = File::open("resources/fat32.img").unwrap();

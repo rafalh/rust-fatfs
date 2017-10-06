@@ -1,11 +1,11 @@
-extern crate rfat;
+extern crate fatfs;
 
 use std::fs::File;
 use std::io::{BufReader, SeekFrom};
 use std::io::prelude::*;
 use std::str;
 
-use rfat::{FatFileSystem, FatType, FatDirEntry};
+use fatfs::{FatFileSystem, FatType, FatDirEntry};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";

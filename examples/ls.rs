@@ -1,4 +1,4 @@
-extern crate rfat;
+extern crate fatfs;
 extern crate chrono;
 
 use std::env;
@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::str;
 use chrono::{DateTime, Local};
 
-use rfat::FatFileSystem;
+use fatfs::FatFileSystem;
 
 fn format_file_size(size: u64) -> String {
     const KB: u64 = 1024;

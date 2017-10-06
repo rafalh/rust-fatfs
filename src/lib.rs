@@ -1,5 +1,5 @@
 #![crate_type = "lib"]
-#![crate_name = "rfat"]
+#![crate_name = "fatfs"]
 
 extern crate byteorder;
 extern crate core;
