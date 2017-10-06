@@ -21,14 +21,14 @@ fn call_with_fs(f: &Fn(FatFileSystem) -> (), filename: &str) {
 
 fn test_root_dir(fs: FatFileSystem) {
     let root_dir = fs.root_dir();
-    let entries = root_dir.map(|r| r.unwrap()).collect::<Vec<FatDirEntry>>();
+    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<FatDirEntry>>();
     let short_names = entries.iter().map(|e| e.short_file_name()).collect::<Vec<String>>();
     assert_eq!(short_names, ["LONG.TXT", "SHORT.TXT", "VERY", "VERY-L~1"]);
     let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
     assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name"]);
     // Try read again
-    //let names2 = root_dir.map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
-    //assert_eq!(names2, names);
+    let names2 = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names2, names);
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn test_read_long_file_fat32() {
 fn test_get_dir_by_path(fs: FatFileSystem) {
     let mut root_dir = fs.root_dir();
     let dir = root_dir.open_dir("very/long/path/").unwrap();
-    let names = dir.map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    let names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
 }
 

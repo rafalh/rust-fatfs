@@ -5,7 +5,7 @@ use std::io;
 
 use fs::FatFileSystemRef;
 
-
+#[derive(Clone)]
 pub struct FatFile<'a, 'b: 'a> {
     first_cluster: u32,
     size: Option<u32>,

@@ -32,7 +32,7 @@ fn main() {
         Some(ref path) if path == "." => root_dir,
         Some(ref path) => root_dir.open_dir(&path).unwrap(),
     };
-    for r in dir {
+    for r in dir.iter() {
         let e = r.unwrap();
         let modified = e.modified().format("%Y-%m-%d %H:%M:%S").to_string();
         println!("{:4}  {}  {}", format_file_size(e.len()), modified, e.file_name());

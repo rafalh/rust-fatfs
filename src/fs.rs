@@ -226,6 +226,7 @@ impl <'a> FatFileSystem<'a> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct FatSlice<'a, 'b: 'a> {
     begin: u64,
     size: u64,

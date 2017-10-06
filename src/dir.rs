@@ -9,6 +9,7 @@ use chrono::{DateTime, Date, TimeZone, Local};
 use fs::{FatFileSystemRef, FatSlice};
 use file::FatFile;
 
+#[derive(Clone)]
 pub(crate) enum FatDirReader<'a, 'b: 'a> {
     File(FatFile<'a, 'b>),
     Root(FatSlice<'a, 'b>),
@@ -174,6 +175,7 @@ impl <'a, 'b> fmt::Debug for FatDirEntry<'a, 'b> {
     }
 }
 
+#[derive(Clone)]
 pub struct FatDir<'a, 'b: 'a> {
     rdr: FatDirReader<'a, 'b>,
     fs: FatFileSystemRef<'a, 'b>,
@@ -185,10 +187,56 @@ impl <'a, 'b> FatDir<'a, 'b> {
         FatDir { rdr, fs }
     }
     
-    pub fn rewind(&mut self) {
-        self.rdr.seek(SeekFrom::Start(0)).unwrap();
+    pub fn iter(&self) -> FatDirIter<'a, 'b> {
+        FatDirIter {
+            rdr: self.rdr.clone(),
+            fs: self.fs.clone(),
+        }
     }
     
+    fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
+        let mut path_split = path.trim_matches('/').splitn(2, "/");
+        let comp = path_split.next().unwrap();
+        let rest_opt = path_split.next();
+        (comp, rest_opt)
+    }
+    
+    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry<'a, 'b>> {
+        for r in self.iter() {
+            let e = r?;
+            if e.file_name().eq_ignore_ascii_case(name) {
+                return Ok(e);
+            }
+        }
+        Err(io::Error::new(ErrorKind::NotFound, "file not found"))
+    }
+    
+    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir<'a, 'b>> {
+        let (name, rest_opt) = Self::split_path(path);
+        let e = self.find_entry(name)?;
+        match rest_opt {
+            Some(rest) => e.to_dir().open_dir(rest),
+            None => Ok(e.to_dir())
+        }
+    }
+    
+    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile<'a, 'b>> {
+        let (name, rest_opt) = Self::split_path(path);
+        let e = self.find_entry(name)?;
+        match rest_opt {
+            Some(rest) => e.to_dir().open_file(rest),
+            None => Ok(e.to_file())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FatDirIter<'a, 'b: 'a> {
+    rdr: FatDirReader<'a, 'b>,
+    fs: FatFileSystemRef<'a, 'b>,
+}
+
+impl <'a, 'b> FatDirIter<'a, 'b> {
     fn read_dir_entry_data(&mut self) -> io::Result<FatDirEntryData> {
         let mut name = [0; 11];
         self.rdr.read(&mut name)?;
@@ -224,45 +272,9 @@ impl <'a, 'b> FatDir<'a, 'b> {
             Ok(FatDirEntryData::File(data))
         }
     }
-    
-    fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
-        let mut path_split = path.trim_matches('/').splitn(2, "/");
-        let comp = path_split.next().unwrap();
-        let rest_opt = path_split.next();
-        (comp, rest_opt)
-    }
-    
-    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry<'a, 'b>> {
-        self.rewind();
-        for r in self {
-            let e = r?;
-            if e.file_name().eq_ignore_ascii_case(name) {
-                return Ok(e);
-            }
-        }
-        Err(io::Error::new(ErrorKind::NotFound, "file not found"))
-    }
-    
-    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
-        let e = self.find_entry(name)?;
-        match rest_opt {
-            Some(rest) => e.to_dir().open_dir(rest),
-            None => Ok(e.to_dir())
-        }
-    }
-    
-    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
-        let e = self.find_entry(name)?;
-        match rest_opt {
-            Some(rest) => e.to_dir().open_file(rest),
-            None => Ok(e.to_file())
-        }
-    }
 }
 
-impl <'a, 'b> Iterator for FatDir<'a, 'b> {
+impl <'a, 'b> Iterator for FatDirIter<'a, 'b> {
     type Item = io::Result<FatDirEntry<'a, 'b>>;
 
     fn next(&mut self) -> Option<Self::Item> {
