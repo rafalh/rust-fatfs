@@ -238,6 +238,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
         FatDirIter {
             rdr: self.rdr.clone(),
             fs: self.fs.clone(),
+            err: false,
         }
     }
     
@@ -281,6 +282,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
 pub struct FatDirIter<'a, 'b: 'a> {
     rdr: FatDirReader<'a, 'b>,
     fs: FatFileSystemRef<'a, 'b>,
+    err: bool,
 }
 
 impl <'a, 'b> FatDirIter<'a, 'b> {
@@ -325,12 +327,18 @@ impl <'a, 'b> Iterator for FatDirIter<'a, 'b> {
     type Item = io::Result<FatDirEntry<'a, 'b>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.err {
+            return None;
+        }
         let mut lfn_buf = Vec::<u16>::new();
         loop {
             let res = self.read_dir_entry_data();
             let data = match res {
                 Ok(data) => data,
-                Err(err) => return Some(Err(err)),
+                Err(err) => {
+                    self.err = true;
+                    return Some(Err(err));
+                },
             };
             match data {
                 FatDirEntryData::File(data) => {
