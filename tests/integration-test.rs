@@ -112,6 +112,15 @@ fn test_get_dir_by_path(fs: FileSystem) {
     let dir = root_dir.open_dir("very/long/path/").unwrap();
     let names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
+    
+    let dir2 = root_dir.open_dir("very/long/path/././.").unwrap();
+    let names2 = dir2.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names2, [".", "..", "test.txt"]);
+    
+    let root_dir2 = root_dir.open_dir("very/long/path/../../..").unwrap();
+    let root_names = root_dir2.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    let root_names2 = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(root_names, root_names2);
 }
 
 #[test]
