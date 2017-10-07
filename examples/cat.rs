@@ -6,12 +6,12 @@ use std::io::BufReader;
 use std::io::prelude::*;
 use std::str;
 
-use fatfs::FatFileSystem;
+use fatfs::FileSystem;
 
 fn main() {
     let file = File::open("resources/fat32.img").unwrap();
     let mut buf_rdr = BufReader::new(file);
-    let fs = FatFileSystem::new(&mut buf_rdr).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr).unwrap();
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.open_file(&env::args().nth(1).unwrap()).unwrap();
     let mut buf = vec![];

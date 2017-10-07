@@ -3,20 +3,20 @@ use std::io::prelude::*;
 use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
-use fs::FatFileSystemRef;
+use fs::FileSystemRef;
 
 #[derive(Clone)]
-pub struct FatFile<'a, 'b: 'a> {
+pub struct File<'a, 'b: 'a> {
     first_cluster: Option<u32>,
     size: Option<u32>,
     offset: u32,
     current_cluster: Option<u32>,
-    fs: FatFileSystemRef<'a, 'b>,
+    fs: FileSystemRef<'a, 'b>,
 }
 
-impl <'a, 'b> FatFile<'a, 'b> {
-    pub(crate) fn new(first_cluster: Option<u32>, size: Option<u32>, fs: FatFileSystemRef<'a, 'b>) -> Self {
-        FatFile {
+impl <'a, 'b> File<'a, 'b> {
+    pub(crate) fn new(first_cluster: Option<u32>, size: Option<u32>, fs: FileSystemRef<'a, 'b>) -> Self {
+        File {
             first_cluster, size, fs,
             current_cluster: first_cluster,
             offset: 0,
@@ -24,7 +24,7 @@ impl <'a, 'b> FatFile<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Read for FatFile<'a, 'b> {
+impl <'a, 'b> Read for File<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut buf_offset: usize = 0;
         let cluster_size = self.fs.get_cluster_size();
@@ -62,7 +62,7 @@ impl <'a, 'b> Read for FatFile<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Seek for FatFile<'a, 'b> {
+impl <'a, 'b> Seek for File<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

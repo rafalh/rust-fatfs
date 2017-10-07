@@ -6,38 +6,40 @@ use std::io::{Cursor, ErrorKind, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 #[cfg(feature = "chrono")]
-use chrono::{DateTime, Date, TimeZone, Local};
+use chrono::{TimeZone, Local};
+#[cfg(feature = "chrono")]
+use chrono;
 
-use fs::{FatFileSystemRef, FatSlice};
-use file::FatFile;
+use fs::{FileSystemRef, DiskSlice};
+use file::File;
 
 #[derive(Clone)]
-pub(crate) enum FatDirReader<'a, 'b: 'a> {
-    File(FatFile<'a, 'b>),
-    Root(FatSlice<'a, 'b>),
+pub(crate) enum DirReader<'a, 'b: 'a> {
+    File(File<'a, 'b>),
+    Root(DiskSlice<'a, 'b>),
 }
 
-impl <'a, 'b> Read for FatDirReader<'a, 'b> {
+impl <'a, 'b> Read for DirReader<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            &mut FatDirReader::File(ref mut file) => file.read(buf),
-            &mut FatDirReader::Root(ref mut raw) => raw.read(buf),
+            &mut DirReader::File(ref mut file) => file.read(buf),
+            &mut DirReader::Root(ref mut raw) => raw.read(buf),
         }
     }
 }
 
-impl <'a, 'b> Seek for FatDirReader<'a, 'b> {
+impl <'a, 'b> Seek for DirReader<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
-            &mut FatDirReader::File(ref mut file) => file.seek(pos),
-            &mut FatDirReader::Root(ref mut raw) => raw.seek(pos),
+            &mut DirReader::File(ref mut file) => file.seek(pos),
+            &mut DirReader::Root(ref mut raw) => raw.seek(pos),
         }
     }
 }
 
 bitflags! {
     #[derive(Default)]
-    pub struct FatFileAttributes: u8 {
+    pub struct FileAttributes: u8 {
         const READ_ONLY  = 0x01;
         const HIDDEN     = 0x02;
         const SYSTEM     = 0x04;
@@ -51,9 +53,9 @@ bitflags! {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
-struct FatDirFileEntryData {
+struct DirFileEntryData {
     name: [u8; 11],
-    attrs: FatFileAttributes,
+    attrs: FileAttributes,
     reserved_0: u8,
     create_time_0: u8,
     create_time_1: u16,
@@ -68,10 +70,10 @@ struct FatDirFileEntryData {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
-struct FatDirLfnEntryData {
+struct DirLfnEntryData {
     order: u8,
     name_0: [u16; 5],
-    attrs: FatFileAttributes,
+    attrs: FileAttributes,
     entry_type: u8,
     checksum: u8,
     name_1: [u16; 6],
@@ -80,74 +82,77 @@ struct FatDirLfnEntryData {
 }
 
 #[derive(Clone, Debug)]
-enum FatDirEntryData {
-    File(FatDirFileEntryData),
-    Lfn(FatDirLfnEntryData),
+enum DirEntryData {
+    File(DirFileEntryData),
+    Lfn(DirLfnEntryData),
 }
 
 #[derive(Clone)]
-pub struct FatDirEntry<'a, 'b: 'a> {
-    data: FatDirFileEntryData,
+pub struct DirEntry<'a, 'b: 'a> {
+    data: DirFileEntryData,
     lfn: Vec<u16>,
-    fs: FatFileSystemRef<'a, 'b>,
+    fs: FileSystemRef<'a, 'b>,
 }
 
-pub struct DosDate {
+#[derive(Clone, Copy, Debug)]
+pub struct Date {
     pub year: u16,
     pub month: u16,
     pub day: u16,
 }
 
-pub struct DosTime {
+impl Date {
+    pub(crate) fn from_word(dos_date: u16) -> Self {
+        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
+        Date { year, month, day }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Time {
     pub hour: u16,
     pub min: u16,
     pub sec: u16,
 }
 
-pub struct DosDateTime {
-    pub date: DosDate,
-    pub time: DosTime,
-}
-
-impl DosDate {
-    pub(crate) fn from_word(dos_date: u16) -> Self {
-        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        DosDate { year, month, day }
-    }
-}
-
-impl DosTime {
+impl Time {
     pub(crate) fn from_word(dos_time: u16) -> Self {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-        DosTime { hour, min, sec }
+        Time { hour, min, sec }
     }
 }
 
-impl DosDateTime {
+#[derive(Clone, Copy, Debug)]
+pub struct DateTime {
+    pub date: Date,
+    pub time: Time,
+}
+
+impl DateTime {
     pub(crate) fn from_words(dos_date: u16, dos_time: u16) -> Self {
-        DosDateTime {
-            date: DosDate::from_word(dos_date),
-            time: DosTime::from_word(dos_time),
+        DateTime {
+            date: Date::from_word(dos_date),
+            time: Time::from_word(dos_time),
         }
     }
 }
 
 #[cfg(feature = "chrono")]
-impl From<DosDate> for Date<Local> {
-    fn from(date: DosDate) -> Self {
+impl From<Date> for chrono::Date<Local> {
+    fn from(date: Date) -> Self {
         Local.ymd(date.year as i32, date.month as u32, date.day as u32)
     }
 }
 
 #[cfg(feature = "chrono")]
-impl From<DosDateTime> for DateTime<Local> {
-    fn from(date_time: DosDateTime) -> Self {
-        Date::<Local>::from(date_time.date)
+impl From<DateTime> for chrono::DateTime<Local> {
+    fn from(date_time: DateTime) -> Self {
+        chrono::Date::<Local>::from(date_time.date)
             .and_hms(date_time.time.hour as u32, date_time.time.min as u32, date_time.time.sec as u32)
     }
 }
 
-impl <'a, 'b> FatDirEntry<'a, 'b> {
+impl <'a, 'b> DirEntry<'a, 'b> {
     pub fn short_file_name(&self) -> String {
         let name_str = String::from_utf8_lossy(&self.data.name[0..8]);
         let ext_str = String::from_utf8_lossy(&self.data.name[8..11]);
@@ -168,12 +173,12 @@ impl <'a, 'b> FatDirEntry<'a, 'b> {
         }
     }
     
-    pub fn attributes(&self) -> FatFileAttributes {
+    pub fn attributes(&self) -> FileAttributes {
         self.data.attrs
     }
     
     pub fn is_dir(&self) -> bool {
-        self.data.attrs.contains(FatFileAttributes::DIRECTORY)
+        self.data.attrs.contains(FileAttributes::DIRECTORY)
     }
     
     pub fn is_file(&self) -> bool {
@@ -185,58 +190,58 @@ impl <'a, 'b> FatDirEntry<'a, 'b> {
         if n == 0 { None } else { Some(n) }
     }
     
-    pub fn to_file(&self) -> FatFile<'a, 'b> {
+    pub fn to_file(&self) -> File<'a, 'b> {
         if self.is_dir() {
             panic!("This is a directory");
         }
-        FatFile::new(self.first_cluster(), Some(self.data.size), self.fs)
+        File::new(self.first_cluster(), Some(self.data.size), self.fs)
     }
     
-    pub fn to_dir(&self) -> FatDir<'a, 'b> {
+    pub fn to_dir(&self) -> Dir<'a, 'b> {
         if !self.is_dir() {
             panic!("This is a file");
         }
-        let file = FatFile::new(self.first_cluster(), None, self.fs);
-        FatDir::new(FatDirReader::File(file), self.fs)
+        let file = File::new(self.first_cluster(), None, self.fs);
+        Dir::new(DirReader::File(file), self.fs)
     }
     
     pub fn len(&self) -> u64 {
         self.data.size as u64
     }
     
-    pub fn created(&self) -> DosDateTime {
-        DosDateTime::from_words(self.data.create_date, self.data.create_time_1)
+    pub fn created(&self) -> DateTime {
+        DateTime::from_words(self.data.create_date, self.data.create_time_1)
     }
     
-    pub fn accessed(&self) -> DosDate {
-        DosDate::from_word(self.data.access_date)
+    pub fn accessed(&self) -> Date {
+        Date::from_word(self.data.access_date)
     }
     
-    pub fn modified(&self) -> DosDateTime {
-        DosDateTime::from_words(self.data.modify_date, self.data.modify_time)
+    pub fn modified(&self) -> DateTime {
+        DateTime::from_words(self.data.modify_date, self.data.modify_time)
     }
 }
 
-impl <'a, 'b> fmt::Debug for FatDirEntry<'a, 'b> {
+impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }
 }
 
 #[derive(Clone)]
-pub struct FatDir<'a, 'b: 'a> {
-    rdr: FatDirReader<'a, 'b>,
-    fs: FatFileSystemRef<'a, 'b>,
+pub struct Dir<'a, 'b: 'a> {
+    rdr: DirReader<'a, 'b>,
+    fs: FileSystemRef<'a, 'b>,
 }
 
-impl <'a, 'b> FatDir<'a, 'b> {
+impl <'a, 'b> Dir<'a, 'b> {
     
-    pub(crate) fn new(rdr: FatDirReader<'a, 'b>, fs: FatFileSystemRef<'a, 'b>) -> FatDir<'a, 'b> {
-        FatDir { rdr, fs }
+    pub(crate) fn new(rdr: DirReader<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
+        Dir { rdr, fs }
     }
     
-    pub fn iter(&self) -> FatDirIter<'a, 'b> {
-        FatDirIter {
+    pub fn iter(&self) -> DirIter<'a, 'b> {
+        DirIter {
             rdr: self.rdr.clone(),
             fs: self.fs.clone(),
             err: false,
@@ -250,7 +255,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
         (comp, rest_opt)
     }
     
-    fn find_entry(&mut self, name: &str) -> io::Result<FatDirEntry<'a, 'b>> {
+    fn find_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
             if e.file_name().eq_ignore_ascii_case(name) {
@@ -260,7 +265,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
     
-    pub fn open_dir(&mut self, path: &str) -> io::Result<FatDir<'a, 'b>> {
+    pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
@@ -269,7 +274,7 @@ impl <'a, 'b> FatDir<'a, 'b> {
         }
     }
     
-    pub fn open_file(&mut self, path: &str) -> io::Result<FatFile<'a, 'b>> {
+    pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
@@ -280,19 +285,19 @@ impl <'a, 'b> FatDir<'a, 'b> {
 }
 
 #[derive(Clone)]
-pub struct FatDirIter<'a, 'b: 'a> {
-    rdr: FatDirReader<'a, 'b>,
-    fs: FatFileSystemRef<'a, 'b>,
+pub struct DirIter<'a, 'b: 'a> {
+    rdr: DirReader<'a, 'b>,
+    fs: FileSystemRef<'a, 'b>,
     err: bool,
 }
 
-impl <'a, 'b> FatDirIter<'a, 'b> {
-    fn read_dir_entry_data(&mut self) -> io::Result<FatDirEntryData> {
+impl <'a, 'b> DirIter<'a, 'b> {
+    fn read_dir_entry_data(&mut self) -> io::Result<DirEntryData> {
         let mut name = [0; 11];
         self.rdr.read(&mut name)?;
-        let attrs = FatFileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes");
-        if attrs == FatFileAttributes::LFN {
-            let mut data = FatDirLfnEntryData {
+        let attrs = FileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes"); // FIXME
+        if attrs == FileAttributes::LFN {
+            let mut data = DirLfnEntryData {
                 attrs, ..Default::default()
             };
             let mut cur = Cursor::new(&name);
@@ -303,9 +308,9 @@ impl <'a, 'b> FatDirIter<'a, 'b> {
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
             data.reserved_0 = self.rdr.read_u16::<LittleEndian>()?;
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
-            Ok(FatDirEntryData::Lfn(data))
+            Ok(DirEntryData::Lfn(data))
         } else {
-            let data = FatDirFileEntryData {
+            let data = DirFileEntryData {
                 name,
                 attrs,
                 reserved_0:       self.rdr.read_u8()?,
@@ -319,13 +324,13 @@ impl <'a, 'b> FatDirIter<'a, 'b> {
                 first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
                 size:             self.rdr.read_u32::<LittleEndian>()?,
             };
-            Ok(FatDirEntryData::File(data))
+            Ok(DirEntryData::File(data))
         }
     }
 }
 
-impl <'a, 'b> Iterator for FatDirIter<'a, 'b> {
-    type Item = io::Result<FatDirEntry<'a, 'b>>;
+impl <'a, 'b> Iterator for DirIter<'a, 'b> {
+    type Item = io::Result<DirEntry<'a, 'b>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.err {
@@ -342,13 +347,13 @@ impl <'a, 'b> Iterator for FatDirIter<'a, 'b> {
                 },
             };
             match data {
-                FatDirEntryData::File(data) => {
+                DirEntryData::File(data) => {
                     // Check if this is end of dif
                     if data.name[0] == 0 {
                         return None;
                     }
                     // Check if this is deleted or volume ID entry
-                    if data.name[0] == 0xE5 || data.attrs.contains(FatFileAttributes::VOLUME_ID) {
+                    if data.name[0] == 0xE5 || data.attrs.contains(FileAttributes::VOLUME_ID) {
                         lfn_buf.clear();
                         continue;
                     }
@@ -364,13 +369,13 @@ impl <'a, 'b> Iterator for FatDirIter<'a, 'b> {
                         }
                     }
                     lfn_buf.truncate(lfn_len);
-                    return Some(Ok(FatDirEntry {
+                    return Some(Ok(DirEntry {
                         data,
                         lfn: lfn_buf,
                         fs: self.fs,
                     }));
                 },
-                FatDirEntryData::Lfn(data) => {
+                DirEntryData::Lfn(data) => {
                     // Check if this is deleted entry
                     if data.order == 0xE5 {
                         lfn_buf.clear();

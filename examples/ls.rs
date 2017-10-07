@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::str;
 use chrono::{DateTime, Local};
 
-use fatfs::FatFileSystem;
+use fatfs::FileSystem;
 
 fn format_file_size(size: u64) -> String {
     const KB: u64 = 1024;
@@ -27,7 +27,7 @@ fn format_file_size(size: u64) -> String {
 fn main() {
     let file = File::open("resources/fat32.img").unwrap();
     let mut buf_rdr = BufReader::new(file);
-    let fs = FatFileSystem::new(&mut buf_rdr).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr).unwrap();
     let mut root_dir = fs.root_dir();
     let dir = match env::args().nth(1) {
         None => root_dir,

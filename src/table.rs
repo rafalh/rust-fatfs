@@ -1,6 +1,6 @@
 use std::io;
 use byteorder::{LittleEndian, ReadBytesExt};
-use fs::{FatType, FatSlice, ReadSeek};
+use fs::{FatType, DiskSlice, ReadSeek};
 use core::iter;
 
 fn get_next_cluster(rdr: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<Option<u32>> {
@@ -50,17 +50,17 @@ fn get_next_cluster_32(rdr: &mut ReadSeek, cluster: u32) -> io::Result<Option<u3
     }
 }
 
-pub(crate) struct FatClusterIterator<'a, 'b: 'a> {
-    rdr: FatSlice<'a, 'b>,
+pub(crate) struct ClusterIterator<'a, 'b: 'a> {
+    rdr: DiskSlice<'a, 'b>,
     fat_type: FatType,
     cluster: Option<u32>,
     err: bool,
 }
 
-impl <'a, 'b> FatClusterIterator<'a, 'b> {
-    pub(crate) fn new(rdr: FatSlice<'a, 'b>, fat_type: FatType, cluster: u32)
-    -> iter::Chain<iter::Once<io::Result<u32>>, FatClusterIterator<'a, 'b>> {
-        let iter = FatClusterIterator {
+impl <'a, 'b> ClusterIterator<'a, 'b> {
+    pub(crate) fn new(rdr: DiskSlice<'a, 'b>, fat_type: FatType, cluster: u32)
+    -> iter::Chain<iter::Once<io::Result<u32>>, ClusterIterator<'a, 'b>> {
+        let iter = ClusterIterator {
             rdr: rdr,
             fat_type: fat_type,
             cluster: Some(cluster),
@@ -70,7 +70,7 @@ impl <'a, 'b> FatClusterIterator<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Iterator for FatClusterIterator<'a, 'b> {
+impl <'a, 'b> Iterator for ClusterIterator<'a, 'b> {
     type Item = io::Result<u32>;
 
     fn next(&mut self) -> Option<Self::Item> {

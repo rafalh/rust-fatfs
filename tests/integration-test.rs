@@ -1,27 +1,27 @@
 extern crate fatfs;
 
-use std::fs::File;
+use std::fs;
 use std::io::{BufReader, SeekFrom};
 use std::io::prelude::*;
 use std::str;
 
-use fatfs::{FatFileSystem, FatType, FatDirEntry};
+use fatfs::{FileSystem, FatType, DirEntry};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";
 const FAT16_IMG: &str = "resources/fat16.img";
 const FAT32_IMG: &str = "resources/fat32.img";
 
-fn call_with_fs(f: &Fn(FatFileSystem) -> (), filename: &str) {
-    let file = File::open(filename).unwrap();
+fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str) {
+    let file = fs::File::open(filename).unwrap();
     let mut buf_rdr = BufReader::new(file);
-    let fs = FatFileSystem::new(&mut buf_rdr).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr).unwrap();
     f(fs);
 }
 
-fn test_root_dir(fs: FatFileSystem) {
+fn test_root_dir(fs: FileSystem) {
     let root_dir = fs.root_dir();
-    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<FatDirEntry>>();
+    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<DirEntry>>();
     let short_names = entries.iter().map(|e| e.short_file_name()).collect::<Vec<String>>();
     assert_eq!(short_names, ["LONG.TXT", "SHORT.TXT", "VERY", "VERY-L~1"]);
     let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();
@@ -46,7 +46,7 @@ fn test_root_dir_fat32() {
     call_with_fs(&test_root_dir, FAT32_IMG)
 }
 
-fn test_read_seek_short_file(fs: FatFileSystem) {
+fn test_read_seek_short_file(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
     let mut short_file = root_dir.open_file("short.txt").unwrap();
     let mut buf = Vec::new();
@@ -74,7 +74,7 @@ fn test_read_seek_short_file_fat32() {
     call_with_fs(&test_read_seek_short_file, FAT32_IMG)
 }
 
-fn test_read_long_file(fs: FatFileSystem) {
+fn test_read_long_file(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
     let mut long_file = root_dir.open_file("long.txt").unwrap();
     let mut buf = Vec::new();
@@ -103,7 +103,7 @@ fn test_read_long_file_fat32() {
     call_with_fs(&test_read_long_file, FAT32_IMG)
 }
 
-fn test_get_dir_by_path(fs: FatFileSystem) {
+fn test_get_dir_by_path(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
     let dir = root_dir.open_dir("very/long/path/").unwrap();
     let names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
@@ -125,7 +125,7 @@ fn test_get_dir_by_path_fat32() {
     call_with_fs(&test_get_dir_by_path, FAT32_IMG)
 }
 
-fn test_get_file_by_path(fs: FatFileSystem) {
+fn test_get_file_by_path(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.open_file("very/long/path/test.txt").unwrap();
     let mut buf = Vec::new();
@@ -153,7 +153,7 @@ fn test_get_file_by_path_fat32() {
     call_with_fs(&test_get_file_by_path, FAT32_IMG)
 }
 
-fn test_volume_metadata(fs: FatFileSystem, fat_type: FatType) {
+fn test_volume_metadata(fs: FileSystem, fat_type: FatType) {
     assert_eq!(fs.volume_id(), 0x12345678);
     assert_eq!(fs.volume_label(), "Test!");
     assert_eq!(fs.fat_type(), fat_type);
