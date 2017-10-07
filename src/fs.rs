@@ -87,8 +87,8 @@ pub struct FileSystem<'a> {
 
 impl <'a> FileSystem<'a> {
     
-    pub fn new<T: ReadSeek>(mut rdr: &'a mut T) -> io::Result<FileSystem<'a>> {
-        let boot = Self::read_boot_record(&mut *rdr)?;
+    pub fn new<T: ReadSeek>(rdr: &'a mut T) -> io::Result<FileSystem<'a>> {
+        let boot = Self::read_boot_record(rdr)?;
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }

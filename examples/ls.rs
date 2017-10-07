@@ -4,7 +4,6 @@ extern crate chrono;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
-use std::str;
 use chrono::{DateTime, Local};
 
 use fatfs::FileSystem;
