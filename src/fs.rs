@@ -7,7 +7,7 @@ use std::io;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::File;
-use dir::{DirReader, Dir};
+use dir::{DirRawStream, Dir};
 use table::ClusterIterator;
 
 // FAT implementation based on:
@@ -125,9 +125,9 @@ impl <'a> FileSystem<'a> {
     pub fn root_dir<'b>(&'b self) -> Dir<'b, 'a> {
         let root_rdr = {
             match self.fat_type {
-                FatType::Fat12 | FatType::Fat16 => DirReader::Root(DiskSlice::from_sectors(
+                FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
                    self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, self)),
-                _ => DirReader::File(File::new(Some(self.boot.bpb.root_dir_first_cluster), None, self)),
+                _ => DirRawStream::File(File::new(Some(self.boot.bpb.root_dir_first_cluster), None, self)),
             }
         };
         Dir::new(root_rdr, self)

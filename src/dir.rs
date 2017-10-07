@@ -14,25 +14,25 @@ use fs::{FileSystemRef, DiskSlice};
 use file::File;
 
 #[derive(Clone)]
-pub(crate) enum DirReader<'a, 'b: 'a> {
+pub(crate) enum DirRawStream<'a, 'b: 'a> {
     File(File<'a, 'b>),
     Root(DiskSlice<'a, 'b>),
 }
 
-impl <'a, 'b> Read for DirReader<'a, 'b> {
+impl <'a, 'b> Read for DirRawStream<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            &mut DirReader::File(ref mut file) => file.read(buf),
-            &mut DirReader::Root(ref mut raw) => raw.read(buf),
+            &mut DirRawStream::File(ref mut file) => file.read(buf),
+            &mut DirRawStream::Root(ref mut raw) => raw.read(buf),
         }
     }
 }
 
-impl <'a, 'b> Seek for DirReader<'a, 'b> {
+impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
-            &mut DirReader::File(ref mut file) => file.seek(pos),
-            &mut DirReader::Root(ref mut raw) => raw.seek(pos),
+            &mut DirRawStream::File(ref mut file) => file.seek(pos),
+            &mut DirRawStream::Root(ref mut raw) => raw.seek(pos),
         }
     }
 }
@@ -202,7 +202,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
             panic!("This is a file");
         }
         let file = File::new(self.first_cluster(), None, self.fs);
-        Dir::new(DirReader::File(file), self.fs)
+        Dir::new(DirRawStream::File(file), self.fs)
     }
     
     pub fn len(&self) -> u64 {
@@ -230,13 +230,13 @@ impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
 
 #[derive(Clone)]
 pub struct Dir<'a, 'b: 'a> {
-    rdr: DirReader<'a, 'b>,
+    rdr: DirRawStream<'a, 'b>,
     fs: FileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> Dir<'a, 'b> {
     
-    pub(crate) fn new(rdr: DirReader<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
+    pub(crate) fn new(rdr: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
         Dir { rdr, fs }
     }
     
@@ -286,7 +286,7 @@ impl <'a, 'b> Dir<'a, 'b> {
 
 #[derive(Clone)]
 pub struct DirIter<'a, 'b: 'a> {
-    rdr: DirReader<'a, 'b>,
+    rdr: DirRawStream<'a, 'b>,
     fs: FileSystemRef<'a, 'b>,
     err: bool,
 }
