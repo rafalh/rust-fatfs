@@ -50,7 +50,11 @@ impl <'a, 'b> Read for FatFile<'a, 'b> {
             self.offset += read_bytes as u32;
             buf_offset += read_bytes;
             if self.offset % cluster_size == 0 {
-                self.current_cluster = self.fs.cluster_iter(current_cluster).skip(1).next();
+                match self.fs.cluster_iter(current_cluster).skip(1).next() {
+                    Some(Err(err)) => return Err(err),
+                    Some(Ok(n)) => self.current_cluster = Some(n),
+                    None => self.current_cluster = None,
+                }
             }
         }
         Ok(buf_offset)
@@ -71,7 +75,11 @@ impl <'a, 'b> Seek for FatFile<'a, 'b> {
         let cluster_count = (new_offset / cluster_size as i64) as usize;
         let mut new_cluster = Some(self.first_cluster);
         if cluster_count > 0 {
-            new_cluster = self.fs.cluster_iter(new_cluster.unwrap()).skip(cluster_count).next();
+            match self.fs.cluster_iter(new_cluster.unwrap()).skip(cluster_count).next() {
+                Some(Err(err)) => return Err(err),
+                Some(Ok(n)) => new_cluster = Some(n),
+                None => new_cluster = None,
+            }
         }
         self.offset = new_offset as u32;
         self.current_cluster = new_cluster;

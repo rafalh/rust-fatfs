@@ -51,27 +51,47 @@ fn get_next_cluster_32(rdr: &mut ReadSeek, cluster: u32) -> io::Result<Option<u3
 }
 
 pub(crate) struct FatClusterIterator<'a, 'b: 'a> {
-    part: FatSlice<'a, 'b>,
+    rdr: FatSlice<'a, 'b>,
     fat_type: FatType,
     cluster: Option<u32>,
+    err: bool,
 }
 
 impl <'a, 'b> FatClusterIterator<'a, 'b> {
-    pub(crate) fn new(part: FatSlice<'a, 'b>, fat_type: FatType, cluster: u32) -> iter::Chain<iter::Once<u32>, FatClusterIterator<'a, 'b>> {
+    pub(crate) fn new(rdr: FatSlice<'a, 'b>, fat_type: FatType, cluster: u32)
+    -> iter::Chain<iter::Once<io::Result<u32>>, FatClusterIterator<'a, 'b>> {
         let iter = FatClusterIterator {
-            part: part,
+            rdr: rdr,
             fat_type: fat_type,
             cluster: Some(cluster),
+            err: false,
         };
-        iter::once(cluster).chain(iter)
+        iter::once(Ok(cluster)).chain(iter)
     }
 }
 
 impl <'a, 'b> Iterator for FatClusterIterator<'a, 'b> {
-    type Item = u32;
+    type Item = io::Result<u32>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.cluster = get_next_cluster(&mut self.part, self.fat_type, self.cluster.unwrap()).unwrap(); // FIXME: unwrap!
-        self.cluster
+        if self.err {
+            return None;
+        }
+        match self.cluster {
+            Some(current_cluster) => {
+                self.cluster = match get_next_cluster(&mut self.rdr, self.fat_type, current_cluster) {
+                    Ok(next_cluster) => next_cluster,
+                    Err(err) => {
+                        self.err = true;
+                        return Some(Err(err));
+                    },
+                }
+            },
+            None => {},
+        };
+        match self.cluster {
+            Some(n) => Some(Ok(n)),
+            None => None,
+        }
     }
 }

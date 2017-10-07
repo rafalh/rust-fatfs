@@ -214,7 +214,7 @@ impl <'a> FatFileSystem<'a> {
         self.offset_from_sector(self.sector_from_cluster(cluser))
     }
     
-    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> iter::Chain<iter::Once<u32>, FatClusterIterator<'b, 'a>> {
+    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> iter::Chain<iter::Once<io::Result<u32>>, FatClusterIterator<'b, 'a>> {
         let bytes_per_sector = self.boot.bpb.bytes_per_sector as u64;
         let fat_offset = self.boot.bpb.reserved_sectors as u64 * bytes_per_sector;
         let sectors_per_fat =
