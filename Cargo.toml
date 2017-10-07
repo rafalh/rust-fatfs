@@ -10,6 +10,9 @@ license = "MIT"
 description = """
 FAT filesystem library.
 """
+exclude = [
+    "resources/*",
+]
 
 [badges]
 travis-ci = { repository = "rafalh/rust-fat" }
