@@ -294,8 +294,8 @@ pub struct DirIter<'a, 'b: 'a> {
 impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry_data(&mut self) -> io::Result<DirEntryData> {
         let mut name = [0; 11];
-        self.rdr.read(&mut name)?;
-        let attrs = FileAttributes::from_bits(self.rdr.read_u8()?).expect("invalid attributes"); // FIXME
+        self.rdr.read_exact(&mut name)?;
+        let attrs = FileAttributes::from_bits_truncate(self.rdr.read_u8()?);
         if attrs == FileAttributes::LFN {
             let mut data = DirLfnEntryData {
                 attrs, ..Default::default()
