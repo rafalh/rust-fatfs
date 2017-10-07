@@ -191,18 +191,19 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
     
     pub fn to_file(&self) -> File<'a, 'b> {
-        if self.is_dir() {
-            panic!("This is a directory");
-        }
+        assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.data.size), self.fs)
     }
     
     pub fn to_dir(&self) -> Dir<'a, 'b> {
-        if !self.is_dir() {
-            panic!("This is a file");
+        assert!(self.is_dir(), "Not a directory entry");
+        match self.first_cluster() {
+            Some(n) => {
+                let file = File::new(Some(n), None, self.fs);
+                Dir::new(DirRawStream::File(file), self.fs)
+            },
+            None => self.fs.root_dir(),
         }
-        let file = File::new(self.first_cluster(), None, self.fs);
-        Dir::new(DirRawStream::File(file), self.fs)
     }
     
     pub fn len(&self) -> u64 {
@@ -250,7 +251,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     
     fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
         let mut path_split = path.trim_matches('/').splitn(2, "/");
-        let comp = path_split.next().unwrap();
+        let comp = path_split.next().unwrap(); // safe unwrap - splitn always returns at least one element
         let rest_opt = path_split.next();
         (comp, rest_opt)
     }
