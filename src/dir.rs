@@ -180,8 +180,9 @@ impl <'a, 'b> FatDirEntry<'a, 'b> {
         !self.is_dir()
     }
     
-    pub(crate) fn first_cluster(&self) -> u32 {
-        ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32
+    pub(crate) fn first_cluster(&self) -> Option<u32> {
+        let n = ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32;
+        if n == 0 { None } else { Some(n) }
     }
     
     pub fn to_file(&self) -> FatFile<'a, 'b> {

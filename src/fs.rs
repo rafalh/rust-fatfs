@@ -127,7 +127,7 @@ impl <'a> FatFileSystem<'a> {
             match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => FatDirReader::Root(FatSlice::from_sectors(
                    self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, self)),
-                _ => FatDirReader::File(FatFile::new(self.boot.bpb.root_dir_first_cluster, None, self)),
+                _ => FatDirReader::File(FatFile::new(Some(self.boot.bpb.root_dir_first_cluster), None, self)),
             }
         };
         FatDir::new(root_rdr, self)
