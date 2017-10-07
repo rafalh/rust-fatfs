@@ -29,15 +29,18 @@ impl <'a, 'b> Read for File<'a, 'b> {
         let mut buf_offset: usize = 0;
         let cluster_size = self.fs.get_cluster_size();
         loop {
+            let current_cluster = match self.current_cluster {
+                Some(n) => n,
+                None => break,
+            };
             let offset_in_cluster = self.offset % cluster_size;
             let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
             let bytes_left_in_file = self.size.map(|size| (size - self.offset) as usize).unwrap_or(bytes_left_in_cluster);
             let bytes_left_in_buf = buf.len() - buf_offset;
             let read_size = cmp::min(cmp::min(bytes_left_in_buf, bytes_left_in_cluster), bytes_left_in_file);
-            if read_size == 0 || self.current_cluster.is_none() {
+            if read_size == 0 {
                 break;
             }
-            let current_cluster = self.current_cluster.unwrap();
             let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
             let read_bytes = {
                 let mut rdr = self.fs.rdr.borrow_mut();
@@ -67,17 +70,22 @@ impl <'a, 'b> Seek for File<'a, 'b> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.size.unwrap() as i64 + x,
+            SeekFrom::End(x) => self.size.expect("cannot seek from end if size is unknown") as i64 + x,
         };
-        if new_offset < 0 || (self.size.is_some() && new_offset as u64 > self.size.unwrap() as u64) {
+        if new_offset < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
         }
         let cluster_size = self.fs.get_cluster_size();
         let cluster_count = (new_offset / cluster_size as i64) as usize;
         let new_cluster = if cluster_count > 0 {
-            match self.fs.cluster_iter(self.first_cluster.unwrap()).skip(cluster_count).next() {
-                Some(Err(err)) => return Err(err),
-                Some(Ok(n)) => Some(n),
+            match self.first_cluster {
+                Some(n) => {
+                    match self.fs.cluster_iter(n).skip(cluster_count).next() {
+                        Some(Err(err)) => return Err(err),
+                        Some(Ok(n)) => Some(n),
+                        None => None,
+                    }
+                },
                 None => None,
             }
         } else {

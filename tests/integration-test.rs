@@ -53,10 +53,14 @@ fn test_read_seek_short_file(fs: FileSystem) {
     short_file.read_to_end(&mut buf).unwrap();
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
     
-    short_file.seek(SeekFrom::Start(5)).unwrap();
+    assert_eq!(short_file.seek(SeekFrom::Start(5)).unwrap(), 5);
     let mut buf2 = [0; 5];
     short_file.read_exact(&mut buf2).unwrap();
     assert_eq!(str::from_utf8(&buf2).unwrap(), &TEST_TEXT[5..10]);
+    
+    assert_eq!(short_file.seek(SeekFrom::Start(1000)).unwrap(), 1000);
+    let mut buf2 = [0; 5];
+    assert_eq!(short_file.read(&mut buf2).unwrap(), 0);
 }
 
 #[test]
@@ -81,7 +85,7 @@ fn test_read_long_file(fs: FileSystem) {
     long_file.read_to_end(&mut buf).unwrap();
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT.repeat(1000));
     
-    long_file.seek(SeekFrom::Start(2017)).unwrap();
+    assert_eq!(long_file.seek(SeekFrom::Start(2017)).unwrap(), 2017);
     buf.clear();
     let mut buf2 = [0; 10];
     long_file.read_exact(&mut buf2).unwrap();
