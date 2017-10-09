@@ -1,6 +1,5 @@
 use core::cell::RefCell;
 use core::cmp;
-use core::iter;
 use std::io::prelude::*;
 use std::io::{Error, ErrorKind, SeekFrom};
 use std::io;
@@ -8,7 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::File;
 use dir::{DirRawStream, Dir};
-use table::ClusterIterator;
+use table::{ClusterIterator, alloc_cluster};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -92,7 +91,6 @@ impl <'a> FileSystem<'a> {
     
     pub fn new<T: ReadWriteSeek>(disk: &'a mut T) -> io::Result<FileSystem<'a>> {
         let boot = Self::read_boot_record(disk)?;
-        println!("sig {:?}", boot.boot_sig);
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }
@@ -218,15 +216,24 @@ impl <'a> FileSystem<'a> {
         self.offset_from_sector(self.sector_from_cluster(cluser))
     }
     
-    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> iter::Chain<iter::Once<io::Result<u32>>, ClusterIterator<'b, 'a>> {
+    fn fat_slice<'b>(&'b self) -> DiskSlice<'b, 'a> {
         let bytes_per_sector = self.boot.bpb.bytes_per_sector as u64;
         let fat_offset = self.boot.bpb.reserved_sectors as u64 * bytes_per_sector;
         let sectors_per_fat =
             if self.boot.bpb.sectors_per_fat_16 == 0 { self.boot.bpb.sectors_per_fat_32 }
             else { self.boot.bpb.sectors_per_fat_16 as u32 };
         let fat_size = sectors_per_fat as u64 * bytes_per_sector;
-        let disk_slice = DiskSlice::new(fat_offset, fat_size, self);
+        DiskSlice::new(fat_offset, fat_size, self)
+    }
+    
+    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<'b, 'a> {
+        let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
+    }
+    
+    pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
+        let mut disk_slice = self.fat_slice();
+        alloc_cluster(&mut disk_slice, self.fat_type, prev_cluster)
     }
 }
 

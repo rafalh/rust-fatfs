@@ -83,6 +83,12 @@ impl DirFileEntryData {
         if n == 0 { None } else { Some(n) }
     }
     
+    pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>) {
+        let n = cluster.unwrap_or(0);
+        self.first_cluster_hi = (n >> 16) as u16;
+        self.first_cluster_lo = (n & 0xFFFF) as u16;
+    }
+    
     pub(crate) fn size(&self) -> u32 {
         self.size
     }
@@ -372,10 +378,8 @@ pub struct DirIter<'a, 'b: 'a> {
 
 impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry_data(&mut self) -> io::Result<DirEntryData> {
-        println!("read_dir_entry_data");
         let mut name = [0; 11];
         self.rdr.read_exact(&mut name)?;
-        println!("read_dir_entry_data {:?}", &name);
         let attrs = FileAttributes::from_bits_truncate(self.rdr.read_u8()?);
         if attrs == FileAttributes::LFN {
             let mut data = DirLfnEntryData {
@@ -389,7 +393,6 @@ impl <'a, 'b> DirIter<'a, 'b> {
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
             data.reserved_0 = self.rdr.read_u16::<LittleEndian>()?;
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
-            println!("read_dir_entry_data end");
             Ok(DirEntryData::Lfn(data))
         } else {
             let data = DirFileEntryData {
@@ -406,11 +409,12 @@ impl <'a, 'b> DirIter<'a, 'b> {
                 first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
                 size:             self.rdr.read_u32::<LittleEndian>()?,
             };
-            println!("read_dir_entry_data end");
             Ok(DirEntryData::File(data))
         }
     }
 }
+
+const DIR_ENTRY_SIZE: u64 = 32;
 
 impl <'a, 'b> Iterator for DirIter<'a, 'b> {
     type Item = io::Result<DirEntry<'a, 'b>>;
@@ -421,8 +425,8 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
         }
         let mut lfn_buf = Vec::<u16>::new();
         loop {
-            let entry_pos = self.rdr.global_pos();
             let res = self.read_dir_entry_data();
+            let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
             let data = match res {
                 Ok(data) => data,
                 Err(err) => {
