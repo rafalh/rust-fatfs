@@ -14,7 +14,9 @@ mod fs;
 mod dir;
 mod file;
 mod table;
+mod utils;
 
 pub use fs::*;
 pub use dir::*;
 pub use file::*;
+pub use utils::*;

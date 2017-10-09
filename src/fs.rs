@@ -22,6 +22,9 @@ pub enum FatType {
 pub trait ReadSeek: Read + Seek {}
 impl<T> ReadSeek for T where T: Read + Seek {}
 
+pub trait ReadWriteSeek: Read + Write + Seek {}
+impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
+
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
 pub(crate) struct BiosParameterBlock {
@@ -78,7 +81,7 @@ impl Default for BootRecord {
 pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
 
 pub struct FileSystem<'a> {
-    pub(crate) rdr: RefCell<&'a mut ReadSeek>,
+    pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
     pub(crate) fat_type: FatType,
     pub(crate) boot: BootRecord,
     pub(crate) first_data_sector: u32,
@@ -87,8 +90,9 @@ pub struct FileSystem<'a> {
 
 impl <'a> FileSystem<'a> {
     
-    pub fn new<T: ReadSeek>(rdr: &'a mut T) -> io::Result<FileSystem<'a>> {
-        let boot = Self::read_boot_record(rdr)?;
+    pub fn new<T: ReadWriteSeek>(disk: &'a mut T) -> io::Result<FileSystem<'a>> {
+        let boot = Self::read_boot_record(disk)?;
+        println!("sig {:?}", boot.boot_sig);
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }
@@ -102,7 +106,7 @@ impl <'a> FileSystem<'a> {
         let fat_type = Self::fat_type_from_clusters(total_clusters);
         
         Ok(FileSystem {
-            rdr: RefCell::new(rdr),
+            disk: RefCell::new(disk),
             fat_type,
             boot,
             first_data_sector,
@@ -243,17 +247,38 @@ impl <'a, 'b> DiskSlice<'a, 'b> {
         let bytes_per_sector = fs.boot.bpb.bytes_per_sector as u64;
         Self::new(first_sector as u64 * bytes_per_sector, sectors_count as u64 * bytes_per_sector, fs)
     }
+    
+    pub(crate) fn global_pos(&self) -> u64 {
+        self.begin + self.offset
+    }
 }
 
 impl <'a, 'b> Read for DiskSlice<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
-        let mut rdr = self.fs.rdr.borrow_mut();
-        rdr.seek(SeekFrom::Start(offset))?;
-        let size = rdr.read(&mut buf[..read_size])?;
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.seek(SeekFrom::Start(offset))?;
+        let size = disk.read(&mut buf[..read_size])?;
         self.offset += size as u64;
         Ok(size)
+    }
+}
+
+impl <'a, 'b> Write for DiskSlice<'a, 'b> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let offset = self.begin + self.offset;
+        let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.seek(SeekFrom::Start(offset))?;
+        let size = disk.write(&buf[..write_size])?;
+        self.offset += size as u64;
+        Ok(size)
+    }
+    
+    fn flush(&mut self) -> io::Result<()> {
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.flush()
     }
 }
 

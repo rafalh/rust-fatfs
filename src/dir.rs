@@ -3,7 +3,7 @@ use std::fmt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{Cursor, ErrorKind, SeekFrom};
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "chrono")]
 use chrono::{TimeZone, Local};
@@ -17,6 +17,15 @@ use file::File;
 pub(crate) enum DirRawStream<'a, 'b: 'a> {
     File(File<'a, 'b>),
     Root(DiskSlice<'a, 'b>),
+}
+
+impl <'a, 'b> DirRawStream<'a, 'b> {
+    pub(crate) fn global_pos(&self) -> Option<u64> {
+        match self {
+            &DirRawStream::File(ref file) => file.global_pos(),
+            &DirRawStream::Root(ref slice) => Some(slice.global_pos()),
+        }
+    }
 }
 
 impl <'a, 'b> Read for DirRawStream<'a, 'b> {
@@ -53,7 +62,7 @@ bitflags! {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
-struct DirFileEntryData {
+pub(crate) struct DirFileEntryData {
     name: [u8; 11],
     attrs: FileAttributes,
     reserved_0: u8,
@@ -65,7 +74,47 @@ struct DirFileEntryData {
     modify_time: u16,
     modify_date: u16,
     first_cluster_lo: u16,
-    size: u32,
+    pub(crate) size: u32,
+}
+
+impl DirFileEntryData {
+    pub(crate) fn first_cluster(&self) -> Option<u32> {
+        let n = ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
+        if n == 0 { None } else { Some(n) }
+    }
+    
+    pub(crate) fn size(&self) -> u32 {
+        self.size
+    }
+    
+    pub fn is_dir(&self) -> bool {
+        self.attrs.contains(FileAttributes::DIRECTORY)
+    }
+    
+    pub fn is_file(&self) -> bool {
+        !self.is_dir()
+    }
+    
+    pub(crate) fn set_modified(&mut self, date_time: DateTime) {
+        self.modify_date = date_time.date.to_u16();
+        self.modify_time = date_time.time.to_u16();
+    }
+    
+    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+        wrt.write(&self.name)?;
+        wrt.write_u8(self.attrs.bits())?;
+        wrt.write_u8(self.reserved_0)?;
+        wrt.write_u8(self.create_time_0)?;
+        wrt.write_u16::<LittleEndian>(self.create_time_1)?;
+        wrt.write_u16::<LittleEndian>(self.create_date)?;
+        wrt.write_u16::<LittleEndian>(self.access_date)?;
+        wrt.write_u16::<LittleEndian>(self.first_cluster_hi)?;
+        wrt.write_u16::<LittleEndian>(self.modify_time)?;
+        wrt.write_u16::<LittleEndian>(self.modify_date)?;
+        wrt.write_u16::<LittleEndian>(self.first_cluster_lo)?;
+        wrt.write_u32::<LittleEndian>(self.size)?;
+        Ok(())
+    }
 }
 
 #[allow(dead_code)]
@@ -87,13 +136,6 @@ enum DirEntryData {
     Lfn(DirLfnEntryData),
 }
 
-#[derive(Clone)]
-pub struct DirEntry<'a, 'b: 'a> {
-    data: DirFileEntryData,
-    lfn: Vec<u16>,
-    fs: FileSystemRef<'a, 'b>,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Date {
     pub year: u16,
@@ -105,6 +147,10 @@ impl Date {
     pub(crate) fn from_word(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
+    }
+    
+    fn to_u16(&self) -> u16 {
+        ((self.year - 1980) << 9) | (self.month << 5) | self.day
     }
 }
 
@@ -119,6 +165,10 @@ impl Time {
     pub(crate) fn from_word(dos_time: u16) -> Self {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
         Time { hour, min, sec }
+    }
+    
+    fn to_u16(&self) -> u16 {
+        (self.hour << 11) | (self.min << 5) | (self.sec / 2)
     }
 }
 
@@ -150,6 +200,28 @@ impl From<DateTime> for chrono::DateTime<Local> {
         chrono::Date::<Local>::from(date_time.date)
             .and_hms(date_time.time.hour as u32, date_time.time.min as u32, date_time.time.sec as u32)
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FileEntryInfo {
+    pub(crate) data: DirFileEntryData,
+    pos: u64,
+}
+
+impl FileEntryInfo {
+    pub(crate) fn write(&self, fs: FileSystemRef) -> io::Result<()> {
+        let mut disk = fs.disk.borrow_mut();
+        disk.seek(io::SeekFrom::Start(self.pos))?;
+        self.data.serialize(&mut *disk)
+    }
+}
+
+#[derive(Clone)]
+pub struct DirEntry<'a, 'b: 'a> {
+    data: DirFileEntryData,
+    lfn: Vec<u16>,
+    entry_pos: u64,
+    fs: FileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> DirEntry<'a, 'b> {
@@ -186,20 +258,26 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
     
     pub(crate) fn first_cluster(&self) -> Option<u32> {
-        let n = ((self.data.first_cluster_hi as u32) << 16) | self.data.first_cluster_lo as u32;
-        if n == 0 { None } else { Some(n) }
+        self.data.first_cluster()
+    }
+    
+    fn entry_info(&self) -> FileEntryInfo {
+        FileEntryInfo {
+            data: self.data.clone(),
+            pos: self.entry_pos,
+        }
     }
     
     pub fn to_file(&self) -> File<'a, 'b> {
         assert!(!self.is_dir(), "Not a file entry");
-        File::new(self.first_cluster(), Some(self.data.size), self.fs)
+        File::new(self.first_cluster(), Some(self.entry_info()), self.fs)
     }
     
     pub fn to_dir(&self) -> Dir<'a, 'b> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
             Some(n) => {
-                let file = File::new(Some(n), None, self.fs);
+                let file = File::new(Some(n), Some(self.entry_info()), self.fs);
                 Dir::new(DirRawStream::File(file), self.fs)
             },
             None => self.fs.root_dir(),
@@ -294,8 +372,10 @@ pub struct DirIter<'a, 'b: 'a> {
 
 impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry_data(&mut self) -> io::Result<DirEntryData> {
+        println!("read_dir_entry_data");
         let mut name = [0; 11];
         self.rdr.read_exact(&mut name)?;
+        println!("read_dir_entry_data {:?}", &name);
         let attrs = FileAttributes::from_bits_truncate(self.rdr.read_u8()?);
         if attrs == FileAttributes::LFN {
             let mut data = DirLfnEntryData {
@@ -309,6 +389,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
             data.reserved_0 = self.rdr.read_u16::<LittleEndian>()?;
             self.rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
+            println!("read_dir_entry_data end");
             Ok(DirEntryData::Lfn(data))
         } else {
             let data = DirFileEntryData {
@@ -325,6 +406,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
                 first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
                 size:             self.rdr.read_u32::<LittleEndian>()?,
             };
+            println!("read_dir_entry_data end");
             Ok(DirEntryData::File(data))
         }
     }
@@ -339,6 +421,7 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
         }
         let mut lfn_buf = Vec::<u16>::new();
         loop {
+            let entry_pos = self.rdr.global_pos();
             let res = self.read_dir_entry_data();
             let data = match res {
                 Ok(data) => data,
@@ -374,6 +457,7 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
                         data,
                         lfn: lfn_buf,
                         fs: self.fs,
+                        entry_pos: entry_pos.unwrap(), // safe
                     }));
                 },
                 DirEntryData::Lfn(data) => {
