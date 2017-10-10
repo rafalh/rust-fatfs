@@ -58,7 +58,7 @@ fn test_read_seek_short_file(fs: FileSystem) {
     short_file.read_exact(&mut buf2).unwrap();
     assert_eq!(str::from_utf8(&buf2).unwrap(), &TEST_TEXT[5..10]);
     
-    assert_eq!(short_file.seek(SeekFrom::Start(1000)).unwrap(), 1000);
+    assert_eq!(short_file.seek(SeekFrom::Start(1000)).unwrap(), TEST_TEXT.len() as u64);
     let mut buf2 = [0; 5];
     assert_eq!(short_file.read(&mut buf2).unwrap(), 0);
 }

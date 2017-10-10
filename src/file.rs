@@ -8,11 +8,15 @@ use dir::{FileEntryInfo, DateTime};
 
 #[derive(Clone)]
 pub struct File<'a, 'b: 'a> {
+    // Note first_cluster is None if file is empty
     first_cluster: Option<u32>,
     // Note: if offset points between clusters current_cluster is the previous cluster
     current_cluster: Option<u32>,
+    // current position in this file
     offset: u32,
+    // file dir entry - None for root dir
     entry: Option<FileEntryInfo>,
+    // should file dir entry be flushed?
     entry_dirty: bool,
     fs: FileSystemRef<'a, 'b>,
 }
@@ -31,7 +35,7 @@ impl <'a, 'b> File<'a, 'b> {
         match self.entry {
             Some(ref mut e) => {
                 if self.offset > e.data.size() {
-                    e.data.size = self.offset;
+                    e.data.set_size(self.offset);
                     self.entry_dirty = true;
                 }
             },
@@ -42,11 +46,11 @@ impl <'a, 'b> File<'a, 'b> {
     pub fn truncate(&mut self) -> io::Result<()> {
         match self.entry {
             Some(ref mut e) => {
-                if e.data.size == self.offset {
+                if e.data.size() == self.offset {
                     return Ok(());
                 }
                 
-                e.data.size = self.offset;
+                e.data.set_size(self.offset);
                 if self.offset == 0 {
                     e.data.set_first_cluster(None);
                 }
@@ -55,15 +59,21 @@ impl <'a, 'b> File<'a, 'b> {
             _ => {},
         }
         if self.offset > 0 {
-            self.fs.cluster_iter(self.current_cluster.unwrap()).truncate()
+            debug_assert!(self.current_cluster.is_some());
+            self.fs.cluster_iter(self.current_cluster.unwrap()).truncate() // safe
         } else {
-            self.fs.cluster_iter(self.first_cluster.unwrap()).free()?;
+            debug_assert!(self.current_cluster.is_none());
+            match self.first_cluster {
+                Some(n) => self.fs.cluster_iter(n).free()?,
+                _ => {},
+            }
             self.first_cluster = None;
             Ok(())
         }
     }
     
     pub(crate) fn global_pos(&self) -> Option<u64> {
+        // Returns current position relative to filesystem start
         // Note: when between clusters it returns position after previous cluster
         match self.current_cluster {
             Some(n) => {
@@ -78,10 +88,12 @@ impl <'a, 'b> File<'a, 'b> {
     
     pub(crate) fn flush_dir_entry(&self) -> io::Result<()> {
         if self.entry_dirty {
-            self.entry.iter().next().unwrap().write(self.fs)
-        } else {
-            Ok(())
+            match self.entry {
+                Some(ref e) => e.write(self.fs)?,
+                _ => {},
+            }
         }
+        Ok(())
     }
     
     pub fn set_modified(&mut self, date_time: DateTime) {
@@ -98,7 +110,7 @@ impl <'a, 'b> File<'a, 'b> {
         match self.entry {
             Some(ref e) => {
                 if e.data.is_file() {
-                    Some((e.data.size - self.offset) as usize)
+                    Some((e.data.size() - self.offset) as usize)
                 } else {
                     None
                 }
@@ -127,114 +139,106 @@ impl<'a, 'b> Drop for File<'a, 'b> {
 
 impl<'a, 'b> Read for File<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut buf_offset: usize = 0;
         let cluster_size = self.fs.get_cluster_size();
-        loop {
-            let current_cluster_opt = if self.offset % cluster_size == 0 {
-                // next cluster
-                match self.current_cluster {
-                    None => self.first_cluster,
-                    Some(n) => {
-                        let r = self.fs.cluster_iter(n).next();
-                        match r {
-                            Some(Err(err)) => return Err(err),
-                            Some(Ok(n)) => Some(n),
-                            None => None,
-                        }
-                    },
-                }
-            } else {
-                self.current_cluster
-            };
-            let current_cluster = match current_cluster_opt {
-                Some(n) => n,
-                None => break,
-            };
-            let offset_in_cluster = self.offset % cluster_size;
-            let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
-            let bytes_left_in_file = self.bytes_left_in_file().unwrap_or(bytes_left_in_cluster);
-            let bytes_left_in_buf = buf.len() - buf_offset;
-            let read_size = cmp::min(cmp::min(bytes_left_in_buf, bytes_left_in_cluster), bytes_left_in_file);
-            if read_size == 0 {
-                break;
+        let current_cluster_opt = if self.offset % cluster_size == 0 {
+            // next cluster
+            match self.current_cluster {
+                None => self.first_cluster,
+                Some(n) => {
+                    let r = self.fs.cluster_iter(n).next();
+                    match r {
+                        Some(Err(err)) => return Err(err),
+                        Some(Ok(n)) => Some(n),
+                        None => None,
+                    }
+                },
             }
-            //println!("read c {} n {}", current_cluster, read_size);
-            let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
-            let read_bytes = {
-                let mut disk = self.fs.disk.borrow_mut();
-                disk.seek(SeekFrom::Start(offset_in_fs))?;
-                disk.read(&mut buf[buf_offset..buf_offset+read_size])?
-            };
-            if read_bytes == 0 {
-                break;
-            }
-            self.offset += read_bytes as u32;
-            self.current_cluster = Some(current_cluster);
-            buf_offset += read_bytes;
+        } else {
+            self.current_cluster
+        };
+        let current_cluster = match current_cluster_opt {
+            Some(n) => n,
+            None => return Ok(0),
+        };
+        let offset_in_cluster = self.offset % cluster_size;
+        let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
+        let bytes_left_in_file = self.bytes_left_in_file().unwrap_or(bytes_left_in_cluster);
+        let read_size = cmp::min(cmp::min(buf.len(), bytes_left_in_cluster), bytes_left_in_file);
+        if read_size == 0 {
+            return Ok(0);
         }
-        Ok(buf_offset)
+        //println!("read c {} n {}", current_cluster, read_size);
+        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
+        let read_bytes = {
+            let mut disk = self.fs.disk.borrow_mut();
+            disk.seek(SeekFrom::Start(offset_in_fs))?;
+            disk.read(&mut buf[..read_size])?
+        };
+        if read_bytes == 0 {
+            return Ok(0);
+        }
+        self.offset += read_bytes as u32;
+        self.current_cluster = Some(current_cluster);
+        Ok(read_bytes)
     }
 }
 
 impl<'a, 'b> Write for File<'a, 'b> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut buf_offset: usize = 0;
         let cluster_size = self.fs.get_cluster_size();
-        loop {
-            let offset_in_cluster = self.offset % cluster_size;
-            let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
-            let bytes_left_in_buf = buf.len() - buf_offset;
-            let write_size = cmp::min(bytes_left_in_buf, bytes_left_in_cluster);
-            //println!("write {:?}", write_size);
-            if write_size == 0 {
-                break;
-            }
-            
-            let current_cluster_opt = if self.offset % cluster_size == 0 {
-                // next cluster
-                let next_cluster = match self.current_cluster {
-                    None => self.first_cluster,
-                    Some(n) => {
-                        let r = self.fs.cluster_iter(n).next();
-                        match r {
-                            Some(Err(err)) => return Err(err),
-                            Some(Ok(n)) => Some(n),
-                            None => None,
-                        }
-                    },
-                };
-                match next_cluster {
-                    Some(_) => next_cluster,
-                    None => {
-                        let new_cluster = self.fs.alloc_cluster(self.current_cluster)?;
-                        if self.first_cluster.is_none() {
-                            self.set_first_cluster(new_cluster);
-                        }
-                        Some(new_cluster)
-                    },
-                }
-            } else {
-                self.current_cluster
-            };
-            let current_cluster = match current_cluster_opt {
-                Some(n) => n,
-                None => panic!("Offset inside cluster but no cluster allocated"), // FIXME
-            };
-            let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
-            let written_bytes = {
-                let mut disk = self.fs.disk.borrow_mut();
-                disk.seek(SeekFrom::Start(offset_in_fs))?;
-                disk.write(&buf[buf_offset..buf_offset+write_size])?
-            };
-            if written_bytes == 0 {
-                break;
-            }
-            self.offset += written_bytes as u32;
-            self.current_cluster = Some(current_cluster);
-            buf_offset += written_bytes;
+        let offset_in_cluster = self.offset % cluster_size;
+        let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
+        let write_size = cmp::min(buf.len(), bytes_left_in_cluster);
+        //println!("write {:?}", write_size);
+        // Exit early if we are going to write no data
+        if write_size == 0 {
+            return Ok(0);
         }
+        // Get cluster for write possibly allocating new one
+        let current_cluster = if self.offset % cluster_size == 0 {
+            // next cluster
+            let next_cluster = match self.current_cluster {
+                None => self.first_cluster,
+                Some(n) => {
+                    let r = self.fs.cluster_iter(n).next();
+                    match r {
+                        Some(Err(err)) => return Err(err),
+                        Some(Ok(n)) => Some(n),
+                        None => None,
+                    }
+                },
+            };
+            match next_cluster {
+                Some(n) => n,
+                None => {
+                    // end of chain reached - allocate new cluster
+                    let new_cluster = self.fs.alloc_cluster(self.current_cluster)?;
+                    if self.first_cluster.is_none() {
+                        self.set_first_cluster(new_cluster);
+                    }
+                    new_cluster
+                },
+            }
+        } else {
+            // self.current_cluster should be a valid cluster
+            match self.current_cluster {
+                Some(n) => n,
+                None => panic!("Offset inside cluster but no cluster allocated"),
+            }
+        };
+        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
+        let written_bytes = {
+            let mut disk = self.fs.disk.borrow_mut();
+            disk.seek(SeekFrom::Start(offset_in_fs))?;
+            disk.write(&buf[..write_size])?
+        };
+        if written_bytes == 0 {
+            return Ok(0);
+        }
+        self.offset += written_bytes as u32;
+        self.current_cluster = Some(current_cluster);
         self.update_size();
-        Ok(buf_offset)
+        Ok(written_bytes)
     }
     
     fn flush(&mut self) -> io::Result<()> {
@@ -246,33 +250,49 @@ impl<'a, 'b> Write for File<'a, 'b> {
 
 impl<'a, 'b> Seek for File<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let new_offset = match pos {
+        let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
             SeekFrom::End(x) => self.entry.iter().next().expect("cannot seek from end if size is unknown").data.size() as i64 + x,
         };
-        if new_offset < 0 {
+        if new_pos < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
         }
+        new_pos = match self.entry {
+            Some(ref e) => cmp::min(new_pos, e.data.size() as i64),
+            _ => new_pos,
+        };
         let cluster_size = self.fs.get_cluster_size();
-        let cluster_count = ((new_offset + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
-        let new_cluster = if cluster_count == -1 {
+        let new_cluster = if new_pos == 0 {
             None
-        } else if cluster_count == 0 {
-            self.first_cluster
         } else {
+            // get number of clusters to seek (favoring previous cluster in corner case)
+            let cluster_count = ((new_pos - 1) / cluster_size as i64) as isize;
             match self.first_cluster {
                 Some(n) => {
-                    match self.fs.cluster_iter(n).skip(cluster_count as usize - 1).next() {
-                        Some(Err(err)) => return Err(err),
-                        Some(Ok(n)) => Some(n),
-                        None => None,
+                    let mut cluster = n;
+                    let mut iter = self.fs.cluster_iter(n);
+                    for i in 0..cluster_count {
+                        cluster = match iter.next() {
+                            Some(Err(err)) => return Err(err),
+                            Some(Ok(n)) => n,
+                            None => {
+                                // chain ends before new position - seek to end of last cluster
+                                new_pos = (i + 1) as i64 * cluster_size as i64;
+                                break;
+                            },
+                        };
                     }
+                    Some(cluster)
                 },
-                None => None,
+                None => {
+                    // empty file - always seek to 0
+                    new_pos = 0;
+                    None
+                },
             }
         };
-        self.offset = new_offset as u32;
+        self.offset = new_pos as u32;
         self.current_cluster = new_cluster;
         Ok(self.offset as u64)
     }

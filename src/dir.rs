@@ -74,7 +74,7 @@ pub(crate) struct DirFileEntryData {
     modify_time: u16,
     modify_date: u16,
     first_cluster_lo: u16,
-    pub(crate) size: u32,
+    size: u32,
 }
 
 impl DirFileEntryData {
@@ -93,6 +93,10 @@ impl DirFileEntryData {
         self.size
     }
     
+    pub(crate) fn set_size(&mut self, size: u32) {
+        self.size = size;
+    }
+    
     pub fn is_dir(&self) -> bool {
         self.attrs.contains(FileAttributes::DIRECTORY)
     }
@@ -107,7 +111,7 @@ impl DirFileEntryData {
     }
     
     pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
-        wrt.write(&self.name)?;
+        wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
         wrt.write_u8(self.create_time_0)?;
@@ -150,7 +154,7 @@ pub struct Date {
 }
 
 impl Date {
-    pub(crate) fn from_word(dos_date: u16) -> Self {
+    pub(crate) fn from_u16(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
     }
@@ -168,7 +172,7 @@ pub struct Time {
 }
 
 impl Time {
-    pub(crate) fn from_word(dos_time: u16) -> Self {
+    pub(crate) fn from_u16(dos_time: u16) -> Self {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
         Time { hour, min, sec }
     }
@@ -185,10 +189,10 @@ pub struct DateTime {
 }
 
 impl DateTime {
-    pub(crate) fn from_words(dos_date: u16, dos_time: u16) -> Self {
+    pub(crate) fn from_u16(dos_date: u16, dos_time: u16) -> Self {
         DateTime {
-            date: Date::from_word(dos_date),
-            time: Time::from_word(dos_time),
+            date: Date::from_u16(dos_date),
+            time: Time::from_u16(dos_time),
         }
     }
 }
@@ -256,11 +260,11 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
     
     pub fn is_dir(&self) -> bool {
-        self.data.attrs.contains(FileAttributes::DIRECTORY)
+        self.data.is_dir()
     }
     
     pub fn is_file(&self) -> bool {
-        !self.is_dir()
+        self.data.is_file()
     }
     
     pub(crate) fn first_cluster(&self) -> Option<u32> {
@@ -295,15 +299,15 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
     
     pub fn created(&self) -> DateTime {
-        DateTime::from_words(self.data.create_date, self.data.create_time_1)
+        DateTime::from_u16(self.data.create_date, self.data.create_time_1)
     }
     
     pub fn accessed(&self) -> Date {
-        Date::from_word(self.data.access_date)
+        Date::from_u16(self.data.access_date)
     }
     
     pub fn modified(&self) -> DateTime {
-        DateTime::from_words(self.data.modify_date, self.data.modify_time)
+        DateTime::from_u16(self.data.modify_date, self.data.modify_time)
     }
 }
 

@@ -33,7 +33,7 @@ fn test_write_short_file(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.open_file("short.txt").expect("open file");
     file.truncate().unwrap();
-    assert_eq!(TEST_STR.len(), file.write(&TEST_STR.as_bytes()).unwrap());
+    file.write_all(&TEST_STR.as_bytes()).unwrap();
     file.seek(io::SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
@@ -60,7 +60,7 @@ fn test_write_long_file(fs: FileSystem) {
     let mut file = root_dir.open_file("long.txt").expect("open file");
     file.truncate().unwrap();
     let test_str = TEST_STR.repeat(100);
-    assert_eq!(test_str.len(), file.write(&test_str.as_bytes()).unwrap());
+    file.write_all(&test_str.as_bytes()).unwrap();
     file.seek(io::SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
