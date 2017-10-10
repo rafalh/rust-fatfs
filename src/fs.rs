@@ -128,7 +128,7 @@ impl <'a> FileSystem<'a> {
         let root_rdr = {
             match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
-                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, self)),
+                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, 1, self)),
                 _ => DirRawStream::File(File::new(Some(self.boot.bpb.root_dir_first_cluster), None, self)),
             }
         };
@@ -217,13 +217,18 @@ impl <'a> FileSystem<'a> {
     }
     
     fn fat_slice<'b>(&'b self) -> DiskSlice<'b, 'a> {
-        let bytes_per_sector = self.boot.bpb.bytes_per_sector as u64;
-        let fat_offset = self.boot.bpb.reserved_sectors as u64 * bytes_per_sector;
         let sectors_per_fat =
             if self.boot.bpb.sectors_per_fat_16 == 0 { self.boot.bpb.sectors_per_fat_32 }
             else { self.boot.bpb.sectors_per_fat_16 as u32 };
-        let fat_size = sectors_per_fat as u64 * bytes_per_sector;
-        DiskSlice::new(fat_offset, fat_size, self)
+        let mirroring_enabled = self.boot.bpb.extended_flags & 0x80 == 0;
+        let (fat_first_sector, mirrors) = if mirroring_enabled {
+            (self.boot.bpb.reserved_sectors as u32, self.boot.bpb.fats)
+        } else {
+            let active_fat = (self.boot.bpb.extended_flags & 0x0F) as u32;
+            let fat_first_sector = (self.boot.bpb.reserved_sectors as u32) + active_fat * sectors_per_fat;
+            (fat_first_sector, 1)
+        };
+        DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, self)
     }
     
     pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<'b, 'a> {
@@ -242,17 +247,18 @@ pub(crate) struct DiskSlice<'a, 'b: 'a> {
     begin: u64,
     size: u64,
     offset: u64,
+    mirrors: u8,
     fs: &'a FileSystem<'b>,
 }
 
 impl <'a, 'b> DiskSlice<'a, 'b> {
-    pub(crate) fn new(begin: u64, size: u64, fs: FileSystemRef<'a, 'b>) -> Self {
-        DiskSlice { begin, size, fs, offset: 0 }
+    pub(crate) fn new(begin: u64, size: u64, mirrors: u8, fs: FileSystemRef<'a, 'b>) -> Self {
+        DiskSlice { begin, size, mirrors, fs, offset: 0 }
     }
     
-    pub(crate) fn from_sectors(first_sector: u32, sectors_count: u32, fs: FileSystemRef<'a, 'b>) -> Self {
+    pub(crate) fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, fs: FileSystemRef<'a, 'b>) -> Self {
         let bytes_per_sector = fs.boot.bpb.bytes_per_sector as u64;
-        Self::new(first_sector as u64 * bytes_per_sector, sectors_count as u64 * bytes_per_sector, fs)
+        Self::new(first_sector as u64 * bytes_per_sector, sector_count as u64 * bytes_per_sector, mirrors, fs)
     }
     
     pub(crate) fn global_pos(&self) -> u64 {
@@ -276,11 +282,13 @@ impl <'a, 'b> Write for DiskSlice<'a, 'b> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
-        let mut disk = self.fs.disk.borrow_mut();
-        disk.seek(SeekFrom::Start(offset))?;
-        let size = disk.write(&buf[..write_size])?;
-        self.offset += size as u64;
-        Ok(size)
+        for i in 0..self.mirrors {
+            let mut disk = self.fs.disk.borrow_mut();
+            disk.seek(SeekFrom::Start(offset + i as u64 * self.size))?;
+            disk.write_all(&buf[..write_size])?;
+        }
+        self.offset += write_size as u64;
+        Ok(write_size)
     }
     
     fn flush(&mut self) -> io::Result<()> {
