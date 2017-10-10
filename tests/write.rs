@@ -6,7 +6,7 @@ use std::io;
 use std::str;
 
 use fatfs::FileSystem;
-// use fatfs::BufStream;
+use fatfs::BufStream;
 
 const FAT12_IMG: &str = "fat12.img";
 const FAT16_IMG: &str = "fat16.img";
@@ -21,12 +21,9 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     fs::create_dir(TMP_DIR).ok();
     fs::copy(&img_path, &tmp_path).unwrap();
     {
-        // TODO: fix BufStream
-        // let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
-        // let mut buf_file = BufStream::new(file);
-        // let fs = FileSystem::new(&mut buf_file).unwrap();
-        let mut file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
-        let fs = FileSystem::new(&mut file).unwrap();
+        let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
+        let mut buf_file = BufStream::new(file);
+        let fs = FileSystem::new(&mut buf_file).unwrap();
         f(fs);
     }
     fs::remove_file(tmp_path).unwrap();
