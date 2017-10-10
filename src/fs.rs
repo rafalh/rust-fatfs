@@ -147,8 +147,22 @@ impl <'a> FileSystem<'a> {
         bpb.sectors_per_fat_16 = rdr.read_u16::<LittleEndian>()?;
         bpb.sectors_per_track = rdr.read_u16::<LittleEndian>()?;
         bpb.heads = rdr.read_u16::<LittleEndian>()?;
-        bpb.hidden_sectors = rdr.read_u32::<LittleEndian>()?; // hidden_sector_count
+        bpb.hidden_sectors = rdr.read_u32::<LittleEndian>()?;
         bpb.total_sectors_32 = rdr.read_u32::<LittleEndian>()?;
+        
+        // sanity checks
+        if bpb.bytes_per_sector < 512 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
+        }
+        if bpb.sectors_per_cluster < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB"));
+        }
+        if bpb.reserved_sectors < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
+        }
+        if bpb.fats == 0 {
+            return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
+        }
         
         if bpb.sectors_per_fat_16 == 0 {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
@@ -157,20 +171,20 @@ impl <'a> FileSystem<'a> {
             bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
             bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
             bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
-            rdr.read(&mut bpb.reserved_0)?;
+            rdr.read_exact(&mut bpb.reserved_0)?;
             bpb.drive_num = rdr.read_u8()?;
             bpb.reserved_1 = rdr.read_u8()?;
             bpb.ext_sig = rdr.read_u8()?; // 0x29
             bpb.volume_id = rdr.read_u32::<LittleEndian>()?;
-            rdr.read(&mut bpb.volume_label)?;
-            rdr.read(&mut bpb.fs_type_label)?;
+            rdr.read_exact(&mut bpb.volume_label)?;
+            rdr.read_exact(&mut bpb.fs_type_label)?;
         } else {
             bpb.drive_num = rdr.read_u8()?;
             bpb.reserved_1 = rdr.read_u8()?;
             bpb.ext_sig = rdr.read_u8()?; // 0x29
             bpb.volume_id = rdr.read_u32::<LittleEndian>()?;
-            rdr.read(&mut bpb.volume_label)?;
-            rdr.read(&mut bpb.fs_type_label)?;
+            rdr.read_exact(&mut bpb.volume_label)?;
+            rdr.read_exact(&mut bpb.fs_type_label)?;
         }
         Ok(bpb)
     }
@@ -187,8 +201,8 @@ impl <'a> FileSystem<'a> {
     
     fn read_boot_record(rdr: &mut Read) -> io::Result<BootRecord> {
         let mut boot: BootRecord = Default::default();
-        rdr.read(&mut boot.bootjmp)?;
-        rdr.read(&mut boot.oem_name)?;
+        rdr.read_exact(&mut boot.bootjmp)?;
+        rdr.read_exact(&mut boot.oem_name)?;
         boot.bpb = Self::read_bpb(rdr)?;
         
         if boot.bpb.sectors_per_fat_16 == 0 {
@@ -196,7 +210,7 @@ impl <'a> FileSystem<'a> {
         } else {
             rdr.read_exact(&mut boot.boot_code[0..448])?;
         }
-        rdr.read(&mut boot.boot_sig)?;
+        rdr.read_exact(&mut boot.boot_sig)?;
         Ok(boot)
     }
     
