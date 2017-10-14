@@ -418,6 +418,100 @@ impl <'a, 'b> DirIter<'a, 'b> {
     }
 }
 
+struct LongNameBuilder {
+    buf: Vec<u16>,
+    chksum: u8,
+    index: u8,
+}
+
+const LFN_PART_LEN: usize = 13;
+
+fn lfn_checksum(short_name: &[u8]) -> u8 {
+    let mut chksum = 0u8;
+    for i in 0..11 {
+        chksum = (((chksum & 1) << 7) as u16 + (chksum >> 1) as u16 + short_name[i] as u16) as u8;
+    }
+    chksum
+}
+
+impl LongNameBuilder {
+    fn new() -> LongNameBuilder {
+        LongNameBuilder {
+            buf: Vec::<u16>::new(),
+            chksum: 0,
+            index: 0,
+        }
+    }
+    
+    fn clear(&mut self) {
+        self.buf.clear();
+        self.index = 0;
+    }
+    
+    fn to_vec(mut self) -> Vec<u16> {
+        if self.index == 1 {
+            self.truncate();
+            self.buf
+        } else {
+            //println!("unfinished LFN sequence {}", self.index);
+            Vec::<u16>::new()
+        }
+    }
+    
+    fn truncate(&mut self) {
+        // Truncate 0 and 0xFFFF characters from LFN buffer
+        let mut lfn_len = self.buf.len();
+        loop {
+            if lfn_len == 0 {
+                break;
+            }
+            match self.buf[lfn_len-1] {
+                0xFFFF | 0 => lfn_len -= 1,
+                _ => break,
+            }
+        }
+        self.buf.truncate(lfn_len);
+    }
+    
+    fn process(&mut self, data: &DirLfnEntryData) {
+        let is_last = (data.order & 0x40) != 0;
+        let index = data.order & 0x1F;
+        if index == 0 {
+            // Corrupted entry
+            //println!("currupted lfn entry! {:x}", data.order);
+            self.clear();
+            return;
+        }
+        if is_last {
+            // last entry is actually first entry in stream
+            self.index = index;
+            self.chksum = data.checksum;
+            self.buf.resize(index as usize * LFN_PART_LEN, 0);
+        } else if self.index == 0 || index != self.index - 1 || data.checksum != self.chksum {
+            // Corrupted entry
+            //println!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order, self.index, data.checksum, self.chksum);
+            self.clear();
+            return;
+        } else {
+            // Decrement LFN index only for non-last entries
+            self.index -= 1;
+        }
+        let pos = LFN_PART_LEN * (index - 1) as usize;
+        // copy name parts into LFN buffer
+        self.buf[pos+0..pos+5].clone_from_slice(&data.name_0);
+        self.buf[pos+5..pos+11].clone_from_slice(&data.name_1);
+        self.buf[pos+11..pos+13].clone_from_slice(&data.name_2);
+    }
+    
+    fn validate_chksum(&mut self, short_name: &[u8]) {
+        let chksum = lfn_checksum(short_name);
+        if chksum != self.chksum {
+            //println!("checksum mismatch {:x} {:x} {:?}", chksum, self.chksum, short_name);
+            self.clear();
+        }
+    }
+}
+
 const DIR_ENTRY_SIZE: u64 = 32;
 
 impl <'a, 'b> Iterator for DirIter<'a, 'b> {
@@ -427,10 +521,9 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
         if self.err {
             return None;
         }
-        let mut lfn_buf = Vec::<u16>::new();
+        let mut lfn_buf = LongNameBuilder::new();
         loop {
             let res = self.read_dir_entry_data();
-            let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
             let data = match res {
                 Ok(data) => data,
                 Err(err) => {
@@ -449,21 +542,13 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
                         lfn_buf.clear();
                         continue;
                     }
-                    // Truncate 0 and 0xFFFF characters from LFN buffer
-                    let mut lfn_len = lfn_buf.len();
-                    loop {
-                        if lfn_len == 0 {
-                            break;
-                        }
-                        match lfn_buf[lfn_len-1] {
-                            0xFFFF | 0 => lfn_len -= 1,
-                            _ => break,
-                        }
-                    }
-                    lfn_buf.truncate(lfn_len);
+                    // Get entry position on volume
+                    let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
+                    // Check if LFN checksum is valid
+                    lfn_buf.validate_chksum(&data.name);
                     return Some(Ok(DirEntry {
                         data,
-                        lfn: lfn_buf,
+                        lfn: lfn_buf.to_vec(),
                         fs: self.fs,
                         entry_pos: entry_pos.unwrap(), // safe
                     }));
@@ -474,17 +559,8 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
                         lfn_buf.clear();
                         continue;
                     }
-                    const LFN_PART_LEN: usize = 13;
-                    let index = (data.order & 0x1F) - 1;
-                    let pos = LFN_PART_LEN * index as usize;
-                    // resize LFN buffer to have enough space for entire name
-                    if lfn_buf.len() < pos + LFN_PART_LEN {
-                       lfn_buf.resize(pos + LFN_PART_LEN, 0);
-                    }
-                    // copy name parts into LFN buffer
-                    lfn_buf[pos+0..pos+5].clone_from_slice(&data.name_0);
-                    lfn_buf[pos+5..pos+11].clone_from_slice(&data.name_1);
-                    lfn_buf[pos+11..pos+13].clone_from_slice(&data.name_2);
+                    // Append to LFN buffer
+                    lfn_buf.process(&data);
                 }
             };
         }
