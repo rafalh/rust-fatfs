@@ -1,4 +1,5 @@
 extern crate fatfs;
+extern crate env_logger;
 
 use std::fs;
 use std::io::prelude::*;
@@ -16,6 +17,7 @@ const TMP_DIR: &str = "tmp";
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
+    let _ = env_logger::init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
     fs::create_dir(TMP_DIR).ok();

@@ -453,7 +453,7 @@ impl LongNameBuilder {
             self.truncate();
             self.buf
         } else {
-            //println!("unfinished LFN sequence {}", self.index);
+            warn!("unfinished LFN sequence {}", self.index);
             Vec::<u16>::new()
         }
     }
@@ -478,7 +478,7 @@ impl LongNameBuilder {
         let index = data.order & 0x1F;
         if index == 0 {
             // Corrupted entry
-            //println!("currupted lfn entry! {:x}", data.order);
+            warn!("currupted lfn entry! {:x}", data.order);
             self.clear();
             return;
         }
@@ -489,7 +489,7 @@ impl LongNameBuilder {
             self.buf.resize(index as usize * LFN_PART_LEN, 0);
         } else if self.index == 0 || index != self.index - 1 || data.checksum != self.chksum {
             // Corrupted entry
-            //println!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order, self.index, data.checksum, self.chksum);
+            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order, self.index, data.checksum, self.chksum);
             self.clear();
             return;
         } else {
@@ -506,7 +506,7 @@ impl LongNameBuilder {
     fn validate_chksum(&mut self, short_name: &[u8]) {
         let chksum = lfn_checksum(short_name);
         if chksum != self.chksum {
-            //println!("checksum mismatch {:x} {:x} {:?}", chksum, self.chksum, short_name);
+            warn!("checksum mismatch {:x} {:x} {:?}", chksum, self.chksum, short_name);
             self.clear();
         }
     }

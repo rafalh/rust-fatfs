@@ -167,7 +167,7 @@ impl<'a, 'b> Read for File<'a, 'b> {
         if read_size == 0 {
             return Ok(0);
         }
-        //println!("read c {} n {}", current_cluster, read_size);
+        trace!("read {} bytes in cluster {}", read_size, current_cluster);
         let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
         let read_bytes = {
             let mut disk = self.fs.disk.borrow_mut();
@@ -189,7 +189,6 @@ impl<'a, 'b> Write for File<'a, 'b> {
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
         let write_size = cmp::min(buf.len(), bytes_left_in_cluster);
-        //println!("write {:?}", write_size);
         // Exit early if we are going to write no data
         if write_size == 0 {
             return Ok(0);
@@ -226,6 +225,7 @@ impl<'a, 'b> Write for File<'a, 'b> {
                 None => panic!("Offset inside cluster but no cluster allocated"),
             }
         };
+        trace!("write {} bytes in cluster {}", write_size, current_cluster);
         let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
         let written_bytes = {
             let mut disk = self.fs.disk.borrow_mut();

@@ -23,4 +23,8 @@ default = ["chrono"]
 [dependencies]
 byteorder = "1"
 bitflags = "1.0"
+log = "0.3.8"
 chrono = { version = "0.4", optional = true }
+
+[dev-dependencies]
+env_logger = "0.4.3"

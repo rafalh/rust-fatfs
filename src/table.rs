@@ -35,7 +35,7 @@ fn read_fat(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<F
 }
 
 fn write_fat(fat: &mut DiskSlice, fat_type: FatType, cluster: u32, value: FatValue) -> io::Result<()> {
-    //println!("write_fat {} {:?}", cluster, value);
+    trace!("write FAT - cluster {} value {:?}", cluster, value);
     match fat_type {
         FatType::Fat12 => Fat12::set(fat, cluster, value),
         FatType::Fat16 => Fat16::set(fat, cluster, value),
@@ -65,7 +65,7 @@ pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster
     if prev_cluster.is_some() {
         write_fat(fat, fat_type, prev_cluster.unwrap(), FatValue::Data(new_cluster))?; // safe
     }
-    //println!("alloc_cluster {}", new_cluster);
+    trace!("allocated cluster {}", new_cluster);
     Ok(new_cluster)
 }
 

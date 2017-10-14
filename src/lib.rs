@@ -7,6 +7,9 @@ extern crate core;
 #[macro_use]
 extern crate bitflags;
 
+#[macro_use]
+extern crate log;
+
 #[cfg(feature = "chrono")]
 extern crate chrono;
 
