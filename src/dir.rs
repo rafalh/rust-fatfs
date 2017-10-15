@@ -37,6 +37,21 @@ impl <'a, 'b> Read for DirRawStream<'a, 'b> {
     }
 }
 
+impl <'a, 'b> Write for DirRawStream<'a, 'b> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            &mut DirRawStream::File(ref mut file) => file.write(buf),
+            &mut DirRawStream::Root(ref mut raw) => raw.write(buf),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            &mut DirRawStream::File(ref mut file) => file.flush(),
+            &mut DirRawStream::Root(ref mut raw) => raw.flush(),
+        }
+    }
+}
+
 impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
@@ -89,8 +104,12 @@ impl DirFileEntryData {
         self.first_cluster_lo = (n & 0xFFFF) as u16;
     }
     
-    pub(crate) fn size(&self) -> u32 {
-        self.size
+    pub(crate) fn size(&self) -> Option<u32> {
+        if self.is_file() {
+            Some(self.size)
+        } else {
+            None
+        }
     }
     
     pub(crate) fn set_size(&mut self, size: u32) {

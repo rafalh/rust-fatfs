@@ -32,10 +32,11 @@ impl <'a, 'b> File<'a, 'b> {
     }
     
     fn update_size(&mut self) {
+        let offset = self.offset;
         match self.entry {
             Some(ref mut e) => {
-                if self.offset > e.data.size() {
-                    e.data.set_size(self.offset);
+                if e.data.size().map_or(false, |s| offset > s) {
+                    e.data.set_size(offset);
                     self.entry_dirty = true;
                 }
             },
@@ -44,9 +45,10 @@ impl <'a, 'b> File<'a, 'b> {
     }
     
     pub fn truncate(&mut self) -> io::Result<()> {
+        let offset = self.offset;
         match self.entry {
             Some(ref mut e) => {
-                if e.data.size() == self.offset {
+                if e.data.size().map_or(false, |s| offset == s) {
                     return Ok(());
                 }
                 
@@ -108,13 +110,7 @@ impl <'a, 'b> File<'a, 'b> {
     
     fn bytes_left_in_file(&self) -> Option<usize> {
         match self.entry {
-            Some(ref e) => {
-                if e.data.is_file() {
-                    Some((e.data.size() - self.offset) as usize)
-                } else {
-                    None
-                }
-            },
+            Some(ref e) => e.data.size().map(|s| (s - self.offset) as usize),
             None => None,
         }
     }
@@ -253,15 +249,26 @@ impl<'a, 'b> Seek for File<'a, 'b> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.entry.iter().next().expect("cannot seek from end if size is unknown").data.size() as i64 + x,
+            SeekFrom::End(x) => self.entry.iter().next().map_or(None, |e| e.data.size()).expect("cannot seek from end if size is unknown") as i64 + x,
         };
         if new_pos < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
         }
         new_pos = match self.entry {
-            Some(ref e) => cmp::min(new_pos, e.data.size() as i64),
+            Some(ref e) => {
+                if e.data.size().map_or(false, |s| new_pos > s as i64) {
+                    info!("seek beyond end of file");
+                    e.data.size().unwrap() as i64 // safe
+                } else {
+                    new_pos
+                }
+            },
             _ => new_pos,
         };
+        trace!("file seek {} -> {} - entry {:?}", self.offset, new_pos, self.entry);
+        if new_pos == self.offset as i64 {
+            return Ok(self.offset as u64);
+        }
         let cluster_size = self.fs.get_cluster_size();
         let new_cluster = if new_pos == 0 {
             None
