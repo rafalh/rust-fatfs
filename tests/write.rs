@@ -89,3 +89,36 @@ fn test_write_long_file_fat16() {
 fn test_write_long_file_fat32() {
     call_with_fs(&test_write_long_file, FAT32_IMG, 2)
 }
+
+fn test_remove(fs: FileSystem) {
+    let mut root_dir = fs.root_dir();
+    assert!(root_dir.remove("very/long/path").is_err());
+    let dir = root_dir.open_dir("very/long/path").unwrap();
+    let mut names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "test.txt"]);
+    root_dir.remove("very/long/path/test.txt").unwrap();
+    names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", ".."]);
+    assert!(root_dir.remove("very/long/path").is_ok());
+    
+    names = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name"]);
+    root_dir.remove("long.txt").unwrap();
+    names = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, ["short.txt", "very", "very-long-dir-name"]);
+}
+
+#[test]
+fn test_remove_fat12() {
+    call_with_fs(&test_remove, FAT12_IMG, 3)
+}
+
+#[test]
+fn test_remove_fat16() {
+    call_with_fs(&test_remove, FAT16_IMG, 3)
+}
+
+#[test]
+fn test_remove_fat32() {
+    call_with_fs(&test_remove, FAT32_IMG, 3)
+}

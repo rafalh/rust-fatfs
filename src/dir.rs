@@ -75,6 +75,10 @@ bitflags! {
     }
 }
 
+const LFN_PART_LEN: usize = 13;
+const DIR_ENTRY_SIZE: u64 = 32;
+const DIR_ENTRY_REMOVED_FLAG: u8 = 0xE5;
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DirFileEntryData {
@@ -144,6 +148,14 @@ impl DirFileEntryData {
         wrt.write_u32::<LittleEndian>(self.size)?;
         Ok(())
     }
+    
+    fn is_removed(&self) -> bool {
+        self.name[0] == DIR_ENTRY_REMOVED_FLAG
+    }
+    
+    fn is_end(&self) -> bool {
+        self.name[0] == 0
+    }
 }
 
 #[allow(dead_code)]
@@ -159,10 +171,79 @@ struct DirLfnEntryData {
     name_2: [u16; 2],
 }
 
+impl DirLfnEntryData {
+    fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+        wrt.write_u8(self.order)?;
+        for ch in self.name_0.iter() {
+            wrt.write_u16::<LittleEndian>(*ch)?;
+        }
+        wrt.write_u8(self.attrs.bits())?;
+        wrt.write_u8(self.entry_type)?;
+        wrt.write_u8(self.checksum)?;
+        for ch in self.name_1.iter() {
+            wrt.write_u16::<LittleEndian>(*ch)?;
+        }
+        wrt.write_u16::<LittleEndian>(self.reserved_0)?;
+        for ch in self.name_2.iter() {
+            wrt.write_u16::<LittleEndian>(*ch)?;
+        }
+        Ok(())
+    }
+    
+    fn is_removed(&self) -> bool {
+        self.order == DIR_ENTRY_REMOVED_FLAG
+    }
+}
+
 #[derive(Clone, Debug)]
 enum DirEntryData {
     File(DirFileEntryData),
     Lfn(DirLfnEntryData),
+}
+
+impl DirEntryData {
+    fn serialize(&mut self, wrt: &mut Write) -> io::Result<()> {
+        match self {
+            &mut DirEntryData::File(ref mut file) => file.serialize(wrt),
+            &mut DirEntryData::Lfn(ref mut lfn) => lfn.serialize(wrt),
+        }
+    }
+    
+    fn deserialize(rdr: &mut Read) -> io::Result<DirEntryData> {
+        let mut name = [0; 11];
+        rdr.read_exact(&mut name)?;
+        let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
+        if attrs == FileAttributes::LFN {
+            let mut data = DirLfnEntryData {
+                attrs, ..Default::default()
+            };
+            let mut cur = Cursor::new(&name);
+            data.order = cur.read_u8()?;
+            cur.read_u16_into::<LittleEndian>(&mut data.name_0)?;
+            data.entry_type = rdr.read_u8()?;
+            data.checksum = rdr.read_u8()?;
+            rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
+            data.reserved_0 = rdr.read_u16::<LittleEndian>()?;
+            rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
+            Ok(DirEntryData::Lfn(data))
+        } else {
+            let data = DirFileEntryData {
+                name,
+                attrs,
+                reserved_0:       rdr.read_u8()?,
+                create_time_0:    rdr.read_u8()?,
+                create_time_1:    rdr.read_u16::<LittleEndian>()?,
+                create_date:      rdr.read_u16::<LittleEndian>()?,
+                access_date:      rdr.read_u16::<LittleEndian>()?,
+                first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
+                modify_time:      rdr.read_u16::<LittleEndian>()?,
+                modify_date:      rdr.read_u16::<LittleEndian>()?,
+                first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
+                size:             rdr.read_u32::<LittleEndian>()?,
+            };
+            Ok(DirEntryData::File(data))
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -250,6 +331,7 @@ pub struct DirEntry<'a, 'b: 'a> {
     data: DirFileEntryData,
     lfn: Vec<u16>,
     entry_pos: u64,
+    offset_range: (u64, u64),
     fs: FileSystemRef<'a, 'b>,
 }
 
@@ -390,6 +472,50 @@ impl <'a, 'b> Dir<'a, 'b> {
             None => Ok(e.to_file())
         }
     }
+    
+    fn is_empty(&mut self) -> io::Result<bool> {
+        for r in self.iter() {
+            let e = r?;
+            let name = e.file_name();
+            if name != "." && name != ".." {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+    
+    pub fn remove(&mut self, path: &str) -> io::Result<()> {
+        let (name, rest_opt) = Self::split_path(path);
+        let e = self.find_entry(name)?;
+        match rest_opt {
+            Some(rest) => e.to_dir().remove(rest),
+            None => {
+                trace!("removing {}", path);
+                if e.is_dir() && !e.to_dir().is_empty()? {
+                    return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
+                }
+                match e.first_cluster() {
+                    Some(n) => self.fs.cluster_iter(n).free()?,
+                    _ => {},
+                }
+                let mut stream = self.rdr.clone();
+                stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
+                let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
+                for _ in 0..num {
+                    let mut data = DirEntryData::deserialize(&mut stream)?;
+                    trace!("removing dir entry {:?}", data);
+                    match data {
+                        DirEntryData::File(ref mut data) =>
+                            data.name[0] = DIR_ENTRY_REMOVED_FLAG,
+                        DirEntryData::Lfn(ref mut data) => data.order = DIR_ENTRY_REMOVED_FLAG,
+                    };
+                    stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
+                    data.serialize(&mut stream)?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -400,39 +526,71 @@ pub struct DirIter<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> DirIter<'a, 'b> {
-    fn read_dir_entry_data(&mut self) -> io::Result<DirEntryData> {
-        let mut name = [0; 11];
-        self.rdr.read_exact(&mut name)?;
-        let attrs = FileAttributes::from_bits_truncate(self.rdr.read_u8()?);
-        if attrs == FileAttributes::LFN {
-            let mut data = DirLfnEntryData {
-                attrs, ..Default::default()
-            };
-            let mut cur = Cursor::new(&name);
-            data.order = cur.read_u8()?;
-            cur.read_u16_into::<LittleEndian>(&mut data.name_0)?;
-            data.entry_type = self.rdr.read_u8()?;
-            data.checksum = self.rdr.read_u8()?;
-            self.rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
-            data.reserved_0 = self.rdr.read_u16::<LittleEndian>()?;
-            self.rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
-            Ok(DirEntryData::Lfn(data))
-        } else {
-            let data = DirFileEntryData {
-                name,
-                attrs,
-                reserved_0:       self.rdr.read_u8()?,
-                create_time_0:    self.rdr.read_u8()?,
-                create_time_1:    self.rdr.read_u16::<LittleEndian>()?,
-                create_date:      self.rdr.read_u16::<LittleEndian>()?,
-                access_date:      self.rdr.read_u16::<LittleEndian>()?,
-                first_cluster_hi: self.rdr.read_u16::<LittleEndian>()?,
-                modify_time:      self.rdr.read_u16::<LittleEndian>()?,
-                modify_date:      self.rdr.read_u16::<LittleEndian>()?,
-                first_cluster_lo: self.rdr.read_u16::<LittleEndian>()?,
-                size:             self.rdr.read_u32::<LittleEndian>()?,
-            };
-            Ok(DirEntryData::File(data))
+    fn read_dir_entry_raw_data(&mut self) -> io::Result<DirEntryData> {
+        DirEntryData::deserialize(&mut self.rdr)
+    }
+    
+    fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
+        let mut lfn_buf = LongNameBuilder::new();
+        let mut offset = self.rdr.seek(SeekFrom::Current(0))?;
+        let mut begin_offset = offset;
+        loop {
+            let raw_entry = self.read_dir_entry_raw_data()?;
+            offset += DIR_ENTRY_SIZE;
+            match raw_entry {
+                DirEntryData::File(data) => {
+                    // Check if this is end of dif
+                    if data.is_end() {
+                        return Ok(None);
+                    }
+                    // Check if this is deleted or volume ID entry
+                    if data.is_removed() || data.attrs.contains(FileAttributes::VOLUME_ID) {
+                        lfn_buf.clear();
+                        begin_offset = offset;
+                        continue;
+                    }
+                    // Get entry position on volume
+                    let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
+                    // Check if LFN checksum is valid
+                    lfn_buf.validate_chksum(&data.name);
+                    return Ok(Some(DirEntry {
+                        data,
+                        lfn: lfn_buf.to_vec(),
+                        fs: self.fs,
+                        entry_pos: entry_pos.unwrap(), // safe
+                        offset_range: (begin_offset, offset),
+                    }));
+                },
+                DirEntryData::Lfn(data) => {
+                    // Check if this is deleted entry
+                    if data.is_removed() {
+                        lfn_buf.clear();
+                        begin_offset = offset;
+                        continue;
+                    }
+                    // Append to LFN buffer
+                    lfn_buf.process(&data);
+                }
+            }
+        }
+    }
+}
+
+impl <'a, 'b> Iterator for DirIter<'a, 'b> {
+    type Item = io::Result<DirEntry<'a, 'b>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.err {
+            return None;
+        }
+        let r = self.read_dir_entry();
+        match r {
+            Ok(Some(e)) => Some(Ok(e)),
+            Ok(None) => None,
+            Err(err) => {
+                self.err = true;
+                Some(Err(err))
+            },
         }
     }
 }
@@ -442,8 +600,6 @@ struct LongNameBuilder {
     chksum: u8,
     index: u8,
 }
-
-const LFN_PART_LEN: usize = 13;
 
 fn lfn_checksum(short_name: &[u8]) -> u8 {
     let mut chksum = 0u8;
@@ -527,61 +683,6 @@ impl LongNameBuilder {
         if chksum != self.chksum {
             warn!("checksum mismatch {:x} {:x} {:?}", chksum, self.chksum, short_name);
             self.clear();
-        }
-    }
-}
-
-const DIR_ENTRY_SIZE: u64 = 32;
-
-impl <'a, 'b> Iterator for DirIter<'a, 'b> {
-    type Item = io::Result<DirEntry<'a, 'b>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.err {
-            return None;
-        }
-        let mut lfn_buf = LongNameBuilder::new();
-        loop {
-            let res = self.read_dir_entry_data();
-            let data = match res {
-                Ok(data) => data,
-                Err(err) => {
-                    self.err = true;
-                    return Some(Err(err));
-                },
-            };
-            match data {
-                DirEntryData::File(data) => {
-                    // Check if this is end of dif
-                    if data.name[0] == 0 {
-                        return None;
-                    }
-                    // Check if this is deleted or volume ID entry
-                    if data.name[0] == 0xE5 || data.attrs.contains(FileAttributes::VOLUME_ID) {
-                        lfn_buf.clear();
-                        continue;
-                    }
-                    // Get entry position on volume
-                    let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
-                    // Check if LFN checksum is valid
-                    lfn_buf.validate_chksum(&data.name);
-                    return Some(Ok(DirEntry {
-                        data,
-                        lfn: lfn_buf.to_vec(),
-                        fs: self.fs,
-                        entry_pos: entry_pos.unwrap(), // safe
-                    }));
-                },
-                DirEntryData::Lfn(data) => {
-                    // Check if this is deleted entry
-                    if data.order == 0xE5 {
-                        lfn_buf.clear();
-                        continue;
-                    }
-                    // Append to LFN buffer
-                    lfn_buf.process(&data);
-                }
-            };
         }
     }
 }
