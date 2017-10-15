@@ -273,7 +273,7 @@ impl<'a, 'b> Seek for File<'a, 'b> {
         // get number of clusters to seek (favoring previous cluster in corner case)
         let cluster_count = ((new_pos + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
         let old_cluster_count = ((self.offset as i64 + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
-        let new_cluster =  if new_pos == 0 {
+        let new_cluster = if new_pos == 0 {
             None
         } else if cluster_count == old_cluster_count {
             self.current_cluster
