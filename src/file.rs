@@ -270,19 +270,21 @@ impl<'a, 'b> Seek for File<'a, 'b> {
             return Ok(self.offset as u64);
         }
         let cluster_size = self.fs.get_cluster_size();
-        let new_cluster = if new_pos == 0 {
+        // get number of clusters to seek (favoring previous cluster in corner case)
+        let cluster_count = ((new_pos + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
+        let old_cluster_count = ((self.offset as i64 + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
+        let new_cluster =  if new_pos == 0 {
             None
+        } else if cluster_count == old_cluster_count {
+            self.current_cluster
         } else {
-            // get number of clusters to seek (favoring previous cluster in corner case)
-            let cluster_count = ((new_pos - 1) / cluster_size as i64) as isize;
             match self.first_cluster {
                 Some(n) => {
                     let mut cluster = n;
                     let mut iter = self.fs.cluster_iter(n);
                     for i in 0..cluster_count {
                         cluster = match iter.next() {
-                            Some(Err(err)) => return Err(err),
-                            Some(Ok(n)) => n,
+                            Some(r) => r?,
                             None => {
                                 // chain ends before new position - seek to end of last cluster
                                 new_pos = (i + 1) as i64 * cluster_size as i64;
