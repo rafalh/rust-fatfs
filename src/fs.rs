@@ -275,7 +275,7 @@ impl <'a, 'b> DiskSlice<'a, 'b> {
         Self::new(first_sector as u64 * bytes_per_sector, sector_count as u64 * bytes_per_sector, mirrors, fs)
     }
     
-    pub(crate) fn global_pos(&self) -> u64 {
+    pub(crate) fn abs_pos(&self) -> u64 {
         self.begin + self.offset
     }
 }

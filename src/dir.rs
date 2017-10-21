@@ -21,10 +21,10 @@ pub(crate) enum DirRawStream<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> DirRawStream<'a, 'b> {
-    pub(crate) fn global_pos(&self) -> Option<u64> {
+    pub(crate) fn abs_pos(&self) -> Option<u64> {
         match self {
-            &DirRawStream::File(ref file) => file.global_pos(),
-            &DirRawStream::Root(ref slice) => Some(slice.global_pos()),
+            &DirRawStream::File(ref file) => file.abs_pos(),
+            &DirRawStream::Root(ref slice) => Some(slice.abs_pos()),
         }
     }
 }
@@ -78,7 +78,7 @@ bitflags! {
 
 const LFN_PART_LEN: usize = 13;
 const DIR_ENTRY_SIZE: u64 = 32;
-const DIR_ENTRY_REMOVED_FLAG: u8 = 0xE5;
+const DIR_ENTRY_FREE_FLAG: u8 = 0xE5;
 const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
 
 #[allow(dead_code)]
@@ -151,8 +151,8 @@ impl DirFileEntryData {
         Ok(())
     }
     
-    fn is_removed(&self) -> bool {
-        self.name[0] == DIR_ENTRY_REMOVED_FLAG
+    fn is_free(&self) -> bool {
+        self.name[0] == DIR_ENTRY_FREE_FLAG
     }
     
     fn is_end(&self) -> bool {
@@ -192,8 +192,8 @@ impl DirLfnEntryData {
         Ok(())
     }
     
-    fn is_removed(&self) -> bool {
-        self.order == DIR_ENTRY_REMOVED_FLAG
+    fn is_free(&self) -> bool {
+        self.order == DIR_ENTRY_FREE_FLAG
     }
     
     fn is_end(&self) -> bool {
@@ -219,7 +219,7 @@ impl DirEntryData {
         let mut name = [0; 11];
         rdr.read_exact(&mut name)?;
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
-        if attrs == FileAttributes::LFN {
+        if attrs & FileAttributes::LFN == FileAttributes::LFN {
             let mut data = DirLfnEntryData {
                 attrs, ..Default::default()
             };
@@ -251,10 +251,10 @@ impl DirEntryData {
         }
     }
     
-    fn is_removed(&self) -> bool {
+    fn is_free(&self) -> bool {
         match self {
-            &DirEntryData::File(ref file) => file.is_removed(),
-            &DirEntryData::Lfn(ref lfn) => lfn.is_removed(),
+            &DirEntryData::File(ref file) => file.is_free(),
+            &DirEntryData::Lfn(ref lfn) => lfn.is_free(),
         }
     }
     
@@ -440,19 +440,19 @@ impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
 
 #[derive(Clone)]
 pub struct Dir<'a, 'b: 'a> {
-    rdr: DirRawStream<'a, 'b>,
+    stream: DirRawStream<'a, 'b>,
     fs: FileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> Dir<'a, 'b> {
     
-    pub(crate) fn new(rdr: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
-        Dir { rdr, fs }
+    pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
+        Dir { stream, fs }
     }
     
     pub fn iter(&self) -> DirIter<'a, 'b> {
         DirIter {
-            rdr: self.rdr.clone(),
+            stream: self.stream.clone(),
             fs: self.fs.clone(),
             err: false,
         }
@@ -532,7 +532,7 @@ impl <'a, 'b> Dir<'a, 'b> {
                     Some(n) => self.fs.cluster_iter(n).free()?,
                     _ => {},
                 }
-                let mut stream = self.rdr.clone();
+                let mut stream = self.stream.clone();
                 stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
                 let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
                 for _ in 0..num {
@@ -540,8 +540,8 @@ impl <'a, 'b> Dir<'a, 'b> {
                     trace!("removing dir entry {:?}", data);
                     match data {
                         DirEntryData::File(ref mut data) =>
-                            data.name[0] = DIR_ENTRY_REMOVED_FLAG,
-                        DirEntryData::Lfn(ref mut data) => data.order = DIR_ENTRY_REMOVED_FLAG,
+                            data.name[0] = DIR_ENTRY_FREE_FLAG,
+                        DirEntryData::Lfn(ref mut data) => data.order = DIR_ENTRY_FREE_FLAG,
                     };
                     stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
                     data.serialize(&mut stream)?;
@@ -552,13 +552,13 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
     
     fn find_free_entries(&mut self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
-        let mut stream = self.rdr.clone();
+        let mut stream = self.stream.clone();
         let mut first_free = 0;
         let mut num_free = 0;
         let mut i = 0;
         loop {
             let data = DirEntryData::deserialize(&mut stream)?;
-            if data.is_removed() {
+            if data.is_free() {
                 if num_free == 0 {
                     first_free = i;
                 }
@@ -572,7 +572,7 @@ impl <'a, 'b> Dir<'a, 'b> {
                     first_free = i;
                 }
                 stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
-                // FIXME: make sure there is END?
+                // FIXME: make sure new allocated cluster is zeroed
                 return Ok(stream);
             } else {
                 num_free = 0;
@@ -646,7 +646,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         };
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
-        let abs_pos = stream.global_pos().map(|p| p - DIR_ENTRY_SIZE);
+        let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
         return Ok(DirEntry {
             data: raw_entry,
             lfn: Vec::new(),
@@ -659,19 +659,19 @@ impl <'a, 'b> Dir<'a, 'b> {
 
 #[derive(Clone)]
 pub struct DirIter<'a, 'b: 'a> {
-    rdr: DirRawStream<'a, 'b>,
+    stream: DirRawStream<'a, 'b>,
     fs: FileSystemRef<'a, 'b>,
     err: bool,
 }
 
 impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry_raw_data(&mut self) -> io::Result<DirEntryData> {
-        DirEntryData::deserialize(&mut self.rdr)
+        DirEntryData::deserialize(&mut self.stream)
     }
     
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
         let mut lfn_buf = LongNameBuilder::new();
-        let mut offset = self.rdr.seek(SeekFrom::Current(0))?;
+        let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
         loop {
             let raw_entry = self.read_dir_entry_raw_data()?;
@@ -683,13 +683,13 @@ impl <'a, 'b> DirIter<'a, 'b> {
                         return Ok(None);
                     }
                     // Check if this is deleted or volume ID entry
-                    if data.is_removed() || data.attrs.contains(FileAttributes::VOLUME_ID) {
+                    if data.is_free() || data.attrs.contains(FileAttributes::VOLUME_ID) {
                         lfn_buf.clear();
                         begin_offset = offset;
                         continue;
                     }
                     // Get entry position on volume
-                    let entry_pos = self.rdr.global_pos().map(|p| p - DIR_ENTRY_SIZE);
+                    let entry_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
                     lfn_buf.validate_chksum(&data.name);
                     return Ok(Some(DirEntry {
@@ -702,7 +702,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
                 },
                 DirEntryData::Lfn(data) => {
                     // Check if this is deleted entry
-                    if data.is_removed() {
+                    if data.is_free() {
                         lfn_buf.clear();
                         begin_offset = offset;
                         continue;

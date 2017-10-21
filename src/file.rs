@@ -74,7 +74,7 @@ impl <'a, 'b> File<'a, 'b> {
         }
     }
     
-    pub(crate) fn global_pos(&self) -> Option<u64> {
+    pub(crate) fn abs_pos(&self) -> Option<u64> {
         // Returns current position relative to filesystem start
         // Note: when between clusters it returns position after previous cluster
         match self.current_cluster {
