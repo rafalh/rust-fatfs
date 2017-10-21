@@ -122,3 +122,37 @@ fn test_remove_fat16() {
 fn test_remove_fat32() {
     call_with_fs(&test_remove, FAT32_IMG, 3)
 }
+
+fn test_create_file(fs: FileSystem) {
+    let mut root_dir = fs.root_dir();
+    let dir = root_dir.open_dir("very/long/path").unwrap();
+    let mut names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "test.txt"]);
+    {
+        let mut file = root_dir.create_file("very/long/path/new-file-with-long-name.txt").unwrap();
+        file.write_all(&TEST_STR.as_bytes()).unwrap();
+    }
+    names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "test.txt", "new-file-with-long-name.txt"]);
+    {
+        let mut file = root_dir.open_file("very/long/path/new-file-with-long-name.txt").unwrap();
+        let mut content = String::new();
+        file.read_to_string(&mut content).unwrap();
+        assert_eq!(&content, &TEST_STR);
+    }
+}
+
+#[test]
+fn test_create_file_fat12() {
+    call_with_fs(&test_create_file, FAT12_IMG, 4)
+}
+
+#[test]
+fn test_create_file_fat16() {
+    call_with_fs(&test_create_file, FAT16_IMG, 4)
+}
+
+#[test]
+fn test_create_file_fat32() {
+    call_with_fs(&test_create_file, FAT32_IMG, 4)
+}
