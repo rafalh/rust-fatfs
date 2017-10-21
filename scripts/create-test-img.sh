@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 OUT_DIR=../resources
 set -e
 
@@ -10,7 +10,7 @@ create_test_img() {
 	mkfs.vfat -s 1 -F $fatSize -n "Test!" -i 12345678 "$name"
 	mkdir -p mnt
 	sudo mount -o loop "$name" mnt -o rw,uid=$USER,gid=$USER
-	for i in {1..1000}; do
+	for i in $(seq 1 1000); do
 	  echo "Rust is cool!" >>"mnt/long.txt"
 	done
 	echo "Rust is cool!" >>"mnt/short.txt"
