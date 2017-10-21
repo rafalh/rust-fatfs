@@ -63,6 +63,7 @@ impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
 }
 
 bitflags! {
+    /// FAT file attributes
     #[derive(Default)]
     pub struct FileAttributes: u8 {
         const READ_ONLY  = 0x01;
@@ -266,6 +267,7 @@ impl DirEntryData {
     }
 }
 
+/// DOS compatible date
 #[derive(Clone, Copy, Debug)]
 pub struct Date {
     pub year: u16,
@@ -284,6 +286,7 @@ impl Date {
     }
 }
 
+/// DOS compatible time
 #[derive(Clone, Copy, Debug)]
 pub struct Time {
     pub hour: u16,
@@ -302,6 +305,7 @@ impl Time {
     }
 }
 
+/// DOS compatible date and time
 #[derive(Clone, Copy, Debug)]
 pub struct DateTime {
     pub date: Date,
@@ -346,6 +350,9 @@ impl FileEntryInfo {
     }
 }
 
+/// FAT directory entry.
+///
+/// Returned by DirIter.
 #[derive(Clone)]
 pub struct DirEntry<'a, 'b: 'a> {
     data: DirFileEntryData,
@@ -356,6 +363,7 @@ pub struct DirEntry<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> DirEntry<'a, 'b> {
+    /// Returns short file name
     pub fn short_file_name(&self) -> String {
         let name_str = String::from_utf8_lossy(&self.data.name[0..8]);
         let ext_str = String::from_utf8_lossy(&self.data.name[8..11]);
@@ -368,6 +376,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         }
     }
     
+    /// Returns long file name or if it doesn't exist fallbacks to short file name.
     pub fn file_name(&self) -> String {
         if self.lfn.len() > 0 {
             String::from_utf16_lossy(&self.lfn)
@@ -376,14 +385,17 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         }
     }
     
+    /// Returns file attributes
     pub fn attributes(&self) -> FileAttributes {
         self.data.attrs
     }
     
+    /// Checks if entry belongs to directory.
     pub fn is_dir(&self) -> bool {
         self.data.is_dir()
     }
     
+    /// Checks if entry belongs to regular file.
     pub fn is_file(&self) -> bool {
         self.data.is_file()
     }
@@ -399,11 +411,17 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         }
     }
     
+    /// Returns File struct for this entry.
+    ///
+    /// Panics if this is not a file.
     pub fn to_file(&self) -> File<'a, 'b> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.entry_info()), self.fs)
     }
     
+    /// Returns Dir struct for this entry.
+    ///
+    /// Panics if this is not a directory.
     pub fn to_dir(&self) -> Dir<'a, 'b> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
@@ -415,18 +433,22 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         }
     }
     
+    /// Returns file size or 0 for directory.
     pub fn len(&self) -> u64 {
         self.data.size as u64
     }
     
+    /// Returns file creation date and time.
     pub fn created(&self) -> DateTime {
         DateTime::from_u16(self.data.create_date, self.data.create_time_1)
     }
     
+    /// Returns file last access date.
     pub fn accessed(&self) -> Date {
         Date::from_u16(self.data.access_date)
     }
     
+    /// Returns file last modification date and time.
     pub fn modified(&self) -> DateTime {
         DateTime::from_u16(self.data.modify_date, self.data.modify_time)
     }
@@ -438,6 +460,7 @@ impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
     }
 }
 
+/// FAT directory
 #[derive(Clone)]
 pub struct Dir<'a, 'b: 'a> {
     stream: DirRawStream<'a, 'b>,
@@ -450,6 +473,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Dir { stream, fs }
     }
     
+    /// Creates directory entries iterator
     pub fn iter(&self) -> DirIter<'a, 'b> {
         DirIter {
             stream: self.stream.clone(),
@@ -475,6 +499,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
     
+    /// Opens existing directory
     pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
@@ -484,6 +509,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
     
+    /// Opens existing file.
     pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
@@ -493,6 +519,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
     
+    /// Creates new file or opens existing.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
         let r = self.find_entry(name);
@@ -518,6 +545,10 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok(true)
     }
     
+    /// Removes existing file or directory.
+    ///
+    /// Make sure there is no reference to this file (no File instance) or filesystem corruption
+    /// can happen.
     pub fn remove(&mut self, path: &str) -> io::Result<()> {
         let (name, rest_opt) = Self::split_path(path);
         let e = self.find_entry(name)?;
@@ -657,6 +688,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 }
 
+/// Directory entries iterator.
 #[derive(Clone)]
 pub struct DirIter<'a, 'b: 'a> {
     stream: DirRawStream<'a, 'b>,

@@ -18,7 +18,11 @@ pub struct BufStream<T: Read+Write+Seek>  {
     write: bool,
 }
 
+/// The BufStream struct adds buffering to underlying file or device.
+///
+/// It's basically composition of BufReader and BufWritter.
 impl<T: Read+Write+Seek> BufStream<T> {
+    /// Creates new BufStream object for given stream.
     pub fn new(inner: T) -> Self {
         BufStream::<T> {
             inner,

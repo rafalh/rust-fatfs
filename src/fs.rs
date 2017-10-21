@@ -79,6 +79,7 @@ impl Default for BootRecord {
 
 pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
 
+/// FAT filesystem main struct.
 pub struct FileSystem<'a> {
     pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
     pub(crate) fat_type: FatType,
@@ -88,7 +89,10 @@ pub struct FileSystem<'a> {
 }
 
 impl <'a> FileSystem<'a> {
-    
+    /// Creates new filesystem object instance.
+    ///
+    /// Note: creating multiple filesystem objects with one underlying device/disk image can
+    /// cause filesystem corruption.
     pub fn new<T: ReadWriteSeek>(disk: &'a mut T) -> io::Result<FileSystem<'a>> {
         let boot = Self::read_boot_record(disk)?;
         if boot.boot_sig != [0x55, 0xAA] {
@@ -112,18 +116,25 @@ impl <'a> FileSystem<'a> {
         })
     }
     
+    /// Returns type of used File Allocation Table (FAT).
     pub fn fat_type(&self) -> FatType {
         self.fat_type
     }
     
+    /// Returns volume identifier read from BPB in Boot Sector.
     pub fn volume_id(&self) -> u32 {
         self.boot.bpb.volume_id
     }
     
+    /// Returns volume label from BPB in Boot Sector.
+    ///
+    /// Note: File with VOLUME_ID attribute in root directory is ignored by this library.
+    /// Only label from BPB is used.
     pub fn volume_label(&self) -> String {
         String::from_utf8_lossy(&self.boot.bpb.volume_label).trim_right().to_string()
     }
     
+    /// Returns root directory object allowing futher penetration of filesystem structure.
     pub fn root_dir<'b>(&'b self) -> Dir<'b, 'a> {
         let root_rdr = {
             match self.fat_type {

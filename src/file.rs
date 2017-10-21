@@ -6,6 +6,7 @@ use std::io;
 use fs::FileSystemRef;
 use dir::{FileEntryInfo, DateTime};
 
+/// FAT file used for reading and writing.
 #[derive(Clone)]
 pub struct File<'a, 'b: 'a> {
     // Note first_cluster is None if file is empty
@@ -44,6 +45,7 @@ impl <'a, 'b> File<'a, 'b> {
         }
     }
     
+    /// Truncate file to current position.
     pub fn truncate(&mut self) -> io::Result<()> {
         let offset = self.offset;
         match self.entry {
@@ -98,6 +100,9 @@ impl <'a, 'b> File<'a, 'b> {
         Ok(())
     }
     
+    /// Set date and time of last modification for this file.
+    ///
+    /// Note: this library doesn't know current time so changing timestamp must be done manually.
     pub fn set_modified(&mut self, date_time: DateTime) {
         match self.entry {
             Some(ref mut e) => {
