@@ -3,6 +3,7 @@ use std::fmt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{Cursor, ErrorKind, SeekFrom};
+use std::cmp;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "chrono")]
@@ -78,6 +79,7 @@ bitflags! {
 const LFN_PART_LEN: usize = 13;
 const DIR_ENTRY_SIZE: u64 = 32;
 const DIR_ENTRY_REMOVED_FLAG: u8 = 0xE5;
+const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
@@ -193,6 +195,10 @@ impl DirLfnEntryData {
     fn is_removed(&self) -> bool {
         self.order == DIR_ENTRY_REMOVED_FLAG
     }
+    
+    fn is_end(&self) -> bool {
+        self.order == 0
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -242,6 +248,20 @@ impl DirEntryData {
                 size:             rdr.read_u32::<LittleEndian>()?,
             };
             Ok(DirEntryData::File(data))
+        }
+    }
+    
+    fn is_removed(&self) -> bool {
+        match self {
+            &DirEntryData::File(ref file) => file.is_removed(),
+            &DirEntryData::Lfn(ref lfn) => lfn.is_removed(),
+        }
+    }
+    
+    fn is_end(&self) -> bool {
+        match self {
+            &DirEntryData::File(ref file) => file.is_end(),
+            &DirEntryData::Lfn(ref lfn) => lfn.is_end(),
         }
     }
 }
@@ -473,6 +493,20 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
     
+    pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
+        let (name, rest_opt) = Self::split_path(path);
+        let r = self.find_entry(name);
+        match rest_opt {
+            Some(rest) => r?.to_dir().create_file(rest),
+            None => {
+                match r {
+                    Err(_) => Ok(self.create_file_entry(name)?.to_file()),
+                    Ok(e) => Ok(e.to_file())
+                }
+            }
+        }
+    }
+    
     fn is_empty(&mut self) -> io::Result<bool> {
         for r in self.iter() {
             let e = r?;
@@ -515,6 +549,111 @@ impl <'a, 'b> Dir<'a, 'b> {
                 Ok(())
             }
         }
+    }
+    
+    fn find_free_entries(&mut self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
+        let mut stream = self.rdr.clone();
+        let mut first_free = 0;
+        let mut num_free = 0;
+        let mut i = 0;
+        loop {
+            let data = DirEntryData::deserialize(&mut stream)?;
+            if data.is_removed() {
+                if num_free == 0 {
+                    first_free = i;
+                }
+                num_free += 1;
+                if num_free == num_entries {
+                    stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
+                    return Ok(stream);
+                }
+            } else if data.is_end() {
+                if num_free == 0 {
+                    first_free = i;
+                }
+                stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
+                // FIXME: make sure there is END?
+                return Ok(stream);
+            } else {
+                num_free = 0;
+            }
+            i += 1;
+        }
+    }
+    
+    fn gen_short_name(name: &str) -> [u8;11] {
+        // short name is always uppercase
+        let mut name_upper = name.to_uppercase();
+        // padded by ' '
+        let mut short_name = [0x20u8; 11];
+        // find extension after last dot
+        match name_upper.rfind('.') {
+            Some(index) => {
+                // copy first 3 characters of extension
+                let short_ext_len = cmp::min(name_upper.len() - index - 1, 3);
+                short_name[8..8+short_ext_len].copy_from_slice(name_upper[index..index+short_ext_len].as_bytes());
+                // remove extension with dot from name_upper
+                name_upper.truncate(index);
+            },
+            None => {},
+        }
+        // copy first 8 characters of name
+        let short_name_len = cmp::min(name_upper.len(), 8);
+        short_name[..short_name_len].copy_from_slice(name_upper[..short_name_len].as_bytes());
+        // FIXME: make sure short name is unique...
+        short_name
+    }
+    
+    fn create_file_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
+        if name.len() > 255 {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "filename too long"));
+        }
+        let num_lfn_entries = (name.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
+        let num_entries = num_lfn_entries + 1; // multiple lfn entries + one file entry
+        let mut stream = self.find_free_entries(num_entries)?;
+        let start_pos = stream.seek(io::SeekFrom::Current(0))?;
+        let short_name = Self::gen_short_name(name);
+        let lfn_chsum = lfn_checksum(&short_name);
+        let lfn_utf8 = name.encode_utf16().collect::<Vec<u16>>();
+        for i in 0..num_lfn_entries {
+            let lfn_index = num_lfn_entries - i;
+            let mut order = lfn_index as u8;
+            if i == 0 {
+                order |= LFN_ENTRY_LAST_FLAG;
+            }
+            debug_assert!(order > 0);
+            let lfn_pos = (lfn_index - 1) * LFN_PART_LEN;
+            let mut lfn_part = [0xFFFFu16; LFN_PART_LEN];
+            let lfn_part_len = cmp::min(name.len() - lfn_pos, LFN_PART_LEN);
+            lfn_part[..lfn_part_len].copy_from_slice(&lfn_utf8[lfn_pos..lfn_pos+lfn_part_len]);
+            if lfn_part_len < LFN_PART_LEN {
+                lfn_part[lfn_part_len] = 0;
+            }
+            let mut lfn_entry = DirLfnEntryData {
+                order,
+                attrs: FileAttributes::LFN,
+                checksum: lfn_chsum,
+                ..Default::default()
+            };
+            lfn_entry.name_0.copy_from_slice(&lfn_part[0..5]);
+            lfn_entry.name_1.copy_from_slice(&lfn_part[5..5+6]);
+            lfn_entry.name_2.copy_from_slice(&lfn_part[11..11+2]);
+            lfn_entry.serialize(&mut stream)?;
+        }
+        let raw_entry = DirFileEntryData {
+            name: short_name,
+            ..Default::default()
+        };
+        raw_entry.serialize(&mut stream)?;
+        let end_pos = stream.seek(io::SeekFrom::Current(0))?;
+        let abs_pos = stream.global_pos().map(|p| p - DIR_ENTRY_SIZE);
+        return Ok(DirEntry {
+            data: raw_entry,
+            lfn: Vec::new(),
+            fs: self.fs,
+            entry_pos: abs_pos.unwrap(), // safe
+            offset_range: (start_pos, end_pos),
+        });
     }
 }
 
@@ -649,7 +788,7 @@ impl LongNameBuilder {
     }
     
     fn process(&mut self, data: &DirLfnEntryData) {
-        let is_last = (data.order & 0x40) != 0;
+        let is_last = (data.order & LFN_ENTRY_LAST_FLAG) != 0;
         let index = data.order & 0x1F;
         if index == 0 {
             // Corrupted entry
@@ -673,9 +812,9 @@ impl LongNameBuilder {
         }
         let pos = LFN_PART_LEN * (index - 1) as usize;
         // copy name parts into LFN buffer
-        self.buf[pos+0..pos+5].clone_from_slice(&data.name_0);
-        self.buf[pos+5..pos+11].clone_from_slice(&data.name_1);
-        self.buf[pos+11..pos+13].clone_from_slice(&data.name_2);
+        self.buf[pos+0..pos+5].copy_from_slice(&data.name_0);
+        self.buf[pos+5..pos+11].copy_from_slice(&data.name_1);
+        self.buf[pos+11..pos+13].copy_from_slice(&data.name_2);
     }
     
     fn validate_chksum(&mut self, short_name: &[u8]) {
