@@ -104,13 +104,13 @@ impl DirFileEntryData {
         let n = ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
         if n == 0 { None } else { Some(n) }
     }
-    
+
     pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>) {
         let n = cluster.unwrap_or(0);
         self.first_cluster_hi = (n >> 16) as u16;
         self.first_cluster_lo = (n & 0xFFFF) as u16;
     }
-    
+
     pub(crate) fn size(&self) -> Option<u32> {
         if self.is_file() {
             Some(self.size)
@@ -118,24 +118,24 @@ impl DirFileEntryData {
             None
         }
     }
-    
+
     pub(crate) fn set_size(&mut self, size: u32) {
         self.size = size;
     }
-    
+
     pub fn is_dir(&self) -> bool {
         self.attrs.contains(FileAttributes::DIRECTORY)
     }
-    
+
     pub fn is_file(&self) -> bool {
         !self.is_dir()
     }
-    
+
     pub(crate) fn set_modified(&mut self, date_time: DateTime) {
         self.modify_date = date_time.date.to_u16();
         self.modify_time = date_time.time.to_u16();
     }
-    
+
     pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
@@ -151,11 +151,11 @@ impl DirFileEntryData {
         wrt.write_u32::<LittleEndian>(self.size)?;
         Ok(())
     }
-    
+
     fn is_free(&self) -> bool {
         self.name[0] == DIR_ENTRY_FREE_FLAG
     }
-    
+
     fn is_end(&self) -> bool {
         self.name[0] == 0
     }
@@ -192,11 +192,11 @@ impl DirLfnEntryData {
         }
         Ok(())
     }
-    
+
     fn is_free(&self) -> bool {
         self.order == DIR_ENTRY_FREE_FLAG
     }
-    
+
     fn is_end(&self) -> bool {
         self.order == 0
     }
@@ -215,7 +215,7 @@ impl DirEntryData {
             &mut DirEntryData::Lfn(ref mut lfn) => lfn.serialize(wrt),
         }
     }
-    
+
     fn deserialize(rdr: &mut Read) -> io::Result<DirEntryData> {
         let mut name = [0; 11];
         rdr.read_exact(&mut name)?;
@@ -251,14 +251,14 @@ impl DirEntryData {
             Ok(DirEntryData::File(data))
         }
     }
-    
+
     fn is_free(&self) -> bool {
         match self {
             &DirEntryData::File(ref file) => file.is_free(),
             &DirEntryData::Lfn(ref lfn) => lfn.is_free(),
         }
     }
-    
+
     fn is_end(&self) -> bool {
         match self {
             &DirEntryData::File(ref file) => file.is_end(),
@@ -280,7 +280,7 @@ impl Date {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
     }
-    
+
     fn to_u16(&self) -> u16 {
         ((self.year - 1980) << 9) | (self.month << 5) | self.day
     }
@@ -299,7 +299,7 @@ impl Time {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
         Time { hour, min, sec }
     }
-    
+
     fn to_u16(&self) -> u16 {
         (self.hour << 11) | (self.min << 5) | (self.sec / 2)
     }
@@ -375,7 +375,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
             format!("{}.{}", name_trimmed, ext_trimmed)
         }
     }
-    
+
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
     pub fn file_name(&self) -> String {
         if self.lfn.len() > 0 {
@@ -384,33 +384,33 @@ impl <'a, 'b> DirEntry<'a, 'b> {
             self.short_file_name()
         }
     }
-    
+
     /// Returns file attributes
     pub fn attributes(&self) -> FileAttributes {
         self.data.attrs
     }
-    
+
     /// Checks if entry belongs to directory.
     pub fn is_dir(&self) -> bool {
         self.data.is_dir()
     }
-    
+
     /// Checks if entry belongs to regular file.
     pub fn is_file(&self) -> bool {
         self.data.is_file()
     }
-    
+
     pub(crate) fn first_cluster(&self) -> Option<u32> {
         self.data.first_cluster()
     }
-    
+
     fn entry_info(&self) -> FileEntryInfo {
         FileEntryInfo {
             data: self.data.clone(),
             pos: self.entry_pos,
         }
     }
-    
+
     /// Returns File struct for this entry.
     ///
     /// Panics if this is not a file.
@@ -418,7 +418,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.entry_info()), self.fs)
     }
-    
+
     /// Returns Dir struct for this entry.
     ///
     /// Panics if this is not a directory.
@@ -432,22 +432,22 @@ impl <'a, 'b> DirEntry<'a, 'b> {
             None => self.fs.root_dir(),
         }
     }
-    
+
     /// Returns file size or 0 for directory.
     pub fn len(&self) -> u64 {
         self.data.size as u64
     }
-    
+
     /// Returns file creation date and time.
     pub fn created(&self) -> DateTime {
         DateTime::from_u16(self.data.create_date, self.data.create_time_1)
     }
-    
+
     /// Returns file last access date.
     pub fn accessed(&self) -> Date {
         Date::from_u16(self.data.access_date)
     }
-    
+
     /// Returns file last modification date and time.
     pub fn modified(&self) -> DateTime {
         DateTime::from_u16(self.data.modify_date, self.data.modify_time)
@@ -468,11 +468,11 @@ pub struct Dir<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> Dir<'a, 'b> {
-    
+
     pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
         Dir { stream, fs }
     }
-    
+
     /// Creates directory entries iterator
     pub fn iter(&self) -> DirIter<'a, 'b> {
         DirIter {
@@ -481,14 +481,14 @@ impl <'a, 'b> Dir<'a, 'b> {
             err: false,
         }
     }
-    
+
     fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
         let mut path_split = path.trim_matches('/').splitn(2, "/");
         let comp = path_split.next().unwrap(); // safe unwrap - splitn always returns at least one element
         let rest_opt = path_split.next();
         (comp, rest_opt)
     }
-    
+
     fn find_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
@@ -498,7 +498,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
-    
+
     /// Opens existing directory
     pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
@@ -508,7 +508,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             None => Ok(e.to_dir())
         }
     }
-    
+
     /// Opens existing file.
     pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
@@ -518,7 +518,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             None => Ok(e.to_file())
         }
     }
-    
+
     /// Creates new file or opens existing.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = Self::split_path(path);
@@ -533,7 +533,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             }
         }
     }
-    
+
     fn is_empty(&mut self) -> io::Result<bool> {
         for r in self.iter() {
             let e = r?;
@@ -544,7 +544,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
         Ok(true)
     }
-    
+
     /// Removes existing file or directory.
     ///
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
@@ -581,7 +581,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             }
         }
     }
-    
+
     fn find_free_entries(&mut self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
         let mut stream = self.stream.clone();
         let mut first_free = 0;
@@ -611,7 +611,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             i += 1;
         }
     }
-    
+
     fn gen_short_name(name: &str) -> [u8;11] {
         // short name is always uppercase
         let mut name_upper = name.to_uppercase();
@@ -634,7 +634,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         // FIXME: make sure short name is unique...
         short_name
     }
-    
+
     fn create_file_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
         if name.len() > 255 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "filename too long"));
@@ -700,7 +700,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry_raw_data(&mut self) -> io::Result<DirEntryData> {
         DirEntryData::deserialize(&mut self.stream)
     }
-    
+
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
         let mut lfn_buf = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
@@ -788,12 +788,12 @@ impl LongNameBuilder {
             index: 0,
         }
     }
-    
+
     fn clear(&mut self) {
         self.buf.clear();
         self.index = 0;
     }
-    
+
     fn to_vec(mut self) -> Vec<u16> {
         if self.index == 1 {
             self.truncate();
@@ -803,7 +803,7 @@ impl LongNameBuilder {
             Vec::<u16>::new()
         }
     }
-    
+
     fn truncate(&mut self) {
         // Truncate 0 and 0xFFFF characters from LFN buffer
         let mut lfn_len = self.buf.len();
@@ -818,7 +818,7 @@ impl LongNameBuilder {
         }
         self.buf.truncate(lfn_len);
     }
-    
+
     fn process(&mut self, data: &DirLfnEntryData) {
         let is_last = (data.order & LFN_ENTRY_LAST_FLAG) != 0;
         let index = data.order & 0x1F;
@@ -848,7 +848,7 @@ impl LongNameBuilder {
         self.buf[pos+5..pos+11].copy_from_slice(&data.name_1);
         self.buf[pos+11..pos+13].copy_from_slice(&data.name_2);
     }
-    
+
     fn validate_chksum(&mut self, short_name: &[u8]) {
         let chksum = lfn_checksum(short_name);
         if chksum != self.chksum {

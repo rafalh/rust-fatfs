@@ -39,7 +39,7 @@ pub(crate) struct BiosParameterBlock {
     heads: u16,
     hidden_sectors: u32,
     total_sectors_32: u32,
-    
+
     // Extended BIOS Parameter Block
     sectors_per_fat_32: u32,
     extended_flags: u16,
@@ -66,7 +66,7 @@ pub(crate) struct BootRecord {
 }
 
 impl Default for BootRecord {
-    fn default() -> BootRecord { 
+    fn default() -> BootRecord {
         BootRecord {
             bootjmp: Default::default(),
             oem_name: Default::default(),
@@ -98,7 +98,7 @@ impl <'a> FileSystem<'a> {
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
         }
-        
+
         let total_sectors = if boot.bpb.total_sectors_16 == 0 { boot.bpb.total_sectors_32 } else { boot.bpb.total_sectors_16 as u32 };
         let sectors_per_fat = if boot.bpb.sectors_per_fat_16 == 0 { boot.bpb.sectors_per_fat_32 } else { boot.bpb.sectors_per_fat_16 as u32 };
         let root_dir_sectors = (((boot.bpb.root_entries * 32) + (boot.bpb.bytes_per_sector - 1)) / boot.bpb.bytes_per_sector) as u32;
@@ -106,7 +106,7 @@ impl <'a> FileSystem<'a> {
         let data_sectors = total_sectors - (boot.bpb.reserved_sectors as u32 + (boot.bpb.fats as u32 * sectors_per_fat) + root_dir_sectors as u32);
         let total_clusters = data_sectors / boot.bpb.sectors_per_cluster as u32;
         let fat_type = Self::fat_type_from_clusters(total_clusters);
-        
+
         Ok(FileSystem {
             disk: RefCell::new(disk),
             fat_type,
@@ -115,17 +115,17 @@ impl <'a> FileSystem<'a> {
             root_dir_sectors,
         })
     }
-    
+
     /// Returns type of used File Allocation Table (FAT).
     pub fn fat_type(&self) -> FatType {
         self.fat_type
     }
-    
+
     /// Returns volume identifier read from BPB in Boot Sector.
     pub fn volume_id(&self) -> u32 {
         self.boot.bpb.volume_id
     }
-    
+
     /// Returns volume label from BPB in Boot Sector.
     ///
     /// Note: File with VOLUME_ID attribute in root directory is ignored by this library.
@@ -133,7 +133,7 @@ impl <'a> FileSystem<'a> {
     pub fn volume_label(&self) -> String {
         String::from_utf8_lossy(&self.boot.bpb.volume_label).trim_right().to_string()
     }
-    
+
     /// Returns root directory object allowing futher penetration of filesystem structure.
     pub fn root_dir<'b>(&'b self) -> Dir<'b, 'a> {
         let root_rdr = {
@@ -145,7 +145,7 @@ impl <'a> FileSystem<'a> {
         };
         Dir::new(root_rdr, self)
     }
-    
+
     fn read_bpb(rdr: &mut Read) -> io::Result<BiosParameterBlock> {
         let mut bpb: BiosParameterBlock = Default::default();
         bpb.bytes_per_sector = rdr.read_u16::<LittleEndian>()?;
@@ -160,7 +160,7 @@ impl <'a> FileSystem<'a> {
         bpb.heads = rdr.read_u16::<LittleEndian>()?;
         bpb.hidden_sectors = rdr.read_u32::<LittleEndian>()?;
         bpb.total_sectors_32 = rdr.read_u32::<LittleEndian>()?;
-        
+
         // sanity checks
         if bpb.bytes_per_sector < 512 {
             return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
@@ -174,7 +174,7 @@ impl <'a> FileSystem<'a> {
         if bpb.fats == 0 {
             return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
         }
-        
+
         if bpb.sectors_per_fat_16 == 0 {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
@@ -199,7 +199,7 @@ impl <'a> FileSystem<'a> {
         }
         Ok(bpb)
     }
-    
+
     fn fat_type_from_clusters(total_clusters: u32) -> FatType {
         if total_clusters < 4085 {
             FatType::Fat12
@@ -209,13 +209,13 @@ impl <'a> FileSystem<'a> {
             FatType::Fat32
         }
     }
-    
+
     fn read_boot_record(rdr: &mut Read) -> io::Result<BootRecord> {
         let mut boot: BootRecord = Default::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
         boot.bpb = Self::read_bpb(rdr)?;
-        
+
         if boot.bpb.sectors_per_fat_16 == 0 {
             rdr.read_exact(&mut boot.boot_code[0..420])?;
         } else {
@@ -224,23 +224,23 @@ impl <'a> FileSystem<'a> {
         rdr.read_exact(&mut boot.boot_sig)?;
         Ok(boot)
     }
-    
+
     pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
         (sector as u64) * self.boot.bpb.bytes_per_sector as u64
     }
-    
+
     pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
         ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
     }
-    
+
     pub(crate) fn get_cluster_size(&self) -> u32 {
         self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
     }
-    
+
     pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
         self.offset_from_sector(self.sector_from_cluster(cluser))
     }
-    
+
     fn fat_slice<'b>(&'b self) -> DiskSlice<'b, 'a> {
         let sectors_per_fat =
             if self.boot.bpb.sectors_per_fat_16 == 0 { self.boot.bpb.sectors_per_fat_32 }
@@ -255,12 +255,12 @@ impl <'a> FileSystem<'a> {
         };
         DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, self)
     }
-    
+
     pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<'b, 'a> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
-    
+
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
         let mut disk_slice = self.fat_slice();
         alloc_cluster(&mut disk_slice, self.fat_type, prev_cluster)
@@ -280,12 +280,12 @@ impl <'a, 'b> DiskSlice<'a, 'b> {
     pub(crate) fn new(begin: u64, size: u64, mirrors: u8, fs: FileSystemRef<'a, 'b>) -> Self {
         DiskSlice { begin, size, mirrors, fs, offset: 0 }
     }
-    
+
     pub(crate) fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, fs: FileSystemRef<'a, 'b>) -> Self {
         let bytes_per_sector = fs.boot.bpb.bytes_per_sector as u64;
         Self::new(first_sector as u64 * bytes_per_sector, sector_count as u64 * bytes_per_sector, mirrors, fs)
     }
-    
+
     pub(crate) fn abs_pos(&self) -> u64 {
         self.begin + self.offset
     }
@@ -315,7 +315,7 @@ impl <'a, 'b> Write for DiskSlice<'a, 'b> {
         self.offset += write_size as u64;
         Ok(write_size)
     }
-    
+
     fn flush(&mut self) -> io::Result<()> {
         let mut disk = self.fs.disk.borrow_mut();
         disk.flush()

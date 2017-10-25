@@ -85,7 +85,7 @@ impl FatTrait for Fat12 {
             n => FatValue::Data(n as u32),
         })
     }
-    
+
     fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
         let raw_val = match value {
             FatValue::Free => 0,
@@ -141,7 +141,7 @@ impl FatTrait for Fat16 {
             n => FatValue::Data(n as u32),
         })
     }
-    
+
     fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
         let raw_val = match value {
@@ -153,7 +153,7 @@ impl FatTrait for Fat16 {
         fat.write_u16::<LittleEndian>(raw_val)?;
         Ok(())
     }
-    
+
     fn find_free(fat: &mut ReadSeek, hint_cluster: u32) -> io::Result<u32> {
         let mut cluster = hint_cluster;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
@@ -178,7 +178,7 @@ impl FatTrait for Fat32 {
             n => FatValue::Data(n as u32),
         })
     }
-    
+
     fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
         let raw_val = match value {
@@ -190,7 +190,7 @@ impl FatTrait for Fat32 {
         fat.write_u32::<LittleEndian>(raw_val)?;
         Ok(())
     }
-    
+
     fn find_free(fat: &mut ReadSeek, hint_cluster: u32) -> io::Result<u32> {
         let mut cluster = hint_cluster;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
@@ -221,7 +221,7 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
             err: false,
         }
     }
-    
+
     pub(crate) fn truncate(&mut self) -> io::Result<()> {
         match self.cluster {
             Some(n) => {
@@ -232,7 +232,7 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
             None => Ok(()),
         }
     }
-    
+
     pub(crate) fn free(&mut self) -> io::Result<()> {
         loop {
             let prev = self.cluster;
