@@ -100,7 +100,7 @@ fn test_remove(fs: FileSystem) {
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", ".."]);
     assert!(root_dir.remove("very/long/path").is_ok());
-    
+
     names = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name"]);
     root_dir.remove("long.txt").unwrap();

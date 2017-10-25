@@ -31,7 +31,7 @@ impl <'a, 'b> File<'a, 'b> {
             entry_dirty: false,
         }
     }
-    
+
     fn update_size(&mut self) {
         let offset = self.offset;
         match self.entry {
@@ -44,7 +44,7 @@ impl <'a, 'b> File<'a, 'b> {
             _ => {},
         }
     }
-    
+
     /// Truncate file to current position.
     pub fn truncate(&mut self) -> io::Result<()> {
         let offset = self.offset;
@@ -53,7 +53,7 @@ impl <'a, 'b> File<'a, 'b> {
                 if e.data.size().map_or(false, |s| offset == s) {
                     return Ok(());
                 }
-                
+
                 e.data.set_size(self.offset);
                 if self.offset == 0 {
                     e.data.set_first_cluster(None);
@@ -75,7 +75,7 @@ impl <'a, 'b> File<'a, 'b> {
             Ok(())
         }
     }
-    
+
     pub(crate) fn abs_pos(&self) -> Option<u64> {
         // Returns current position relative to filesystem start
         // Note: when between clusters it returns position after previous cluster
@@ -89,7 +89,7 @@ impl <'a, 'b> File<'a, 'b> {
             None => None,
         }
     }
-    
+
     pub(crate) fn flush_dir_entry(&self) -> io::Result<()> {
         if self.entry_dirty {
             match self.entry {
@@ -99,7 +99,7 @@ impl <'a, 'b> File<'a, 'b> {
         }
         Ok(())
     }
-    
+
     /// Set date and time of last modification for this file.
     ///
     /// Note: this library doesn't know current time so changing timestamp must be done manually.
@@ -112,14 +112,14 @@ impl <'a, 'b> File<'a, 'b> {
             _ => {},
         }
     }
-    
+
     fn bytes_left_in_file(&self) -> Option<usize> {
         match self.entry {
             Some(ref e) => e.data.size().map(|s| (s - self.offset) as usize),
             None => None,
         }
     }
-    
+
     fn set_first_cluster(&mut self, cluster: u32) {
         self.first_cluster = Some(cluster);
         match self.entry {
@@ -241,7 +241,7 @@ impl<'a, 'b> Write for File<'a, 'b> {
         self.update_size();
         Ok(written_bytes)
     }
-    
+
     fn flush(&mut self) -> io::Result<()> {
         self.flush_dir_entry()?;
         let mut disk = self.fs.disk.borrow_mut();

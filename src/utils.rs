@@ -32,7 +32,7 @@ impl<T: Read+Write+Seek> BufStream<T> {
             write: false,
         }
     }
-    
+
     fn flush_buf(&mut self) -> io::Result<()> {
         if self.write {
             self.inner.write_all(&self.buf[..self.pos])?;
@@ -40,7 +40,7 @@ impl<T: Read+Write+Seek> BufStream<T> {
         }
         Ok(())
     }
-    
+
     fn make_reader(&mut self) -> io::Result<()> {
         if self.write {
             self.flush_buf()?;
@@ -50,7 +50,7 @@ impl<T: Read+Write+Seek> BufStream<T> {
         }
         Ok(())
     }
-    
+
     fn make_writter(&mut self) -> io::Result<()> {
         if !self.write {
             self.inner.seek(io::SeekFrom::Current(-(self.len as i64 - self.pos as i64)))?;
@@ -71,7 +71,7 @@ impl<T: Read+Write+Seek> BufRead for BufStream<T> {
         }
         Ok(&self.buf[self.pos..self.len])
     }
-    
+
     fn consume(&mut self, amt: usize) {
         self.pos = cmp::min(self.pos + amt, self.len);
     }
@@ -108,7 +108,7 @@ impl<T: Read+Write+Seek> Write for BufStream<T> {
         self.pos += written;
         Ok(written)
     }
-    
+
     fn flush(&mut self) -> io::Result<()> {
         self.flush_buf()?;
         self.inner.flush()
