@@ -130,6 +130,10 @@ impl <'a, 'b> File<'a, 'b> {
         }
         self.entry_dirty = true;
     }
+
+    pub(crate) fn first_cluster(&self) -> Option<u32> {
+        self.first_cluster
+    }
 }
 
 impl<'a, 'b> Drop for File<'a, 'b> {
