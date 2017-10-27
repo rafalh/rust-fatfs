@@ -225,7 +225,15 @@ impl DirEntryData {
 
     fn deserialize(rdr: &mut Read) -> io::Result<DirEntryData> {
         let mut name = [0; 11];
-        rdr.read_exact(&mut name)?;
+        match rdr.read_exact(&mut name) {
+            Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                return Ok(DirEntryData::File(DirFileEntryData {
+                    ..Default::default()
+                }));
+            }
+            Err(err) => return Err(err),
+            _ => {},
+        }
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             let mut data = DirLfnEntryData {
@@ -617,8 +625,14 @@ impl <'a, 'b> Dir<'a, 'b> {
         let mut num_free = 0;
         let mut i = 0;
         loop {
-            let data = DirEntryData::deserialize(&mut stream)?;
-            if data.is_free() {
+            let raw_entry = DirEntryData::deserialize(&mut stream)?;
+            if raw_entry.is_end() {
+                if num_free == 0 {
+                    first_free = i;
+                }
+                stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
+                return Ok(stream);
+            } else if raw_entry.is_free() {
                 if num_free == 0 {
                     first_free = i;
                 }
@@ -627,13 +641,6 @@ impl <'a, 'b> Dir<'a, 'b> {
                     stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
                     return Ok(stream);
                 }
-            } else if data.is_end() {
-                if num_free == 0 {
-                    first_free = i;
-                }
-                stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
-                // FIXME: make sure new allocated cluster is zeroed
-                return Ok(stream);
             } else {
                 num_free = 0;
             }
@@ -728,16 +735,12 @@ pub struct DirIter<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> DirIter<'a, 'b> {
-    fn read_dir_entry_raw_data(&mut self) -> io::Result<DirEntryData> {
-        DirEntryData::deserialize(&mut self.stream)
-    }
-
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
         let mut lfn_buf = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
         loop {
-            let raw_entry = self.read_dir_entry_raw_data()?;
+            let raw_entry = DirEntryData::deserialize(&mut self.stream)?;
             offset += DIR_ENTRY_SIZE;
             match raw_entry {
                 DirEntryData::File(data) => {

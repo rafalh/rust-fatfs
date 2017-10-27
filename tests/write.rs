@@ -125,7 +125,7 @@ fn test_remove_fat32() {
 
 fn test_create_file(fs: FileSystem) {
     let mut root_dir = fs.root_dir();
-    let dir = root_dir.open_dir("very/long/path").unwrap();
+    let mut dir = root_dir.open_dir("very/long/path").unwrap();
     let mut names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
     {
@@ -140,6 +140,13 @@ fn test_create_file(fs: FileSystem) {
         file.read_to_string(&mut content).unwrap();
         assert_eq!(&content, &TEST_STR);
     }
+    // Create enough entries to allocate next cluster
+    for i in 0..512/32 {
+        let name = format!("test{}", i);
+        dir.create_file(&name).unwrap();
+    }
+    names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names.len(), 4 + 512/32);
 }
 
 #[test]

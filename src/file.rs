@@ -217,8 +217,20 @@ impl<'a, 'b> Write for File<'a, 'b> {
                 None => {
                     // end of chain reached - allocate new cluster
                     let new_cluster = self.fs.alloc_cluster(self.current_cluster)?;
+                    trace!("allocated cluser {}", new_cluster);
                     if self.first_cluster.is_none() {
                         self.set_first_cluster(new_cluster);
+                    }
+                    if self.entry.clone().map_or(true, |e| e.data.size().is_none()) {
+                        // zero new directory cluster
+                        trace!("zeroing directory cluser {}", new_cluster);
+                        let abs_pos = self.fs.offset_from_cluster(new_cluster);
+                        let mut disk = self.fs.disk.borrow_mut();
+                        disk.seek(SeekFrom::Start(abs_pos))?;
+                        for _ in 0..cluster_size/32 {
+                            let zero = [0u8; 32];
+                            disk.write(&zero)?;
+                        }
                     }
                     new_cluster
                 },
