@@ -12,8 +12,9 @@ Introduction
 FAT filesystem library implemented in Rust.
 
 Features:
-* read file and directory,
-* write file and directory,
+* read file or directory,
+* write file or directory,
+* create new file or directory,
 * FAT12, FAT16, FAT32 compatibility,
 * LFN (Long File Names) extension supported.
 

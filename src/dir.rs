@@ -27,6 +27,13 @@ impl <'a, 'b> DirRawStream<'a, 'b> {
             &DirRawStream::Root(ref slice) => Some(slice.abs_pos()),
         }
     }
+
+    pub(crate) fn first_cluster(&self) -> Option<u32> {
+        match self {
+            &DirRawStream::File(ref file) => file.first_cluster(),
+            &DirRawStream::Root(_) => None,
+        }
+    }
 }
 
 impl <'a, 'b> Read for DirRawStream<'a, 'b> {
@@ -527,8 +534,30 @@ impl <'a, 'b> Dir<'a, 'b> {
             Some(rest) => r?.to_dir().create_file(rest),
             None => {
                 match r {
-                    Err(_) => Ok(self.create_file_entry(name)?.to_file()),
+                    Err(_) => Ok(self.create_entry(name, FileAttributes::from_bits_truncate(0), None)?.to_file()),
                     Ok(e) => Ok(e.to_file())
+                }
+            }
+        }
+    }
+
+    /// Creates new directory or opens existing.
+    pub fn create_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
+        let (name, rest_opt) = Self::split_path(path);
+        let r = self.find_entry(name);
+        match rest_opt {
+            Some(rest) => r?.to_dir().create_dir(rest),
+            None => {
+                match r {
+                    Err(_) => {
+                        let cluster = self.fs.alloc_cluster(None)?;
+                        let entry = self.create_entry(name, FileAttributes::DIRECTORY, Some(cluster))?;
+                        let mut dir = entry.to_dir();
+                        dir.create_entry(".", FileAttributes::DIRECTORY, entry.first_cluster())?;
+                        dir.create_entry("..", FileAttributes::DIRECTORY, self.stream.first_cluster())?;
+                        Ok(dir)
+                    },
+                    Ok(e) => Ok(e.to_dir()),
                 }
             }
         }
@@ -635,7 +664,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         short_name
     }
 
-    fn create_file_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
+    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
         if name.len() > 255 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "filename too long"));
         }
@@ -671,10 +700,12 @@ impl <'a, 'b> Dir<'a, 'b> {
             lfn_entry.name_2.copy_from_slice(&lfn_part[11..11+2]);
             lfn_entry.serialize(&mut stream)?;
         }
-        let raw_entry = DirFileEntryData {
+        let mut raw_entry = DirFileEntryData {
             name: short_name,
+            attrs,
             ..Default::default()
         };
+        raw_entry.set_first_cluster(first_cluster);
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);

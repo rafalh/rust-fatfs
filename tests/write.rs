@@ -156,3 +156,51 @@ fn test_create_file_fat16() {
 fn test_create_file_fat32() {
     call_with_fs(&test_create_file, FAT32_IMG, 4)
 }
+
+fn test_create_dir(fs: FileSystem) {
+    let mut root_dir = fs.root_dir();
+    let parent_dir = root_dir.open_dir("very/long/path").unwrap();
+    let mut names = parent_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "test.txt"]);
+    {
+        let subdir = root_dir.create_dir("very/long/path/new-dir-with-long-name").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", ".."]);
+    }
+    // check if new entry is visible in parent
+    names = parent_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "test.txt", "new-dir-with-long-name"]);
+    {
+        // Check if new directory can be opened and read
+        let subdir = root_dir.open_dir("very/long/path/new-dir-with-long-name").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", ".."]);
+    }
+    // Check if '.' is alias for new directory
+    {
+        let subdir = root_dir.open_dir("very/long/path/new-dir-with-long-name/.").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", ".."]);
+    }
+    // Check if '..' is alias for parent directory
+    {
+        let subdir = root_dir.open_dir("very/long/path/new-dir-with-long-name/..").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", "..", "test.txt", "new-dir-with-long-name"]);
+    }
+}
+
+#[test]
+fn test_create_dir_fat12() {
+    call_with_fs(&test_create_dir, FAT12_IMG, 5)
+}
+
+#[test]
+fn test_create_dir_fat16() {
+    call_with_fs(&test_create_dir, FAT16_IMG, 5)
+}
+
+#[test]
+fn test_create_dir_fat32() {
+    call_with_fs(&test_create_dir, FAT32_IMG, 5)
+}
