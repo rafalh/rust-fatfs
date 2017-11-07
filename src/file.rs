@@ -138,7 +138,10 @@ impl <'a, 'b> File<'a, 'b> {
 
 impl<'a, 'b> Drop for File<'a, 'b> {
     fn drop(&mut self) {
-        self.flush().expect("flush failed");
+        match self.flush() {
+            Err(err) => error!("flush failed {}", err),
+            _ => {},
+        }
     }
 }
 
