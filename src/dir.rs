@@ -419,7 +419,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
 
     pub(crate) fn first_cluster(&self) -> Option<u32> {
-        self.data.first_cluster()
+        self.data.first_cluster(self.fs.fat_type)
     }
 
     fn entry_info(&self) -> FileEntryInfo {
@@ -677,10 +677,26 @@ impl <'a, 'b> Dir<'a, 'b> {
         short_name
     }
 
-    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
-        if name.len() > 255 {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "filename too long"));
+    fn validate_name(name: &str) -> io::Result<()> {
+        if name.len() == 0 {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "filename cannot be empty"));
         }
+        if name.len() > 255 {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "filename is too long"));
+        }
+        for c in name.chars() {
+            match c {
+                'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
+                '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' |
+                '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => {},
+                _ => return Err(io::Error::new(ErrorKind::InvalidInput, "invalid character in filename")),
+            }
+        }
+        Ok(())
+    }
+
+    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
+        Self::validate_name(name)?;
         let num_lfn_entries = (name.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
         let num_entries = num_lfn_entries + 1; // multiple lfn entries + one file entry
         let mut stream = self.find_free_entries(num_entries)?;
