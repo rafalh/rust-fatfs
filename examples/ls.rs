@@ -25,7 +25,7 @@ fn format_file_size(size: u64) -> String {
 fn main() {
     let file = File::open("resources/fat32.img").unwrap();
     let mut buf_rdr = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_rdr).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr, true).unwrap();
     let mut root_dir = fs.root_dir();
     let dir = match env::args().nth(1) {
         None => root_dir,

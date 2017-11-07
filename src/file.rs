@@ -36,10 +36,11 @@ impl <'a, 'b> File<'a, 'b> {
         let offset = self.offset;
         match self.entry {
             Some(ref mut e) => {
+                e.data.reset_modified();
                 if e.data.size().map_or(false, |s| offset > s) {
                     e.data.set_size(offset);
-                    self.entry_dirty = true;
                 }
+                self.entry_dirty = true;
             },
             _ => {},
         }
@@ -102,7 +103,7 @@ impl <'a, 'b> File<'a, 'b> {
 
     /// Set date and time of last modification for this file.
     ///
-    /// Note: this library doesn't know current time so changing timestamp must be done manually.
+    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
     pub fn set_modified(&mut self, date_time: DateTime) {
         match self.entry {
             Some(ref mut e) => {
@@ -187,6 +188,11 @@ impl<'a, 'b> Read for File<'a, 'b> {
         }
         self.offset += read_bytes as u32;
         self.current_cluster = Some(current_cluster);
+
+        match self.entry {
+            Some(ref mut e) if !self.fs.read_only => self.entry_dirty |= e.data.reset_accessed(),
+            _ => {},
+        }
         Ok(read_bytes)
     }
 }

@@ -10,7 +10,7 @@ use fatfs::{FileSystem, BufStream};
 fn main() {
     let file = File::open("resources/fat32.img").unwrap();
     let mut buf_rdr = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_rdr).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr, true).unwrap();
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.open_file(&env::args().nth(1).unwrap()).unwrap();
     let mut buf = vec![];

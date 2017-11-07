@@ -86,14 +86,18 @@ pub struct FileSystem<'a> {
     pub(crate) boot: BootRecord,
     pub(crate) first_data_sector: u32,
     pub(crate) root_dir_sectors: u32,
+    pub(crate) read_only: bool,
 }
 
 impl <'a> FileSystem<'a> {
     /// Creates new filesystem object instance.
     ///
+    /// read_only argument is a hint for library. It doesnt prevent user from writing to file.
+    /// For now it prevents accessed date field automatic update in dir entry.
+    ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause filesystem corruption.
-    pub fn new<T: ReadWriteSeek>(disk: &'a mut T) -> io::Result<FileSystem<'a>> {
+    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, read_only: bool) -> io::Result<FileSystem<'a>> {
         let boot = Self::read_boot_record(disk)?;
         if boot.boot_sig != [0x55, 0xAA] {
             return Err(Error::new(ErrorKind::Other, "invalid signature"));
@@ -113,6 +117,7 @@ impl <'a> FileSystem<'a> {
             boot,
             first_data_sector,
             root_dir_sectors,
+            read_only,
         })
     }
 

@@ -7,7 +7,7 @@ use std::cmp;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "chrono")]
-use chrono::{TimeZone, Local};
+use chrono::{TimeZone, Local, Datelike, Timelike};
 #[cfg(feature = "chrono")]
 use chrono;
 
@@ -133,17 +133,79 @@ impl DirFileEntryData {
         self.size = size;
     }
 
-    pub fn is_dir(&self) -> bool {
+    pub(crate) fn is_dir(&self) -> bool {
         self.attrs.contains(FileAttributes::DIRECTORY)
     }
 
-    pub fn is_file(&self) -> bool {
+    pub(crate) fn is_file(&self) -> bool {
         !self.is_dir()
+    }
+
+    fn created(&self) -> DateTime {
+        DateTime::from_u16(self.create_date, self.create_time_1)
+    }
+
+    fn accessed(&self) -> Date {
+        Date::from_u16(self.access_date)
+    }
+
+    fn modified(&self) -> DateTime {
+        DateTime::from_u16(self.modify_date, self.modify_time)
+    }
+
+    fn set_created(&mut self, date_time: DateTime) {
+        self.create_date = date_time.date.to_u16();
+        self.create_time_1 = date_time.time.to_u16();
+    }
+
+    fn set_accessed(&mut self, date: Date) {
+        self.access_date = date.to_u16();
     }
 
     pub(crate) fn set_modified(&mut self, date_time: DateTime) {
         self.modify_date = date_time.date.to_u16();
         self.modify_time = date_time.time.to_u16();
+    }
+
+    #[cfg(feature = "chrono")]
+    pub(crate) fn reset_created(&mut self) {
+        let now = DateTime::from(chrono::Local::now());
+        self.set_created(now);
+    }
+
+    #[cfg(feature = "chrono")]
+    pub(crate) fn reset_accessed(&mut self) -> bool {
+        let now = Date::from(chrono::Local::now().date());
+        if now == self.accessed() {
+            false
+        } else {
+            self.set_accessed(now);
+            true
+        }
+    }
+
+    #[cfg(feature = "chrono")]
+    pub(crate) fn reset_modified(&mut self) {
+        let now = DateTime::from(chrono::Local::now());
+        self.set_modified(now);
+    }
+
+    #[cfg(not(feature = "chrono"))]
+    pub(crate) fn reset_created(&mut self) {
+        // nop - user controls timestamps manually
+        false
+    }
+
+    #[cfg(not(feature = "chrono"))]
+    pub(crate) fn reset_accessed(&mut self) -> bool {
+        // nop - user controls timestamps manually
+        false
+    }
+
+    #[cfg(not(feature = "chrono"))]
+    pub(crate) fn reset_modified(&mut self) {
+        // nop - user controls timestamps manually
+        false
     }
 
     pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
@@ -286,7 +348,7 @@ impl DirEntryData {
 }
 
 /// DOS compatible date
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Date {
     pub year: u16,
     pub month: u16,
@@ -294,6 +356,7 @@ pub struct Date {
 }
 
 impl Date {
+
     pub(crate) fn from_u16(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
@@ -305,7 +368,7 @@ impl Date {
 }
 
 /// DOS compatible time
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Time {
     pub hour: u16,
     pub min: u16,
@@ -324,7 +387,7 @@ impl Time {
 }
 
 /// DOS compatible date and time
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DateTime {
     pub date: Date,
     pub time: Time,
@@ -351,6 +414,31 @@ impl From<DateTime> for chrono::DateTime<Local> {
     fn from(date_time: DateTime) -> Self {
         chrono::Date::<Local>::from(date_time.date)
             .and_hms(date_time.time.hour as u32, date_time.time.min as u32, date_time.time.sec as u32)
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<chrono::Date<Local>> for Date {
+    fn from(date: chrono::Date<Local>) -> Self {
+        Date {
+            year: date.year() as u16,
+            month: date.month() as u16,
+            day: date.day() as u16,
+        }
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<chrono::DateTime<Local>> for DateTime {
+    fn from(date_time: chrono::DateTime<Local>) -> Self {
+        DateTime {
+            date: Date::from(date_time.date()),
+            time: Time {
+                hour: date_time.hour() as u16,
+                min: date_time.minute() as u16,
+                sec: date_time.second() as u16,
+            },
+        }
     }
 }
 
@@ -458,17 +546,17 @@ impl <'a, 'b> DirEntry<'a, 'b> {
 
     /// Returns file creation date and time.
     pub fn created(&self) -> DateTime {
-        DateTime::from_u16(self.data.create_date, self.data.create_time_1)
+        self.data.created()
     }
 
     /// Returns file last access date.
     pub fn accessed(&self) -> Date {
-        Date::from_u16(self.data.access_date)
+        self.data.accessed()
     }
 
     /// Returns file last modification date and time.
     pub fn modified(&self) -> DateTime {
-        DateTime::from_u16(self.data.modify_date, self.data.modify_time)
+        self.data.modified()
     }
 }
 
@@ -750,6 +838,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             ..Default::default()
         };
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type);
+        raw_entry.reset_created();
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);

@@ -25,7 +25,7 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     {
         let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
         let mut buf_file = BufStream::new(file);
-        let fs = FileSystem::new(&mut buf_file).unwrap();
+        let fs = FileSystem::new(&mut buf_file, false).unwrap();
         f(fs);
     }
     fs::remove_file(tmp_path).unwrap();
