@@ -129,12 +129,20 @@ fn test_create_file(fs: FileSystem) {
     let mut names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
     {
+        // test some invalid names
+        assert!(root_dir.create_file("very/long/path/:").is_err());
+        assert!(root_dir.create_file("very/long/path/\0").is_err());
+        // create file
         let mut file = root_dir.create_file("very/long/path/new-file-with-long-name.txt").unwrap();
         file.write_all(&TEST_STR.as_bytes()).unwrap();
     }
+    // check for dir entry
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt", "new-file-with-long-name.txt"]);
+    names = dir.iter().map(|r| r.unwrap().short_file_name()).collect::<Vec<String>>();
+    assert_eq!(names, [".", "..", "TEST.TXT", "NEW-FILE.TXT"]);
     {
+        // check contents
         let mut file = root_dir.open_file("very/long/path/new-file-with-long-name.txt").unwrap();
         let mut content = String::new();
         file.read_to_string(&mut content).unwrap();

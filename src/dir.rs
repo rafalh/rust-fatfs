@@ -654,25 +654,39 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
+    fn copy_short_name_part(dst: &mut [u8], src: &str) {
+        let mut j = 0;
+        for c in src.chars() {
+            if j == dst.len() { break; }
+            // replace characters allowed in long name but disallowed in short
+            let c2 = match c {
+                '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => '?',
+                _ if c < '\u{80}' => c,
+                _ => '?',
+            };
+            // short name is always uppercase
+            let upper = c2.to_uppercase().next().unwrap(); // SAFE: uppercase must return at least one character
+            let byte = upper as u8; // SAFE: upper is in range 0x20-0x7F
+            dst[j] = byte;
+            j += 1;
+        }
+    }
+
     fn gen_short_name(name: &str) -> [u8;11] {
-        // short name is always uppercase
-        let mut name_upper = name.to_uppercase();
         // padded by ' '
         let mut short_name = [0x20u8; 11];
         // find extension after last dot
-        match name_upper.rfind('.') {
+        match name.rfind('.') {
             Some(index) => {
-                // copy first 3 characters of extension
-                let short_ext_len = cmp::min(name_upper.len() - index - 1, 3);
-                short_name[8..8+short_ext_len].copy_from_slice(name_upper[index..index+short_ext_len].as_bytes());
-                // remove extension with dot from name_upper
-                name_upper.truncate(index);
+                // extension found - copy parts before and after dot
+                Dir::copy_short_name_part(&mut short_name[0..8], &name[..index]);
+                Dir::copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
             },
-            None => {},
+            None => {
+                // no extension - copy name and leave extension empty
+                Dir::copy_short_name_part(&mut short_name[0..8], &name);
+            }
         }
-        // copy first 8 characters of name
-        let short_name_len = cmp::min(name_upper.len(), 8);
-        short_name[..short_name_len].copy_from_slice(name_upper[..short_name_len].as_bytes());
         // FIXME: make sure short name is unique...
         short_name
     }
@@ -696,6 +710,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
+        trace!("create_entry {}", name);
         Self::validate_name(name)?;
         let num_lfn_entries = (name.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
         let num_entries = num_lfn_entries + 1; // multiple lfn entries + one file entry
