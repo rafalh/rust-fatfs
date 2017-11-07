@@ -542,8 +542,10 @@ impl <'a, 'b> Dir<'a, 'b> {
             Some(rest) => r?.to_dir().create_file(rest),
             None => {
                 match r {
-                    Err(_) => Ok(self.create_entry(name, FileAttributes::from_bits_truncate(0), None)?.to_file()),
-                    Ok(e) => Ok(e.to_file())
+                    Err(ref err) if err.kind() == ErrorKind::NotFound =>
+                        Ok(self.create_entry(name, FileAttributes::from_bits_truncate(0), None)?.to_file()),
+                    Err(err) => Err(err),
+                    Ok(e) => Ok(e.to_file()),
                 }
             }
         }
@@ -557,7 +559,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             Some(rest) => r?.to_dir().create_dir(rest),
             None => {
                 match r {
-                    Err(_) => {
+                    Err(ref err) if err.kind() == ErrorKind::NotFound => {
                         let cluster = self.fs.alloc_cluster(None)?;
                         let entry = self.create_entry(name, FileAttributes::DIRECTORY, Some(cluster))?;
                         let mut dir = entry.to_dir();
@@ -565,6 +567,7 @@ impl <'a, 'b> Dir<'a, 'b> {
                         dir.create_entry("..", FileAttributes::DIRECTORY, self.stream.first_cluster())?;
                         Ok(dir)
                     },
+                    Err(err) => Err(err),
                     Ok(e) => Ok(e.to_dir()),
                 }
             }
