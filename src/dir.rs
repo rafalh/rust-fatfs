@@ -11,7 +11,7 @@ use chrono::{TimeZone, Local};
 #[cfg(feature = "chrono")]
 use chrono;
 
-use fs::{FileSystemRef, DiskSlice};
+use fs::{FileSystemRef, DiskSlice, FatType};
 use file::File;
 
 #[derive(Clone)]
@@ -107,14 +107,17 @@ pub(crate) struct DirFileEntryData {
 }
 
 impl DirFileEntryData {
-    pub(crate) fn first_cluster(&self) -> Option<u32> {
-        let n = ((self.first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
+    pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
+        let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
+        let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
         if n == 0 { None } else { Some(n) }
     }
 
-    pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>) {
+    pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>, fat_type: FatType) {
         let n = cluster.unwrap_or(0);
-        self.first_cluster_hi = (n >> 16) as u16;
+        if fat_type == FatType::Fat32 {
+            self.first_cluster_hi = (n >> 16) as u16;
+        }
         self.first_cluster_lo = (n & 0xFFFF) as u16;
     }
 
@@ -715,7 +718,7 @@ impl <'a, 'b> Dir<'a, 'b> {
             attrs,
             ..Default::default()
         };
-        raw_entry.set_first_cluster(first_cluster);
+        raw_entry.set_first_cluster(first_cluster, self.fs.fat_type);
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);

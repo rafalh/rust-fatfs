@@ -56,7 +56,7 @@ impl <'a, 'b> File<'a, 'b> {
 
                 e.data.set_size(self.offset);
                 if self.offset == 0 {
-                    e.data.set_first_cluster(None);
+                    e.data.set_first_cluster(None, self.fs.fat_type);
                 }
                 self.entry_dirty = true;
             },
@@ -124,7 +124,7 @@ impl <'a, 'b> File<'a, 'b> {
         self.first_cluster = Some(cluster);
         match self.entry {
             Some(ref mut e) => {
-                e.data.set_first_cluster(self.first_cluster);
+                e.data.set_first_cluster(self.first_cluster, self.fs.fat_type);
             },
             None => {},
         }
