@@ -15,6 +15,7 @@ extern crate chrono;
 
 mod fs;
 mod dir;
+mod dir_entry;
 mod file;
 mod table;
 mod utils;

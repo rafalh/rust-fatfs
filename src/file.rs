@@ -4,7 +4,7 @@ use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
 use fs::FileSystemRef;
-use dir::{DirEntryEditor, DateTime, Date};
+use dir_entry::{DirEntryEditor, DateTime, Date};
 
 /// FAT file used for reading and writing.
 #[derive(Clone)]
