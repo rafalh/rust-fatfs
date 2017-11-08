@@ -49,7 +49,7 @@ impl <'a, 'b> File<'a, 'b> {
             Some(ref mut e) => {
                 e.set_size(self.offset);
                 if self.offset == 0 {
-                    e.set_first_cluster(None, self.fs.fat_type);
+                    e.set_first_cluster(None, self.fs.fat_type());
                 }
             },
             _ => {},
@@ -131,7 +131,7 @@ impl <'a, 'b> File<'a, 'b> {
     fn set_first_cluster(&mut self, cluster: u32) {
         self.first_cluster = Some(cluster);
         match self.entry {
-            Some(ref mut e) => e.set_first_cluster(self.first_cluster, self.fs.fat_type),
+            Some(ref mut e) => e.set_first_cluster(self.first_cluster, self.fs.fat_type()),
             None => {},
         }
     }

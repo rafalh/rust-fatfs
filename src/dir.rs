@@ -269,7 +269,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
         // create and write short name entry
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
-        raw_entry.set_first_cluster(first_cluster, self.fs.fat_type);
+        raw_entry.set_first_cluster(first_cluster, self.fs.fat_type());
         raw_entry.reset_created();
         raw_entry.reset_accessed();
         raw_entry.reset_modified();

@@ -26,7 +26,7 @@ impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
-pub(crate) struct BiosParameterBlock {
+struct BiosParameterBlock {
     bytes_per_sector: u16,
     sectors_per_cluster: u8,
     reserved_sectors: u16,
@@ -57,7 +57,7 @@ pub(crate) struct BiosParameterBlock {
 }
 
 #[allow(dead_code)]
-pub(crate) struct BootRecord {
+struct BootRecord {
     bootjmp: [u8; 3],
     oem_name: [u8; 8],
     bpb: BiosParameterBlock,
@@ -82,11 +82,11 @@ pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
 /// FAT filesystem main struct.
 pub struct FileSystem<'a> {
     pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
-    pub(crate) fat_type: FatType,
-    pub(crate) boot: BootRecord,
-    pub(crate) first_data_sector: u32,
-    pub(crate) root_dir_sectors: u32,
     pub(crate) read_only: bool,
+    fat_type: FatType,
+    bpb: BiosParameterBlock,
+    first_data_sector: u32,
+    root_dir_sectors: u32,
 }
 
 impl <'a> FileSystem<'a> {
@@ -113,11 +113,11 @@ impl <'a> FileSystem<'a> {
 
         Ok(FileSystem {
             disk: RefCell::new(disk),
+            read_only,
             fat_type,
-            boot,
+            bpb: boot.bpb,
             first_data_sector,
             root_dir_sectors,
-            read_only,
         })
     }
 
@@ -128,7 +128,7 @@ impl <'a> FileSystem<'a> {
 
     /// Returns volume identifier read from BPB in Boot Sector.
     pub fn volume_id(&self) -> u32 {
-        self.boot.bpb.volume_id
+        self.bpb.volume_id
     }
 
     /// Returns volume label from BPB in Boot Sector.
@@ -136,7 +136,7 @@ impl <'a> FileSystem<'a> {
     /// Note: File with VOLUME_ID attribute in root directory is ignored by this library.
     /// Only label from BPB is used.
     pub fn volume_label(&self) -> String {
-        String::from_utf8_lossy(&self.boot.bpb.volume_label).trim_right().to_string()
+        String::from_utf8_lossy(&self.bpb.volume_label).trim_right().to_string()
     }
 
     /// Returns root directory object allowing futher penetration of filesystem structure.
@@ -145,7 +145,7 @@ impl <'a> FileSystem<'a> {
             match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
                    self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, 1, self)),
-                _ => DirRawStream::File(File::new(Some(self.boot.bpb.root_dir_first_cluster), None, self)),
+                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
             }
         };
         Dir::new(root_rdr, self)
@@ -231,15 +231,15 @@ impl <'a> FileSystem<'a> {
     }
 
     pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
-        (sector as u64) * self.boot.bpb.bytes_per_sector as u64
+        (sector as u64) * self.bpb.bytes_per_sector as u64
     }
 
     pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
-        ((cluster - 2) * self.boot.bpb.sectors_per_cluster as u32) + self.first_data_sector
+        ((cluster - 2) * self.bpb.sectors_per_cluster as u32) + self.first_data_sector
     }
 
     pub(crate) fn get_cluster_size(&self) -> u32 {
-        self.boot.bpb.sectors_per_cluster as u32 * self.boot.bpb.bytes_per_sector as u32
+        self.bpb.sectors_per_cluster as u32 * self.bpb.bytes_per_sector as u32
     }
 
     pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
@@ -248,14 +248,14 @@ impl <'a> FileSystem<'a> {
 
     fn fat_slice<'b>(&'b self) -> DiskSlice<'b, 'a> {
         let sectors_per_fat =
-            if self.boot.bpb.sectors_per_fat_16 == 0 { self.boot.bpb.sectors_per_fat_32 }
-            else { self.boot.bpb.sectors_per_fat_16 as u32 };
-        let mirroring_enabled = self.boot.bpb.extended_flags & 0x80 == 0;
+            if self.bpb.sectors_per_fat_16 == 0 { self.bpb.sectors_per_fat_32 }
+            else { self.bpb.sectors_per_fat_16 as u32 };
+        let mirroring_enabled = self.bpb.extended_flags & 0x80 == 0;
         let (fat_first_sector, mirrors) = if mirroring_enabled {
-            (self.boot.bpb.reserved_sectors as u32, self.boot.bpb.fats)
+            (self.bpb.reserved_sectors as u32, self.bpb.fats)
         } else {
-            let active_fat = (self.boot.bpb.extended_flags & 0x0F) as u32;
-            let fat_first_sector = (self.boot.bpb.reserved_sectors as u32) + active_fat * sectors_per_fat;
+            let active_fat = (self.bpb.extended_flags & 0x0F) as u32;
+            let fat_first_sector = (self.bpb.reserved_sectors as u32) + active_fat * sectors_per_fat;
             (fat_first_sector, 1)
         };
         DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, self)
@@ -287,7 +287,7 @@ impl <'a, 'b> DiskSlice<'a, 'b> {
     }
 
     pub(crate) fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, fs: FileSystemRef<'a, 'b>) -> Self {
-        let bytes_per_sector = fs.boot.bpb.bytes_per_sector as u64;
+        let bytes_per_sector = fs.bpb.bytes_per_sector as u64;
         Self::new(first_sector as u64 * bytes_per_sector, sector_count as u64 * bytes_per_sector, mirrors, fs)
     }
 

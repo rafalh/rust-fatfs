@@ -582,7 +582,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
 
     pub(crate) fn first_cluster(&self) -> Option<u32> {
-        self.data.first_cluster(self.fs.fat_type)
+        self.data.first_cluster(self.fs.fat_type())
     }
 
     fn editor(&self) -> DirEntryEditor {
