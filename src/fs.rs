@@ -121,6 +121,12 @@ impl BiosParameterBlock {
             rdr.read_exact(&mut bpb.volume_label)?;
             rdr.read_exact(&mut bpb.fs_type_label)?;
         }
+        if bpb.ext_sig != 0x29 {
+            // fields after ext_sig are not used - clean them
+            bpb.volume_id = 0;
+            bpb.volume_label = [0; 11];
+            bpb.fs_type_label = [0; 8];
+        }
         Ok(bpb)
     }
 }
