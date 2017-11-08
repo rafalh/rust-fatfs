@@ -22,7 +22,7 @@ Usage
 Put this in your `Cargo.toml`:
 
     [dependencies]
-    fatfs = "0.1"
+    fatfs = "0.2"
 
 Put this in your crate root:
 
