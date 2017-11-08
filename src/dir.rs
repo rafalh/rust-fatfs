@@ -7,7 +7,8 @@ use std::iter;
 
 use fs::{FileSystemRef, DiskSlice};
 use file::File;
-use dir_entry::*;
+use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes,
+    DIR_ENTRY_SIZE, LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
 
 #[derive(Clone)]
 pub(crate) enum DirRawStream<'a, 'b: 'a> {

@@ -74,7 +74,7 @@ impl <'a, 'b> File<'a, 'b> {
         // Note: when between clusters it returns position after previous cluster
         match self.current_cluster {
             Some(n) => {
-                let cluster_size = self.fs.get_cluster_size();
+                let cluster_size = self.fs.cluster_size();
                 let offset_in_cluster = self.offset % cluster_size;
                 let offset_in_fs = self.fs.offset_from_cluster(n) + (offset_in_cluster as u64);
                 Some(offset_in_fs)
@@ -152,7 +152,7 @@ impl<'a, 'b> Drop for File<'a, 'b> {
 
 impl<'a, 'b> Read for File<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let cluster_size = self.fs.get_cluster_size();
+        let cluster_size = self.fs.cluster_size();
         let current_cluster_opt = if self.offset % cluster_size == 0 {
             // next cluster
             match self.current_cluster {
@@ -203,7 +203,7 @@ impl<'a, 'b> Read for File<'a, 'b> {
 
 impl<'a, 'b> Write for File<'a, 'b> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let cluster_size = self.fs.get_cluster_size();
+        let cluster_size = self.fs.cluster_size();
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
         let write_size = cmp::min(buf.len(), bytes_left_in_cluster);
@@ -304,7 +304,7 @@ impl<'a, 'b> Seek for File<'a, 'b> {
         if new_pos == self.offset as i64 {
             return Ok(self.offset as u64);
         }
-        let cluster_size = self.fs.get_cluster_size();
+        let cluster_size = self.fs.cluster_size();
         // get number of clusters to seek (favoring previous cluster in corner case)
         let cluster_count = ((new_pos + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
         let old_cluster_count = ((self.offset as i64 + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;

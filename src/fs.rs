@@ -7,6 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use file::File;
 use dir::{DirRawStream, Dir};
+use dir_entry::DIR_ENTRY_SIZE;
 use table::{ClusterIterator, alloc_cluster};
 
 // FAT implementation based on:
@@ -16,6 +17,18 @@ use table::{ClusterIterator, alloc_cluster};
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FatType {
     Fat12, Fat16, Fat32,
+}
+
+impl FatType {
+    fn from_clusters(total_clusters: u32) -> FatType {
+        if total_clusters < 4085 {
+            FatType::Fat12
+        } else if total_clusters < 65525 {
+            FatType::Fat16
+        } else {
+            FatType::Fat32
+        }
+    }
 }
 
 pub trait ReadSeek: Read + Seek {}
@@ -56,102 +69,8 @@ struct BiosParameterBlock {
     fs_type_label: [u8; 8],
 }
 
-#[allow(dead_code)]
-struct BootRecord {
-    bootjmp: [u8; 3],
-    oem_name: [u8; 8],
-    bpb: BiosParameterBlock,
-    boot_code: [u8; 448],
-    boot_sig: [u8; 2],
-}
-
-impl Default for BootRecord {
-    fn default() -> BootRecord {
-        BootRecord {
-            bootjmp: Default::default(),
-            oem_name: Default::default(),
-            bpb: Default::default(),
-            boot_code: [0; 448],
-            boot_sig: Default::default(),
-        }
-    }
-}
-
-pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
-
-/// FAT filesystem main struct.
-pub struct FileSystem<'a> {
-    pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
-    pub(crate) read_only: bool,
-    fat_type: FatType,
-    bpb: BiosParameterBlock,
-    first_data_sector: u32,
-    root_dir_sectors: u32,
-}
-
-impl <'a> FileSystem<'a> {
-    /// Creates new filesystem object instance.
-    ///
-    /// read_only argument is a hint for library. It doesnt prevent user from writing to file.
-    /// For now it prevents accessed date field automatic update in dir entry.
-    ///
-    /// Note: creating multiple filesystem objects with one underlying device/disk image can
-    /// cause filesystem corruption.
-    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, read_only: bool) -> io::Result<FileSystem<'a>> {
-        let boot = Self::read_boot_record(disk)?;
-        if boot.boot_sig != [0x55, 0xAA] {
-            return Err(Error::new(ErrorKind::Other, "invalid signature"));
-        }
-
-        let total_sectors = if boot.bpb.total_sectors_16 == 0 { boot.bpb.total_sectors_32 } else { boot.bpb.total_sectors_16 as u32 };
-        let sectors_per_fat = if boot.bpb.sectors_per_fat_16 == 0 { boot.bpb.sectors_per_fat_32 } else { boot.bpb.sectors_per_fat_16 as u32 };
-        let root_dir_sectors = (((boot.bpb.root_entries * 32) + (boot.bpb.bytes_per_sector - 1)) / boot.bpb.bytes_per_sector) as u32;
-        let first_data_sector = boot.bpb.reserved_sectors as u32 + (boot.bpb.fats as u32 * sectors_per_fat) + root_dir_sectors;
-        let data_sectors = total_sectors - (boot.bpb.reserved_sectors as u32 + (boot.bpb.fats as u32 * sectors_per_fat) + root_dir_sectors as u32);
-        let total_clusters = data_sectors / boot.bpb.sectors_per_cluster as u32;
-        let fat_type = Self::fat_type_from_clusters(total_clusters);
-
-        Ok(FileSystem {
-            disk: RefCell::new(disk),
-            read_only,
-            fat_type,
-            bpb: boot.bpb,
-            first_data_sector,
-            root_dir_sectors,
-        })
-    }
-
-    /// Returns type of used File Allocation Table (FAT).
-    pub fn fat_type(&self) -> FatType {
-        self.fat_type
-    }
-
-    /// Returns volume identifier read from BPB in Boot Sector.
-    pub fn volume_id(&self) -> u32 {
-        self.bpb.volume_id
-    }
-
-    /// Returns volume label from BPB in Boot Sector.
-    ///
-    /// Note: File with VOLUME_ID attribute in root directory is ignored by this library.
-    /// Only label from BPB is used.
-    pub fn volume_label(&self) -> String {
-        String::from_utf8_lossy(&self.bpb.volume_label).trim_right().to_string()
-    }
-
-    /// Returns root directory object allowing futher penetration of filesystem structure.
-    pub fn root_dir<'b>(&'b self) -> Dir<'b, 'a> {
-        let root_rdr = {
-            match self.fat_type {
-                FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
-                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, 1, self)),
-                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
-            }
-        };
-        Dir::new(root_rdr, self)
-    }
-
-    fn read_bpb(rdr: &mut Read) -> io::Result<BiosParameterBlock> {
+impl BiosParameterBlock {
+    fn deserialize(rdr: &mut Read) -> io::Result<BiosParameterBlock> {
         let mut bpb: BiosParameterBlock = Default::default();
         bpb.bytes_per_sector = rdr.read_u16::<LittleEndian>()?;
         bpb.sectors_per_cluster = rdr.read_u8()?;
@@ -204,22 +123,23 @@ impl <'a> FileSystem<'a> {
         }
         Ok(bpb)
     }
+}
 
-    fn fat_type_from_clusters(total_clusters: u32) -> FatType {
-        if total_clusters < 4085 {
-            FatType::Fat12
-        } else if total_clusters < 65525 {
-            FatType::Fat16
-        } else {
-            FatType::Fat32
-        }
-    }
+#[allow(dead_code)]
+struct BootRecord {
+    bootjmp: [u8; 3],
+    oem_name: [u8; 8],
+    bpb: BiosParameterBlock,
+    boot_code: [u8; 448],
+    boot_sig: [u8; 2],
+}
 
-    fn read_boot_record(rdr: &mut Read) -> io::Result<BootRecord> {
+impl BootRecord {
+    fn deserialize(rdr: &mut Read) -> io::Result<BootRecord> {
         let mut boot: BootRecord = Default::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
-        boot.bpb = Self::read_bpb(rdr)?;
+        boot.bpb = BiosParameterBlock::deserialize(rdr)?;
 
         if boot.bpb.sectors_per_fat_16 == 0 {
             rdr.read_exact(&mut boot.boot_code[0..420])?;
@@ -228,6 +148,102 @@ impl <'a> FileSystem<'a> {
         }
         rdr.read_exact(&mut boot.boot_sig)?;
         Ok(boot)
+    }
+}
+
+impl Default for BootRecord {
+    fn default() -> BootRecord {
+        BootRecord {
+            bootjmp: Default::default(),
+            oem_name: Default::default(),
+            bpb: Default::default(),
+            boot_code: [0; 448],
+            boot_sig: Default::default(),
+        }
+    }
+}
+
+pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
+
+/// FAT filesystem main struct.
+pub struct FileSystem<'a> {
+    pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
+    pub(crate) read_only: bool,
+    fat_type: FatType,
+    bpb: BiosParameterBlock,
+    first_data_sector: u32,
+    root_dir_sectors: u32,
+}
+
+impl <'a> FileSystem<'a> {
+    /// Creates new filesystem object instance.
+    ///
+    /// read_only argument is a hint for library. It doesnt prevent user from writing to file.
+    /// For now it prevents accessed date field automatic update in dir entry.
+    ///
+    /// Note: creating multiple filesystem objects with one underlying device/disk image can
+    /// cause filesystem corruption.
+    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, read_only: bool) -> io::Result<FileSystem<'a>> {
+        let bpb = {
+            let boot = BootRecord::deserialize(disk)?;
+            if boot.boot_sig != [0x55, 0xAA] {
+                return Err(Error::new(ErrorKind::Other, "invalid signature"));
+            }
+            boot.bpb
+        };
+
+        let total_sectors =
+            if bpb.total_sectors_16 == 0 { bpb.total_sectors_32 }
+            else { bpb.total_sectors_16 as u32 };
+        let sectors_per_fat =
+            if bpb.sectors_per_fat_16 == 0 { bpb.sectors_per_fat_32 }
+            else { bpb.sectors_per_fat_16 as u32 };
+        let root_dir_bytes = bpb.root_entries as u32 * DIR_ENTRY_SIZE as u32;
+        let root_dir_sectors = (root_dir_bytes + (bpb.bytes_per_sector as u32 - 1)) / bpb.bytes_per_sector as u32;
+        let first_data_sector = bpb.reserved_sectors as u32 + (bpb.fats as u32 * sectors_per_fat) + root_dir_sectors;
+        let fat_sectors = bpb.fats as u32 * sectors_per_fat;
+        let data_sectors = total_sectors - (bpb.reserved_sectors as u32 + fat_sectors + root_dir_sectors as u32);
+        let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
+        let fat_type = FatType::from_clusters(total_clusters);
+
+        Ok(FileSystem {
+            disk: RefCell::new(disk),
+            read_only,
+            fat_type,
+            bpb: bpb,
+            first_data_sector,
+            root_dir_sectors,
+        })
+    }
+
+    /// Returns type of used File Allocation Table (FAT).
+    pub fn fat_type(&self) -> FatType {
+        self.fat_type
+    }
+
+    /// Returns volume identifier read from BPB in Boot Sector.
+    pub fn volume_id(&self) -> u32 {
+        self.bpb.volume_id
+    }
+
+    /// Returns volume label from BPB in Boot Sector.
+    ///
+    /// Note: File with VOLUME_ID attribute in root directory is ignored by this library.
+    /// Only label from BPB is used.
+    pub fn volume_label(&self) -> String {
+        String::from_utf8_lossy(&self.bpb.volume_label).trim_right().to_string()
+    }
+
+    /// Returns root directory object allowing futher penetration of filesystem structure.
+    pub fn root_dir<'b>(&'b self) -> Dir<'b, 'a> {
+        let root_rdr = {
+            match self.fat_type {
+                FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
+                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, 1, self)),
+                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
+            }
+        };
+        Dir::new(root_rdr, self)
     }
 
     pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
@@ -238,7 +254,7 @@ impl <'a> FileSystem<'a> {
         ((cluster - 2) * self.bpb.sectors_per_cluster as u32) + self.first_data_sector
     }
 
-    pub(crate) fn get_cluster_size(&self) -> u32 {
+    pub(crate) fn cluster_size(&self) -> u32 {
         self.bpb.sectors_per_cluster as u32 * self.bpb.bytes_per_sector as u32
     }
 
