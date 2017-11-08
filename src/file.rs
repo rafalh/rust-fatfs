@@ -4,7 +4,7 @@ use std::io::{SeekFrom, ErrorKind};
 use std::io;
 
 use fs::FileSystemRef;
-use dir::{FileEntryInfo, DateTime};
+use dir::{DirEntryEditor, DateTime, Date};
 
 /// FAT file used for reading and writing.
 #[derive(Clone)]
@@ -16,19 +16,17 @@ pub struct File<'a, 'b: 'a> {
     // current position in this file
     offset: u32,
     // file dir entry - None for root dir
-    entry: Option<FileEntryInfo>,
-    // should file dir entry be flushed?
-    entry_dirty: bool,
+    entry: Option<DirEntryEditor>,
+    // file-system reference
     fs: FileSystemRef<'a, 'b>,
 }
 
 impl <'a, 'b> File<'a, 'b> {
-    pub(crate) fn new(first_cluster: Option<u32>, entry: Option<FileEntryInfo>, fs: FileSystemRef<'a, 'b>) -> Self {
+    pub(crate) fn new(first_cluster: Option<u32>, entry: Option<DirEntryEditor>, fs: FileSystemRef<'a, 'b>) -> Self {
         File {
             first_cluster, entry, fs,
             current_cluster: None, // cluster before first one
             offset: 0,
-            entry_dirty: false,
         }
     }
 
@@ -36,11 +34,10 @@ impl <'a, 'b> File<'a, 'b> {
         let offset = self.offset;
         match self.entry {
             Some(ref mut e) => {
-                e.data.reset_modified();
-                if e.data.size().map_or(false, |s| offset > s) {
-                    e.data.set_size(offset);
+                e.reset_modified();
+                if e.inner().size().map_or(false, |s| offset > s) {
+                    e.set_size(offset);
                 }
-                self.entry_dirty = true;
             },
             _ => {},
         }
@@ -48,18 +45,12 @@ impl <'a, 'b> File<'a, 'b> {
 
     /// Truncate file to current position.
     pub fn truncate(&mut self) -> io::Result<()> {
-        let offset = self.offset;
         match self.entry {
             Some(ref mut e) => {
-                if e.data.size().map_or(false, |s| offset == s) {
-                    return Ok(());
-                }
-
-                e.data.set_size(self.offset);
+                e.set_size(self.offset);
                 if self.offset == 0 {
-                    e.data.set_first_cluster(None, self.fs.fat_type);
+                    e.set_first_cluster(None, self.fs.fat_type);
                 }
-                self.entry_dirty = true;
             },
             _ => {},
         }
@@ -91,14 +82,32 @@ impl <'a, 'b> File<'a, 'b> {
         }
     }
 
-    pub(crate) fn flush_dir_entry(&self) -> io::Result<()> {
-        if self.entry_dirty {
-            match self.entry {
-                Some(ref e) => e.write(self.fs)?,
-                _ => {},
-            }
+    pub(crate) fn flush_dir_entry(&mut self) -> io::Result<()> {
+        match self.entry {
+            Some(ref mut e) => e.flush(self.fs)?,
+            _ => {},
         }
         Ok(())
+    }
+
+    /// Set date and time of creation for this file.
+    ///
+    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
+    pub fn set_created(&mut self, date_time: DateTime) {
+        match self.entry {
+            Some(ref mut e) => e.set_created(date_time),
+            _ => {},
+        }
+    }
+
+    /// Set date of last access for this file.
+    ///
+    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
+    pub fn set_accessed(&mut self, date: Date) {
+        match self.entry {
+            Some(ref mut e) => e.set_accessed(date),
+            _ => {},
+        }
     }
 
     /// Set date and time of last modification for this file.
@@ -106,17 +115,14 @@ impl <'a, 'b> File<'a, 'b> {
     /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
     pub fn set_modified(&mut self, date_time: DateTime) {
         match self.entry {
-            Some(ref mut e) => {
-                e.data.set_modified(date_time);
-                self.entry_dirty = true;
-            },
+            Some(ref mut e) => e.set_modified(date_time),
             _ => {},
         }
     }
 
     fn bytes_left_in_file(&self) -> Option<usize> {
         match self.entry {
-            Some(ref e) => e.data.size().map(|s| (s - self.offset) as usize),
+            Some(ref e) => e.inner().size().map(|s| (s - self.offset) as usize),
             None => None,
         }
     }
@@ -124,12 +130,9 @@ impl <'a, 'b> File<'a, 'b> {
     fn set_first_cluster(&mut self, cluster: u32) {
         self.first_cluster = Some(cluster);
         match self.entry {
-            Some(ref mut e) => {
-                e.data.set_first_cluster(self.first_cluster, self.fs.fat_type);
-            },
+            Some(ref mut e) => e.set_first_cluster(self.first_cluster, self.fs.fat_type),
             None => {},
         }
-        self.entry_dirty = true;
     }
 
     pub(crate) fn first_cluster(&self) -> Option<u32> {
@@ -190,7 +193,7 @@ impl<'a, 'b> Read for File<'a, 'b> {
         self.current_cluster = Some(current_cluster);
 
         match self.entry {
-            Some(ref mut e) if !self.fs.read_only => self.entry_dirty |= e.data.reset_accessed(),
+            Some(ref mut e) if !self.fs.read_only => e.reset_accessed(),
             _ => {},
         }
         Ok(read_bytes)
@@ -230,7 +233,7 @@ impl<'a, 'b> Write for File<'a, 'b> {
                     if self.first_cluster.is_none() {
                         self.set_first_cluster(new_cluster);
                     }
-                    if self.entry.clone().map_or(true, |e| e.data.size().is_none()) {
+                    if self.entry.clone().map_or(true, |e| e.inner().size().is_none()) {
                         // zero new directory cluster
                         trace!("zeroing directory cluser {}", new_cluster);
                         let abs_pos = self.fs.offset_from_cluster(new_cluster);
@@ -279,16 +282,16 @@ impl<'a, 'b> Seek for File<'a, 'b> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.entry.iter().next().map_or(None, |e| e.data.size()).expect("cannot seek from end if size is unknown") as i64 + x,
+            SeekFrom::End(x) => self.entry.iter().next().map_or(None, |e| e.inner().size()).expect("cannot seek from end if size is unknown") as i64 + x,
         };
         if new_pos < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
         }
         new_pos = match self.entry {
             Some(ref e) => {
-                if e.data.size().map_or(false, |s| new_pos > s as i64) {
+                if e.inner().size().map_or(false, |s| new_pos > s as i64) {
                     info!("seek beyond end of file");
-                    e.data.size().unwrap() as i64 // safe
+                    e.inner().size().unwrap() as i64 // safe
                 } else {
                     new_pos
                 }

@@ -107,13 +107,20 @@ pub(crate) struct DirFileEntryData {
 }
 
 impl DirFileEntryData {
+    fn new(name: [u8; 11], attrs: FileAttributes) -> Self {
+        DirFileEntryData {
+            name, attrs,
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
         let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
         let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
         if n == 0 { None } else { Some(n) }
     }
 
-    pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>, fat_type: FatType) {
+    fn set_first_cluster(&mut self, cluster: Option<u32>, fat_type: FatType) {
         let n = cluster.unwrap_or(0);
         if fat_type == FatType::Fat32 {
             self.first_cluster_hi = (n >> 16) as u16;
@@ -129,7 +136,7 @@ impl DirFileEntryData {
         }
     }
 
-    pub(crate) fn set_size(&mut self, size: u32) {
+    fn set_size(&mut self, size: u32) {
         self.size = size;
     }
 
@@ -162,19 +169,19 @@ impl DirFileEntryData {
         self.access_date = date.to_u16();
     }
 
-    pub(crate) fn set_modified(&mut self, date_time: DateTime) {
+    fn set_modified(&mut self, date_time: DateTime) {
         self.modify_date = date_time.date.to_u16();
         self.modify_time = date_time.time.to_u16();
     }
 
     #[cfg(feature = "chrono")]
-    pub(crate) fn reset_created(&mut self) {
+    fn reset_created(&mut self) {
         let now = DateTime::from(chrono::Local::now());
         self.set_created(now);
     }
 
     #[cfg(feature = "chrono")]
-    pub(crate) fn reset_accessed(&mut self) -> bool {
+    fn reset_accessed(&mut self) -> bool {
         let now = Date::from(chrono::Local::now().date());
         if now == self.accessed() {
             false
@@ -185,30 +192,30 @@ impl DirFileEntryData {
     }
 
     #[cfg(feature = "chrono")]
-    pub(crate) fn reset_modified(&mut self) {
+    fn reset_modified(&mut self) {
         let now = DateTime::from(chrono::Local::now());
         self.set_modified(now);
     }
 
     #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_created(&mut self) {
+    fn reset_created(&mut self) {
         // nop - user controls timestamps manually
         false
     }
 
     #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_accessed(&mut self) -> bool {
+    fn reset_accessed(&mut self) -> bool {
         // nop - user controls timestamps manually
         false
     }
 
     #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_modified(&mut self) {
+    fn reset_modified(&mut self) {
         // nop - user controls timestamps manually
         false
     }
 
-    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+    fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
@@ -226,6 +233,10 @@ impl DirFileEntryData {
 
     fn is_free(&self) -> bool {
         self.name[0] == DIR_ENTRY_FREE_FLAG
+    }
+
+    fn set_free(&mut self) {
+        self.name[0] = DIR_ENTRY_FREE_FLAG;
     }
 
     fn is_end(&self) -> bool {
@@ -247,6 +258,20 @@ struct DirLfnEntryData {
 }
 
 impl DirLfnEntryData {
+    fn new(order: u8, checksum: u8) -> Self {
+        DirLfnEntryData {
+            order, checksum,
+            attrs: FileAttributes::LFN,
+            ..Default::default()
+        }
+    }
+
+    fn copy_name_from_slice(&mut self, lfn_part: &[u16; LFN_PART_LEN]) {
+        self.name_0.copy_from_slice(&lfn_part[0..5]);
+        self.name_1.copy_from_slice(&lfn_part[5..5+6]);
+        self.name_2.copy_from_slice(&lfn_part[11..11+2]);
+    }
+
     fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
         wrt.write_u8(self.order)?;
         for ch in self.name_0.iter() {
@@ -267,6 +292,10 @@ impl DirLfnEntryData {
 
     fn is_free(&self) -> bool {
         self.order == DIR_ENTRY_FREE_FLAG
+    }
+
+    fn set_free(&mut self) {
+        self.order = DIR_ENTRY_FREE_FLAG;
     }
 
     fn is_end(&self) -> bool {
@@ -336,6 +365,13 @@ impl DirEntryData {
         match self {
             &DirEntryData::File(ref file) => file.is_free(),
             &DirEntryData::Lfn(ref lfn) => lfn.is_free(),
+        }
+    }
+
+    fn set_free(&mut self) {
+        match self {
+            &mut DirEntryData::File(ref mut file) => file.set_free(),
+            &mut DirEntryData::Lfn(ref mut lfn) => lfn.set_free(),
         }
     }
 
@@ -443,13 +479,80 @@ impl From<chrono::DateTime<Local>> for DateTime {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct FileEntryInfo {
-    pub(crate) data: DirFileEntryData,
+pub(crate) struct DirEntryEditor {
+    data: DirFileEntryData,
     pos: u64,
+    dirty: bool,
 }
 
-impl FileEntryInfo {
-    pub(crate) fn write(&self, fs: FileSystemRef) -> io::Result<()> {
+impl DirEntryEditor {
+    fn new(data: DirFileEntryData, pos: u64) -> DirEntryEditor {
+        DirEntryEditor {
+            data, pos,
+            dirty: false,
+        }
+    }
+
+    pub(crate) fn inner(&self) -> &DirFileEntryData {
+        &self.data
+    }
+
+    pub(crate) fn set_first_cluster(&mut self, first_cluster: Option<u32>, fat_type: FatType) {
+        if first_cluster != self.data.first_cluster(fat_type) {
+            self.data.set_first_cluster(first_cluster, fat_type);
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn set_size(&mut self, size: u32) {
+        match self.data.size() {
+            Some(n) if size != n => {
+                self.data.set_size(size);
+                self.dirty = true;
+            },
+            _ => {},
+        }
+    }
+
+    pub(crate) fn set_created(&mut self, date_time: DateTime) {
+        if date_time != self.data.created() {
+            self.data.set_created(date_time);
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn set_accessed(&mut self, date: Date) {
+        if date != self.data.accessed() {
+            self.data.set_accessed(date);
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn set_modified(&mut self, date_time: DateTime) {
+        if date_time != self.data.modified() {
+            self.data.set_modified(date_time);
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn reset_accessed(&mut self) {
+        self.dirty |= self.data.reset_accessed();
+    }
+
+    pub(crate) fn reset_modified(&mut self) {
+        self.data.reset_modified();
+        self.dirty = true;
+    }
+
+    pub(crate) fn flush(&mut self, fs: FileSystemRef) -> io::Result<()> {
+        if self.dirty {
+            self.write(fs)?;
+            self.dirty = false;
+        }
+        Ok(())
+    }
+
+    fn write(&self, fs: FileSystemRef) -> io::Result<()> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)
@@ -510,11 +613,8 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         self.data.first_cluster(self.fs.fat_type)
     }
 
-    fn entry_info(&self) -> FileEntryInfo {
-        FileEntryInfo {
-            data: self.data.clone(),
-            pos: self.entry_pos,
-        }
+    fn entry_info(&self) -> DirEntryEditor {
+        DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
     /// Returns File struct for this entry.
@@ -700,11 +800,7 @@ impl <'a, 'b> Dir<'a, 'b> {
                 for _ in 0..num {
                     let mut data = DirEntryData::deserialize(&mut stream)?;
                     trace!("removing dir entry {:?}", data);
-                    match data {
-                        DirEntryData::File(ref mut data) =>
-                            data.name[0] = DIR_ENTRY_FREE_FLAG,
-                        DirEntryData::Lfn(ref mut data) => data.order = DIR_ENTRY_FREE_FLAG,
-                    };
+                    data.set_free();
                     stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
                     data.serialize(&mut stream)?;
                 }
@@ -821,24 +917,15 @@ impl <'a, 'b> Dir<'a, 'b> {
             if lfn_part_len < LFN_PART_LEN {
                 lfn_part[lfn_part_len] = 0;
             }
-            let mut lfn_entry = DirLfnEntryData {
-                order,
-                attrs: FileAttributes::LFN,
-                checksum: lfn_chsum,
-                ..Default::default()
-            };
-            lfn_entry.name_0.copy_from_slice(&lfn_part[0..5]);
-            lfn_entry.name_1.copy_from_slice(&lfn_part[5..5+6]);
-            lfn_entry.name_2.copy_from_slice(&lfn_part[11..11+2]);
+            let mut lfn_entry = DirLfnEntryData::new(order, lfn_chsum);
+            lfn_entry.copy_name_from_slice(&lfn_part);
             lfn_entry.serialize(&mut stream)?;
         }
-        let mut raw_entry = DirFileEntryData {
-            name: short_name,
-            attrs,
-            ..Default::default()
-        };
+        let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type);
         raw_entry.reset_created();
+        raw_entry.reset_accessed();
+        raw_entry.reset_modified();
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
