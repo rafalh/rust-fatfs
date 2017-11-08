@@ -1,5 +1,5 @@
-Rust FAT
-========
+Rust FAT FS
+===========
 
 [![Travis Build Status](https://travis-ci.org/rafalh/rust-fat.svg?branch=master)](https://travis-ci.org/rafalh/rust-fat)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
@@ -16,12 +16,23 @@ Features:
 * FAT12, FAT16, FAT32 compatibility,
 * LFN (Long File Names) extension supported.
 
-Example
-=======
+Usage
+-----
 
-    let file = File::open("fat.img").unwrap();
-    let mut buf_rdr = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_rdr, true).unwrap();
+Put this in your `Cargo.toml`:
+
+    [dependencies]
+    fatfs = "0.1"
+
+Put this in your crate root:
+
+    extern crate fatfs;
+
+You can start using library now:
+
+    let img_file = File::open("fat.img").unwrap();
+    let mut buf_stream = BufStream::new(img_file);
+    let fs = fatfs::FileSystem::new(&mut buf_stream, true).unwrap();
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.create_file("hello.txt").unwrap();
     file.write_all(b"Hello World!").unwrap();
