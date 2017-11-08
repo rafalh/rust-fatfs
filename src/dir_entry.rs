@@ -288,6 +288,8 @@ impl DirEntryData {
         let mut name = [0; 11];
         match rdr.read_exact(&mut name) {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                // entries can occupy all clusters of directory so there is no zero entry at the end
+                // handle it here by returning non-existing empty entry
                 return Ok(DirEntryData::File(DirFileEntryData {
                     ..Default::default()
                 }));
@@ -297,9 +299,11 @@ impl DirEntryData {
         }
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
+            // read long name entry
             let mut data = DirLfnEntryData {
                 attrs, ..Default::default()
             };
+            // use cursor to divide name into order and LFN name_0
             let mut cur = Cursor::new(&name);
             data.order = cur.read_u8()?;
             cur.read_u16_into::<LittleEndian>(&mut data.name_0)?;
@@ -310,6 +314,7 @@ impl DirEntryData {
             rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
             Ok(DirEntryData::Lfn(data))
         } else {
+            // read short name entry
             let data = DirFileEntryData {
                 name,
                 attrs,

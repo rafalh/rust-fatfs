@@ -56,7 +56,8 @@ impl <'a, 'b> File<'a, 'b> {
         }
         if self.offset > 0 {
             debug_assert!(self.current_cluster.is_some());
-            self.fs.cluster_iter(self.current_cluster.unwrap()).truncate() // safe
+            // if offset is not 0 current cluster cannot be empty
+            self.fs.cluster_iter(self.current_cluster.unwrap()).truncate() // SAFE
         } else {
             debug_assert!(self.current_cluster.is_none());
             match self.first_cluster {
@@ -264,6 +265,7 @@ impl<'a, 'b> Write for File<'a, 'b> {
         if written_bytes == 0 {
             return Ok(0);
         }
+        // some bytes were writter - update position and optionally size
         self.offset += written_bytes as u32;
         self.current_cluster = Some(current_cluster);
         self.update_size();
@@ -291,7 +293,7 @@ impl<'a, 'b> Seek for File<'a, 'b> {
             Some(ref e) => {
                 if e.inner().size().map_or(false, |s| new_pos > s as i64) {
                     info!("seek beyond end of file");
-                    e.inner().size().unwrap() as i64 // safe
+                    e.inner().size().unwrap() as i64 // SAFE: map_or returns false if size is empty
                 } else {
                     new_pos
                 }

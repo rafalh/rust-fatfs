@@ -65,8 +65,9 @@ impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
 }
 
 fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
+    // remove trailing slash and split into 2 components - top-most parent and rest
     let mut path_split = path.trim_matches('/').splitn(2, "/");
-    let comp = path_split.next().unwrap(); // safe unwrap - splitn always returns at least one element
+    let comp = path_split.next().unwrap(); // SAFE: splitn always returns at least one element
     let rest_opt = path_split.next();
     (comp, rest_opt)
 }
@@ -96,6 +97,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     fn find_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
+            // compare name ignoring case
             if e.file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
             }
@@ -149,9 +151,12 @@ impl <'a, 'b> Dir<'a, 'b> {
             None => {
                 match r {
                     Err(ref err) if err.kind() == ErrorKind::NotFound => {
+                        // alloc cluster for directory data
                         let cluster = self.fs.alloc_cluster(None)?;
+                        // create entry in parent directory
                         let entry = self.create_entry(name, FileAttributes::DIRECTORY, Some(cluster))?;
                         let mut dir = entry.to_dir();
+                        // create special entries "." and ".."
                         dir.create_entry(".", FileAttributes::DIRECTORY, entry.first_cluster())?;
                         dir.create_entry("..", FileAttributes::DIRECTORY, self.stream.first_cluster())?;
                         Ok(dir)
@@ -164,9 +169,11 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     fn is_empty(&mut self) -> io::Result<bool> {
+        // check if directory contains no files
         for r in self.iter() {
             let e = r?;
             let name = e.file_name();
+            // ignore special entries "." and ".."
             if name != "." && name != ".." {
                 return Ok(false);
             }
@@ -185,13 +192,16 @@ impl <'a, 'b> Dir<'a, 'b> {
             Some(rest) => e.to_dir().remove(rest),
             None => {
                 trace!("removing {}", path);
+                // in case of directory check if it is empty
                 if e.is_dir() && !e.to_dir().is_empty()? {
                     return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
                 }
+                // free directory data
                 match e.first_cluster() {
                     Some(n) => self.fs.cluster_iter(n).free()?,
                     _ => {},
                 }
+                // free long and short name entries
                 let mut stream = self.stream.clone();
                 stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
                 let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
@@ -215,21 +225,25 @@ impl <'a, 'b> Dir<'a, 'b> {
         loop {
             let raw_entry = DirEntryData::deserialize(&mut stream)?;
             if raw_entry.is_end() {
+                // first unused entry - all remaining space can be used
                 if num_free == 0 {
                     first_free = i;
                 }
                 stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
                 return Ok(stream);
             } else if raw_entry.is_free() {
+                // free entry - calculate number of free entries in a row
                 if num_free == 0 {
                     first_free = i;
                 }
                 num_free += 1;
                 if num_free == num_entries {
+                    // enough space for new file
                     stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
                     return Ok(stream);
                 }
             } else {
+                // used entry - start counting from 0
                 num_free = 0;
             }
             i += 1;
@@ -238,19 +252,22 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
         trace!("create_entry {}", name);
+        // check if name doesn't contain unsupported characters
         validate_long_name(name)?;
+        // generate short name and long entries
         let short_name = generate_short_name(name);
         let lfn_chsum = lfn_checksum(&short_name);
         let lfn_utf16 = name.encode_utf16().collect::<Vec<u16>>();
         let lfn_iter = LfnEntriesGenerator::new(&lfn_utf16, lfn_chsum);
-
+        // find space for new entries
         let num_entries = lfn_iter.len() + 1; // multiple lfn entries + one file entry
         let mut stream = self.find_free_entries(num_entries)?;
         let start_pos = stream.seek(io::SeekFrom::Current(0))?;
-
+        // write LFN entries first
         for lfn_entry in lfn_iter {
             lfn_entry.serialize(&mut stream)?;
         }
+        // create and write short name entry
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type);
         raw_entry.reset_created();
@@ -259,11 +276,12 @@ impl <'a, 'b> Dir<'a, 'b> {
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
+        // return new logical entry descriptor
         return Ok(DirEntry {
             data: raw_entry,
             lfn: Vec::new(),
             fs: self.fs,
-            entry_pos: abs_pos.unwrap(), // safe
+            entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is absent only for empty file
             offset_range: (start_pos, end_pos),
         });
     }
@@ -298,14 +316,14 @@ impl <'a, 'b> DirIter<'a, 'b> {
                         continue;
                     }
                     // Get entry position on volume
-                    let entry_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
+                    let abs_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
                     lfn_buf.validate_chksum(data.name());
                     return Ok(Some(DirEntry {
                         data,
                         lfn: lfn_buf.to_vec(),
                         fs: self.fs,
-                        entry_pos: entry_pos.unwrap(), // safe
+                        entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is empty only for empty file
                         offset_range: (begin_offset, offset),
                     }));
                 },
@@ -499,6 +517,7 @@ struct LfnEntriesGenerator<'a> {
 impl<'a> LfnEntriesGenerator<'a> {
     fn new(name_utf16: &'a [u16], checksum: u8) -> Self {
         let num_entries = (name_utf16.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
+        // create generator using reverse iterator over chunks - first chunk can be shorter
         LfnEntriesGenerator {
             checksum,
             name_parts_iter: name_utf16.chunks(LFN_PART_LEN).rev(),
@@ -517,25 +536,31 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
             return None;
         }
 
+        // get next part from reverse iterator
         match self.name_parts_iter.next() {
             Some(ref name_part) => {
                 let lfn_index = self.num - self.index;
                 let mut order = lfn_index as u8;
                 if self.index == 0 {
+                    // this is last name part (written as first)
                     order |= LFN_ENTRY_LAST_FLAG;
                 }
                 debug_assert!(order > 0);
+                // name is padded with ' '
                 let mut lfn_part = [0xFFFFu16; LFN_PART_LEN];
                 lfn_part[..name_part.len()].copy_from_slice(&name_part);
                 if name_part.len() < LFN_PART_LEN {
+                    // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
                     lfn_part[name_part.len()] = 0;
                 }
+                // create and return new LFN entry
                 let mut lfn_entry = DirLfnEntryData::new(order, self.checksum);
                 lfn_entry.copy_name_from_slice(&lfn_part);
                 self.index += 1;
                 Some(lfn_entry)
             },
             None => {
+                // end of name
                 self.ended = true;
                 None
             }
@@ -547,4 +572,5 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
     }
 }
 
+// name_parts_iter is ExactSizeIterator so size_hint returns one limit
 impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
