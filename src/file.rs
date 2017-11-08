@@ -43,7 +43,7 @@ impl <'a, 'b> File<'a, 'b> {
         }
     }
 
-    /// Truncate file to current position.
+    /// Truncate file in current position.
     pub fn truncate(&mut self) -> io::Result<()> {
         match self.entry {
             Some(ref mut e) => {

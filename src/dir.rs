@@ -126,7 +126,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    /// Creates new file or opens existing.
+    /// Creates new file or opens existing without truncating.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
         let r = self.find_entry(name);
