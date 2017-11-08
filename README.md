@@ -1,7 +1,7 @@
 Rust FAT FS
 ===========
 
-[![Travis Build Status](https://travis-ci.org/rafalh/rust-fat.svg?branch=master)](https://travis-ci.org/rafalh/rust-fat)
+[![Travis Build Status](https://travis-ci.org/rafalh/rust-fatfs.svg?branch=master)](https://travis-ci.org/rafalh/rust-fatfs)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
 [![crates.io](http://meritbadge.herokuapp.com/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
