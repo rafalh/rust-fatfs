@@ -194,7 +194,7 @@ impl<'a, 'b> Read for File<'a, 'b> {
         self.current_cluster = Some(current_cluster);
 
         match self.entry {
-            Some(ref mut e) if !self.fs.read_only => e.reset_accessed(),
+            Some(ref mut e) if self.fs.options.update_accessed_date => e.reset_accessed(),
             _ => {},
         }
         Ok(read_bytes)

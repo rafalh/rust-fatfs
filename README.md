@@ -31,8 +31,8 @@ Put this in your crate root:
 You can start using library now:
 
     let img_file = File::open("fat.img").unwrap();
-    let mut buf_stream = BufStream::new(img_file);
-    let fs = fatfs::FileSystem::new(&mut buf_stream, true).unwrap();
+    let mut buf_stream = fatfs::BufStream::new(img_file);
+    let fs = fatfs::FileSystem::new(&mut buf_stream, fatfs::FsOptions::new()).unwrap();
     let mut root_dir = fs.root_dir();
     let mut file = root_dir.create_file("hello.txt").unwrap();
     file.write_all(b"Hello World!").unwrap();

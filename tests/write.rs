@@ -6,8 +6,7 @@ use std::io::prelude::*;
 use std::io;
 use std::str;
 
-use fatfs::FileSystem;
-use fatfs::BufStream;
+use fatfs::{FileSystem, FsOptions, BufStream};
 
 const FAT12_IMG: &str = "fat12.img";
 const FAT16_IMG: &str = "fat16.img";
@@ -25,7 +24,8 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     {
         let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
         let mut buf_file = BufStream::new(file);
-        let fs = FileSystem::new(&mut buf_file, false).unwrap();
+        let options = FsOptions::new().update_accessed_date(true);
+        let fs = FileSystem::new(&mut buf_file, options).unwrap();
         f(fs);
     }
     fs::remove_file(tmp_path).unwrap();

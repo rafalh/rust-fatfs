@@ -129,6 +129,14 @@ impl BiosParameterBlock {
         }
         Ok(bpb)
     }
+
+    fn mirroring_enabled(&self) -> bool {
+        self.extended_flags & 0x80 == 0
+    }
+
+    fn active_fat(&self) -> u16 {
+        self.extended_flags & 0x0F
+    }
 }
 
 #[allow(dead_code)]
@@ -169,12 +177,32 @@ impl Default for BootRecord {
     }
 }
 
+/// FAT filesystem options.
+#[derive(Debug, Clone, Copy)]
+pub struct FsOptions {
+    pub(crate) update_accessed_date: bool,
+}
+
+impl FsOptions {
+    pub fn new() -> Self {
+        FsOptions {
+            update_accessed_date: false,
+        }
+    }
+
+    /// If enabled library updates accessed date field in directory entry when reading
+    pub fn update_accessed_date(mut self, enabled: bool) -> Self {
+        self.update_accessed_date = enabled;
+        self
+    }
+}
+
 pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
 
 /// FAT filesystem main struct.
 pub struct FileSystem<'a> {
     pub(crate) disk: RefCell<&'a mut ReadWriteSeek>,
-    pub(crate) read_only: bool,
+    pub(crate) options: FsOptions,
     fat_type: FatType,
     bpb: BiosParameterBlock,
     first_data_sector: u32,
@@ -184,12 +212,9 @@ pub struct FileSystem<'a> {
 impl <'a> FileSystem<'a> {
     /// Creates new filesystem object instance.
     ///
-    /// read_only argument is a hint for library. It doesnt prevent user from writing to file.
-    /// For now it prevents accessed date field automatic update in dir entry.
-    ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause filesystem corruption.
-    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, read_only: bool) -> io::Result<FileSystem<'a>> {
+    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, options: FsOptions) -> io::Result<FileSystem<'a>> {
         let bpb = {
             let boot = BootRecord::deserialize(disk)?;
             if boot.boot_sig != [0x55, 0xAA] {
@@ -214,7 +239,7 @@ impl <'a> FileSystem<'a> {
 
         Ok(FileSystem {
             disk: RefCell::new(disk),
-            read_only,
+            options,
             fat_type,
             bpb: bpb,
             first_data_sector,
@@ -272,11 +297,11 @@ impl <'a> FileSystem<'a> {
         let sectors_per_fat =
             if self.bpb.sectors_per_fat_16 == 0 { self.bpb.sectors_per_fat_32 }
             else { self.bpb.sectors_per_fat_16 as u32 };
-        let mirroring_enabled = self.bpb.extended_flags & 0x80 == 0;
+        let mirroring_enabled = self.bpb.mirroring_enabled();
         let (fat_first_sector, mirrors) = if mirroring_enabled {
             (self.bpb.reserved_sectors as u32, self.bpb.fats)
         } else {
-            let active_fat = (self.bpb.extended_flags & 0x0F) as u32;
+            let active_fat = self.bpb.active_fat() as u32;
             let fat_first_sector = (self.bpb.reserved_sectors as u32) + active_fat * sectors_per_fat;
             (fat_first_sector, 1)
         };

@@ -6,7 +6,7 @@ use std::io::SeekFrom;
 use std::io::prelude::*;
 use std::str;
 
-use fatfs::{FileSystem, FatType, DirEntry, BufStream};
+use fatfs::{FileSystem, FsOptions, FatType, DirEntry, BufStream};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";
@@ -17,7 +17,7 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str) {
     let _ = env_logger::init();
     let file = fs::File::open(filename).unwrap();
     let mut buf_file = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_file, true).unwrap();
+    let fs = FileSystem::new(&mut buf_file, FsOptions::new()).unwrap();
     f(fs);
 }
 
