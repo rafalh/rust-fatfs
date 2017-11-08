@@ -2,7 +2,8 @@ use std::ascii::AsciiExt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{ErrorKind, SeekFrom};
-use std::cmp;
+use std::slice;
+use std::iter;
 
 use fs::{FileSystemRef, DiskSlice};
 use file::File;
@@ -63,6 +64,13 @@ impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
     }
 }
 
+fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
+    let mut path_split = path.trim_matches('/').splitn(2, "/");
+    let comp = path_split.next().unwrap(); // safe unwrap - splitn always returns at least one element
+    let rest_opt = path_split.next();
+    (comp, rest_opt)
+}
+
 /// FAT directory
 #[derive(Clone)]
 pub struct Dir<'a, 'b: 'a> {
@@ -85,13 +93,6 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
-        let mut path_split = path.trim_matches('/').splitn(2, "/");
-        let comp = path_split.next().unwrap(); // safe unwrap - splitn always returns at least one element
-        let rest_opt = path_split.next();
-        (comp, rest_opt)
-    }
-
     fn find_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
@@ -104,7 +105,7 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     /// Opens existing directory
     pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
+        let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_dir(rest),
@@ -114,7 +115,7 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     /// Opens existing file.
     pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
+        let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_file(rest),
@@ -124,7 +125,7 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     /// Creates new file or opens existing.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
+        let (name, rest_opt) = split_path(path);
         let r = self.find_entry(name);
         match rest_opt {
             Some(rest) => r?.to_dir().create_file(rest),
@@ -141,7 +142,7 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     /// Creates new directory or opens existing.
     pub fn create_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
-        let (name, rest_opt) = Self::split_path(path);
+        let (name, rest_opt) = split_path(path);
         let r = self.find_entry(name);
         match rest_opt {
             Some(rest) => r?.to_dir().create_dir(rest),
@@ -178,7 +179,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn remove(&mut self, path: &str) -> io::Result<()> {
-        let (name, rest_opt) = Self::split_path(path);
+        let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name)?;
         match rest_opt {
             Some(rest) => e.to_dir().remove(rest),
@@ -235,87 +236,19 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn copy_short_name_part(dst: &mut [u8], src: &str) {
-        let mut j = 0;
-        for c in src.chars() {
-            if j == dst.len() { break; }
-            // replace characters allowed in long name but disallowed in short
-            let c2 = match c {
-                '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => '?',
-                _ if c < '\u{80}' => c,
-                _ => '?',
-            };
-            // short name is always uppercase
-            let upper = c2.to_uppercase().next().unwrap(); // SAFE: uppercase must return at least one character
-            let byte = upper as u8; // SAFE: upper is in range 0x20-0x7F
-            dst[j] = byte;
-            j += 1;
-        }
-    }
-
-    fn gen_short_name(name: &str) -> [u8;11] {
-        // padded by ' '
-        let mut short_name = [0x20u8; 11];
-        // find extension after last dot
-        match name.rfind('.') {
-            Some(index) => {
-                // extension found - copy parts before and after dot
-                Dir::copy_short_name_part(&mut short_name[0..8], &name[..index]);
-                Dir::copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
-            },
-            None => {
-                // no extension - copy name and leave extension empty
-                Dir::copy_short_name_part(&mut short_name[0..8], &name);
-            }
-        }
-        // FIXME: make sure short name is unique...
-        short_name
-    }
-
-    fn validate_name(name: &str) -> io::Result<()> {
-        if name.len() == 0 {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "filename cannot be empty"));
-        }
-        if name.len() > 255 {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "filename is too long"));
-        }
-        for c in name.chars() {
-            match c {
-                'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
-                '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' |
-                '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => {},
-                _ => return Err(io::Error::new(ErrorKind::InvalidInput, "invalid character in filename")),
-            }
-        }
-        Ok(())
-    }
-
     fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
         trace!("create_entry {}", name);
-        Self::validate_name(name)?;
-        let num_lfn_entries = (name.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
-        let num_entries = num_lfn_entries + 1; // multiple lfn entries + one file entry
+        validate_long_name(name)?;
+        let short_name = generate_short_name(name);
+        let lfn_chsum = lfn_checksum(&short_name);
+        let lfn_utf16 = name.encode_utf16().collect::<Vec<u16>>();
+        let lfn_iter = LfnEntriesGenerator::new(&lfn_utf16, lfn_chsum);
+
+        let num_entries = lfn_iter.len() + 1; // multiple lfn entries + one file entry
         let mut stream = self.find_free_entries(num_entries)?;
         let start_pos = stream.seek(io::SeekFrom::Current(0))?;
-        let short_name = Self::gen_short_name(name);
-        let lfn_chsum = lfn_checksum(&short_name);
-        let lfn_utf8 = name.encode_utf16().collect::<Vec<u16>>();
-        for i in 0..num_lfn_entries {
-            let lfn_index = num_lfn_entries - i;
-            let mut order = lfn_index as u8;
-            if i == 0 {
-                order |= LFN_ENTRY_LAST_FLAG;
-            }
-            debug_assert!(order > 0);
-            let lfn_pos = (lfn_index - 1) * LFN_PART_LEN;
-            let mut lfn_part = [0xFFFFu16; LFN_PART_LEN];
-            let lfn_part_len = cmp::min(name.len() - lfn_pos, LFN_PART_LEN);
-            lfn_part[..lfn_part_len].copy_from_slice(&lfn_utf8[lfn_pos..lfn_pos+lfn_part_len]);
-            if lfn_part_len < LFN_PART_LEN {
-                lfn_part[lfn_part_len] = 0;
-            }
-            let mut lfn_entry = DirLfnEntryData::new(order, lfn_chsum);
-            lfn_entry.copy_name_from_slice(&lfn_part);
+
+        for lfn_entry in lfn_iter {
             lfn_entry.serialize(&mut stream)?;
         }
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
@@ -359,7 +292,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
                         return Ok(None);
                     }
                     // Check if this is deleted or volume ID entry
-                    if data.is_free() || data.attrs.contains(FileAttributes::VOLUME_ID) {
+                    if data.is_free() || data.is_volume() {
                         lfn_buf.clear();
                         begin_offset = offset;
                         continue;
@@ -367,7 +300,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
                     // Get entry position on volume
                     let entry_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
-                    lfn_buf.validate_chksum(&data.name);
+                    lfn_buf.validate_chksum(data.name());
                     return Ok(Some(DirEntry {
                         data,
                         lfn: lfn_buf.to_vec(),
@@ -410,10 +343,59 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
     }
 }
 
-struct LongNameBuilder {
-    buf: Vec<u16>,
-    chksum: u8,
-    index: u8,
+fn copy_short_name_part(dst: &mut [u8], src: &str) {
+    let mut j = 0;
+    for c in src.chars() {
+        if j == dst.len() { break; }
+        // replace characters allowed in long name but disallowed in short
+        let c2 = match c {
+            '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => '?',
+            _ if c < '\u{80}' => c,
+            _ => '?',
+        };
+        // short name is always uppercase
+        let upper = c2.to_uppercase().next().unwrap(); // SAFE: uppercase must return at least one character
+        let byte = upper as u8; // SAFE: upper is in range 0x20-0x7F
+        dst[j] = byte;
+        j += 1;
+    }
+}
+
+fn generate_short_name(name: &str) -> [u8;11] {
+    // padded by ' '
+    let mut short_name = [0x20u8; 11];
+    // find extension after last dot
+    match name.rfind('.') {
+        Some(index) => {
+            // extension found - copy parts before and after dot
+            copy_short_name_part(&mut short_name[0..8], &name[..index]);
+            copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
+        },
+        None => {
+            // no extension - copy name and leave extension empty
+            copy_short_name_part(&mut short_name[0..8], &name);
+        }
+    }
+    // FIXME: make sure short name is unique...
+    short_name
+}
+
+fn validate_long_name(name: &str) -> io::Result<()> {
+    if name.len() == 0 {
+        return Err(io::Error::new(ErrorKind::InvalidInput, "filename cannot be empty"));
+    }
+    if name.len() > 255 {
+        return Err(io::Error::new(ErrorKind::InvalidInput, "filename is too long"));
+    }
+    for c in name.chars() {
+        match c {
+            'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
+            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' |
+            '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => {},
+            _ => return Err(io::Error::new(ErrorKind::InvalidInput, "invalid character in filename")),
+        }
+    }
+    Ok(())
 }
 
 fn lfn_checksum(short_name: &[u8]) -> u8 {
@@ -422,6 +404,12 @@ fn lfn_checksum(short_name: &[u8]) -> u8 {
         chksum = (((chksum & 1) << 7) as u16 + (chksum >> 1) as u16 + short_name[i] as u16) as u8;
     }
     chksum
+}
+
+struct LongNameBuilder {
+    buf: Vec<u16>,
+    chksum: u8,
+    index: u8,
 }
 
 impl LongNameBuilder {
@@ -464,22 +452,22 @@ impl LongNameBuilder {
     }
 
     fn process(&mut self, data: &DirLfnEntryData) {
-        let is_last = (data.order & LFN_ENTRY_LAST_FLAG) != 0;
-        let index = data.order & 0x1F;
+        let is_last = (data.order() & LFN_ENTRY_LAST_FLAG) != 0;
+        let index = data.order() & 0x1F;
         if index == 0 {
             // Corrupted entry
-            warn!("currupted lfn entry! {:x}", data.order);
+            warn!("currupted lfn entry! {:x}", data.order());
             self.clear();
             return;
         }
         if is_last {
             // last entry is actually first entry in stream
             self.index = index;
-            self.chksum = data.checksum;
+            self.chksum = data.checksum();
             self.buf.resize(index as usize * LFN_PART_LEN, 0);
-        } else if self.index == 0 || index != self.index - 1 || data.checksum != self.chksum {
+        } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
-            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order, self.index, data.checksum, self.chksum);
+            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order(), self.index, data.checksum(), self.chksum);
             self.clear();
             return;
         } else {
@@ -499,3 +487,64 @@ impl LongNameBuilder {
         }
     }
 }
+
+struct LfnEntriesGenerator<'a> {
+    name_parts_iter: iter::Rev<slice::Chunks<'a, u16>>,
+    checksum: u8,
+    index: usize,
+    num: usize,
+    ended: bool,
+}
+
+impl<'a> LfnEntriesGenerator<'a> {
+    fn new(name_utf16: &'a [u16], checksum: u8) -> Self {
+        let num_entries = (name_utf16.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
+        LfnEntriesGenerator {
+            checksum,
+            name_parts_iter: name_utf16.chunks(LFN_PART_LEN).rev(),
+            index: 0,
+            num: num_entries,
+            ended: false,
+        }
+    }
+}
+
+impl<'a> Iterator for LfnEntriesGenerator<'a> {
+    type Item = DirLfnEntryData;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ended {
+            return None;
+        }
+
+        match self.name_parts_iter.next() {
+            Some(ref name_part) => {
+                let lfn_index = self.num - self.index;
+                let mut order = lfn_index as u8;
+                if self.index == 0 {
+                    order |= LFN_ENTRY_LAST_FLAG;
+                }
+                debug_assert!(order > 0);
+                let mut lfn_part = [0xFFFFu16; LFN_PART_LEN];
+                lfn_part[..name_part.len()].copy_from_slice(&name_part);
+                if name_part.len() < LFN_PART_LEN {
+                    lfn_part[name_part.len()] = 0;
+                }
+                let mut lfn_entry = DirLfnEntryData::new(order, self.checksum);
+                lfn_entry.copy_name_from_slice(&lfn_part);
+                self.index += 1;
+                Some(lfn_entry)
+            },
+            None => {
+                self.ended = true;
+                None
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.name_parts_iter.size_hint()
+    }
+}
+
+impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}

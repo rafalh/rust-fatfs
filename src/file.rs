@@ -15,7 +15,7 @@ pub struct File<'a, 'b: 'a> {
     current_cluster: Option<u32>,
     // current position in this file
     offset: u32,
-    // file dir entry - None for root dir
+    // file dir entry editor - None for root dir
     entry: Option<DirEntryEditor>,
     // file-system reference
     fs: FileSystemRef<'a, 'b>,

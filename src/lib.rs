@@ -22,5 +22,6 @@ mod utils;
 
 pub use fs::*;
 pub use dir::*;
+pub use dir_entry::*;
 pub use file::*;
 pub use utils::*;

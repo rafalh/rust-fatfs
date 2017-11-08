@@ -58,8 +58,8 @@ impl DirFileEntryData {
         }
     }
 
-    pub fn attributes(&self) -> FileAttributes {
-        self.attrs
+    pub(crate) fn name(&self) -> &[u8; 11] {
+        &self.name
     }
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
@@ -190,6 +190,10 @@ impl DirFileEntryData {
     pub(crate) fn is_end(&self) -> bool {
         self.name[0] == 0
     }
+
+    pub(crate) fn is_volume(&self) -> bool {
+        self.attrs.contains(FileAttributes::VOLUME_ID)
+    }
 }
 
 #[allow(dead_code)]
@@ -220,7 +224,8 @@ impl DirLfnEntryData {
         self.name_2.copy_from_slice(&lfn_part[11..11+2]);
     }
 
-    pub(crate) fn copy_name_to_slice(&self, lfn_part: &mut [u16; LFN_PART_LEN]) {
+    pub(crate) fn copy_name_to_slice(&self, lfn_part: &mut [u16]) {
+        debug_assert!(lfn_part.len() == LFN_PART_LEN);
         lfn_part[0..5].copy_from_slice(&self.name_0);
         lfn_part[5..11].copy_from_slice(&self.name_1);
         lfn_part[11..13].copy_from_slice(&self.name_2);
@@ -242,6 +247,14 @@ impl DirLfnEntryData {
             wrt.write_u16::<LittleEndian>(*ch)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn order(&self) -> u8 {
+        self.order
+    }
+
+    pub(crate) fn checksum(&self) -> u8 {
+        self.checksum
     }
 
     pub(crate) fn is_free(&self) -> bool {
@@ -567,7 +580,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         self.data.first_cluster(self.fs.fat_type)
     }
 
-    fn entry_info(&self) -> DirEntryEditor {
+    fn editor(&self) -> DirEntryEditor {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
@@ -576,7 +589,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     /// Panics if this is not a file.
     pub fn to_file(&self) -> File<'a, 'b> {
         assert!(!self.is_dir(), "Not a file entry");
-        File::new(self.first_cluster(), Some(self.entry_info()), self.fs)
+        File::new(self.first_cluster(), Some(self.editor()), self.fs)
     }
 
     /// Returns Dir struct for this entry.
@@ -586,7 +599,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
             Some(n) => {
-                let file = File::new(Some(n), Some(self.entry_info()), self.fs);
+                let file = File::new(Some(n), Some(self.editor()), self.fs);
                 Dir::new(DirRawStream::File(file), self.fs)
             },
             None => self.fs.root_dir(),
