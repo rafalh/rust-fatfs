@@ -6,20 +6,27 @@ Rust FAT
 [![crates.io](http://meritbadge.herokuapp.com/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
 
-Introduction
-------------
-
 FAT filesystem library implemented in Rust.
 
 Features:
-* read file or directory,
-* write file or directory,
-* create new file or directory,
+* read/write/create/remove file,
+* enumerate directory children,
+* create/remove directory,
+* read/write file timestamps (updated automatically if chrono is available),
 * FAT12, FAT16, FAT32 compatibility,
 * LFN (Long File Names) extension supported.
 
-Planned features (Nice to Have):
-* no_std environment support.
+Example
+=======
+
+    let file = File::open("fat.img").unwrap();
+    let mut buf_rdr = BufStream::new(file);
+    let fs = FileSystem::new(&mut buf_rdr, true).unwrap();
+    let mut root_dir = fs.root_dir();
+    let mut file = root_dir.create_file("hello.txt").unwrap();
+    file.write_all(b"Hello World!").unwrap();
+
+See more examples in `examples` subdirectory.
 
 License
 -------
