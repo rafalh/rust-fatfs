@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use file::File;
 use dir::{DirRawStream, Dir};
 use dir_entry::DIR_ENTRY_SIZE;
-use table::{ClusterIterator, alloc_cluster};
+use table::{ClusterIterator, alloc_cluster, read_fat_flags};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -29,6 +29,11 @@ impl FatType {
             FatType::Fat32
         }
     }
+}
+
+pub struct FsStatusFlags {
+    pub dirty: bool,
+    pub io_error: bool,
 }
 
 pub trait ReadSeek: Read + Seek {}
@@ -136,6 +141,13 @@ impl BiosParameterBlock {
 
     fn active_fat(&self) -> u16 {
         self.extended_flags & 0x0F
+    }
+
+    fn status_flags(&self) -> FsStatusFlags {
+        FsStatusFlags {
+            dirty: self.reserved_1 & 1 != 0,
+            io_error: self.reserved_1 & 2 != 0,
+        }
     }
 }
 
@@ -316,6 +328,15 @@ impl <'a> FileSystem<'a> {
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
         let mut disk_slice = self.fat_slice();
         alloc_cluster(&mut disk_slice, self.fat_type, prev_cluster)
+    }
+
+    pub fn read_status_flags(&self) -> io::Result<FsStatusFlags> {
+        let bpb_status = self.bpb.status_flags();
+        let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
+        Ok(FsStatusFlags {
+            dirty: bpb_status.dirty || fat_status.dirty,
+            io_error: bpb_status.io_error || fat_status.io_error,
+        })
     }
 }
 

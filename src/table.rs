@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use fs::{FatType, DiskSlice, ReadSeek};
+use fs::{FatType, FsStatusFlags, DiskSlice, ReadSeek};
 
 struct Fat<T> {
     #[allow(dead_code)]
@@ -24,6 +24,7 @@ trait FatTrait {
     fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue>;
     fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()>;
     fn find_free(fat: &mut ReadSeek, hint_cluster: u32) -> io::Result<u32>;
+    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32>;
 }
 
 fn read_fat(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<FatValue> {
@@ -70,15 +71,43 @@ pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster
     Ok(new_cluster)
 }
 
+
+
+pub(crate) fn read_fat_flags(fat: &mut DiskSlice, fat_type: FatType) -> io::Result<FsStatusFlags> {
+    // check MSB (except in FAT12)
+    let val = match fat_type {
+        FatType::Fat12 => 0xFFF,
+        FatType::Fat16 => Fat16::get_raw(fat, 1)?,
+        FatType::Fat32 => Fat32::get_raw(fat, 1)?,
+    };
+    let dirty = match fat_type {
+        FatType::Fat12 => false,
+        FatType::Fat16 => val & (1 << 15) == 0,
+        FatType::Fat32 => val & (1 << 27) == 0,
+    };
+    let io_error = match fat_type {
+        FatType::Fat12 => false,
+        FatType::Fat16 => val & (1 << 14) == 0,
+        FatType::Fat32 => val & (1 << 26) == 0,
+    };
+    Ok(FsStatusFlags {
+        dirty, io_error,
+    })
+}
+
 impl FatTrait for Fat12 {
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
         let packed_val = fat.read_u16::<LittleEndian>()?;
-        let val = match cluster & 1 {
+        Ok(match cluster & 1 {
             0 => packed_val & 0x0FFF,
             _ => packed_val >> 4,
-        };
+        } as u32)
+    }
+
+    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+        let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
             0xFF7 => FatValue::Bad,
@@ -132,9 +161,13 @@ impl FatTrait for Fat12 {
 }
 
 impl FatTrait for Fat16 {
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
-        let val = fat.read_u16::<LittleEndian>()?;
+        Ok(fat.read_u16::<LittleEndian>()? as u32)
+    }
+
+    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+        let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
             0xFFF7 => FatValue::Bad,
@@ -169,9 +202,13 @@ impl FatTrait for Fat16 {
 }
 
 impl FatTrait for Fat32 {
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
-        let val = fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF;
+        Ok(fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF)
+    }
+
+    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+        let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
             0x0FFFFFF7 => FatValue::Bad,

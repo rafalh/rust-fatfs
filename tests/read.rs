@@ -188,3 +188,25 @@ fn test_volume_metadata_fat16() {
 fn test_volume_metadata_fat32() {
     call_with_fs(&|fs| test_volume_metadata(fs, FatType::Fat32), FAT32_IMG)
 }
+
+fn test_status_flags(fs: FileSystem) {
+    let status_flags = fs.read_status_flags().unwrap();
+    assert_eq!(status_flags.dirty, false);
+    assert_eq!(status_flags.io_error, false);
+}
+
+#[test]
+fn test_status_flags_fat12() {
+    call_with_fs(&|fs| test_status_flags(fs), FAT12_IMG)
+}
+
+#[test]
+fn test_status_flags_fat16() {
+    call_with_fs(&|fs| test_status_flags(fs), FAT16_IMG)
+}
+
+#[test]
+fn test_status_flags_fat32() {
+    call_with_fs(&|fs| test_status_flags(fs), FAT32_IMG)
+}
+
