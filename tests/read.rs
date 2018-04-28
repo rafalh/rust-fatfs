@@ -14,7 +14,7 @@ const FAT16_IMG: &str = "resources/fat16.img";
 const FAT32_IMG: &str = "resources/fat32.img";
 
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str) {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let file = fs::File::open(filename).unwrap();
     let mut buf_file = BufStream::new(file);
     let fs = FileSystem::new(&mut buf_file, FsOptions::new()).unwrap();

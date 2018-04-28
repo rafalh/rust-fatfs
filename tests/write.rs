@@ -16,7 +16,7 @@ const TMP_DIR: &str = "tmp";
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
     fs::create_dir(TMP_DIR).ok();
