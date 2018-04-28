@@ -1,4 +1,3 @@
-use std::ascii::AsciiExt;
 use std::io::prelude::*;
 use std::io;
 use std::io::{ErrorKind, SeekFrom};

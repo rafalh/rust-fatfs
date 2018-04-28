@@ -2,7 +2,6 @@ extern crate fatfs;
 
 use std::fs::OpenOptions;
 use std::io::prelude::*;
-use std::str;
 
 use fatfs::{FileSystem, FsOptions, BufStream};
 

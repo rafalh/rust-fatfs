@@ -209,7 +209,7 @@ impl FsOptions {
     }
 }
 
-pub(crate) type FileSystemRef<'a, 'b: 'a> = &'a FileSystem<'b>;
+pub(crate) type FileSystemRef<'a, 'b> = &'a FileSystem<'b>;
 
 /// FAT filesystem main struct.
 pub struct FileSystem<'a> {
