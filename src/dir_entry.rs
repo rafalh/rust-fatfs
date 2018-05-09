@@ -148,7 +148,6 @@ impl DirFileEntryData {
     #[cfg(not(feature = "chrono"))]
     pub(crate) fn reset_created(&mut self) {
         // nop - user controls timestamps manually
-        false
     }
 
     #[cfg(not(feature = "chrono"))]
@@ -160,7 +159,6 @@ impl DirFileEntryData {
     #[cfg(not(feature = "chrono"))]
     pub(crate) fn reset_modified(&mut self) {
         // nop - user controls timestamps manually
-        false
     }
 
     pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
