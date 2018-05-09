@@ -224,9 +224,16 @@ pub struct FileSystem<'a> {
 impl <'a> FileSystem<'a> {
     /// Creates new filesystem object instance.
     ///
+    /// Supplied disk parameter cannot be seeked. If there is a need to read a fragment of disk image (e.g. partition)
+    /// library user should provide a custom implementation of ReadWriteSeek trait.
+    ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause filesystem corruption.
     pub fn new<T: ReadWriteSeek>(disk: &'a mut T, options: FsOptions) -> io::Result<FileSystem<'a>> {
+        // Make sure given image is not seeked
+        debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
+
+        // Read boot sector
         let bpb = {
             let boot = BootRecord::deserialize(disk)?;
             if boot.boot_sig != [0x55, 0xAA] {
