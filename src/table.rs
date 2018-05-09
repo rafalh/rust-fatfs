@@ -1,6 +1,7 @@
-use std::io;
-use std::io::prelude::*;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use io;
+use io::prelude::*;
+use byteorder::LittleEndian;
+use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use fs::{FatType, FsStatusFlags, DiskSlice, ReadSeek};
 
 struct Fat<T> {

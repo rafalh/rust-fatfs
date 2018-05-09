@@ -1,13 +1,17 @@
-use std::fmt;
-use std::io::prelude::*;
-use std::io;
-use std::io::Cursor;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use core::fmt;
+use io::prelude::*;
+use io;
+use io::Cursor;
+use byteorder::{LittleEndian};
+use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "chrono")]
 use chrono::{TimeZone, Local, Datelike, Timelike};
 #[cfg(feature = "chrono")]
 use chrono;
+
+#[cfg(not(feature = "std"))]
+use alloc::{Vec, String, string::ToString};
 
 use fs::{FileSystemRef, FatType};
 use file::File;

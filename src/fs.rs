@@ -1,14 +1,18 @@
 use core::cell::RefCell;
 use core::cmp;
-use std::io::prelude::*;
-use std::io::{Error, ErrorKind, SeekFrom};
-use std::io;
-use byteorder::{LittleEndian, ReadBytesExt};
+use io::prelude::*;
+use io::{Error, ErrorKind, SeekFrom};
+use io;
+use byteorder::LittleEndian;
+use byteorder_ext::ReadBytesExt;
 
 use file::File;
 use dir::{DirRawStream, Dir};
 use dir_entry::DIR_ENTRY_SIZE;
 use table::{ClusterIterator, alloc_cluster, read_fat_flags};
+
+#[cfg(not(feature = "std"))]
+use alloc::{String, string::ToString};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT

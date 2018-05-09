@@ -1,6 +1,6 @@
-use std::io::prelude::*;
-use std::io;
-use std::cmp;
+use io::prelude::*;
+use io;
+use core::cmp;
 
 pub trait ReadSeek: Read + Seek {}
 impl<T> ReadSeek for T where T: Read + Seek {}

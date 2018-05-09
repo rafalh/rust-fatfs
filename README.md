@@ -39,6 +39,16 @@ You can start using library now:
 
 See more examples in `examples` subdirectory.
 
+no_std usage
+------------
+
+Put this in your `Cargo.toml`:
+
+    [dependencies]
+    fatfs = { version = "0.2", features = ["core_io"], default-features = false }
+
+Note: alloc crate is required at the moment so when std is disabled, custom allocator has to be provided.
+
 License
 -------
 The MIT license. See LICENSE.txt.

@@ -1,7 +1,7 @@
-use std::cmp;
-use std::io::prelude::*;
-use std::io::{SeekFrom, ErrorKind};
-use std::io;
+use core::cmp;
+use io::prelude::*;
+use io::{SeekFrom, ErrorKind};
+use io;
 
 use fs::FileSystemRef;
 use dir_entry::{DirEntryEditor, DateTime, Date};

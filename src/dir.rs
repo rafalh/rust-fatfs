@@ -1,13 +1,17 @@
-use std::io::prelude::*;
-use std::io;
-use std::io::{ErrorKind, SeekFrom};
-use std::slice;
-use std::iter;
+use core::slice;
+use core::iter;
+
+use io::prelude::*;
+use io;
+use io::{ErrorKind, SeekFrom};
 
 use fs::{FileSystemRef, DiskSlice};
 use file::File;
 use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes,
     DIR_ENTRY_SIZE, LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
+
+#[cfg(not(feature = "std"))]
+use alloc::Vec;
 
 #[derive(Clone)]
 pub(crate) enum DirRawStream<'a, 'b: 'a> {
