@@ -4,6 +4,9 @@
 #![cfg_attr(not(feature="std"), no_std)]
 #![cfg_attr(not(feature="std"), feature(alloc))]
 
+// Disable warnings to not clutter code with cfg too much
+#![cfg_attr(not(feature="alloc"), allow(dead_code, unused_imports))]
+
 extern crate byteorder;
 
 #[macro_use]
@@ -18,7 +21,7 @@ extern crate chrono;
 #[cfg(not(feature = "std"))]
 extern crate core_io;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
 #[macro_use]
 extern crate alloc;
 
@@ -27,6 +30,8 @@ mod dir;
 mod dir_entry;
 mod file;
 mod table;
+
+#[cfg(feature = "alloc")]
 mod utils;
 
 #[cfg(not(feature = "std"))]
@@ -48,4 +53,6 @@ pub use fs::*;
 pub use dir::*;
 pub use dir_entry::*;
 pub use file::*;
+
+#[cfg(feature = "alloc")]
 pub use utils::*;

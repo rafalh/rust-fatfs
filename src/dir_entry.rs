@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, str};
 use io::prelude::*;
 use io;
 use io::Cursor;
@@ -10,7 +10,7 @@ use chrono::{TimeZone, Local, Datelike, Timelike};
 #[cfg(feature = "chrono")]
 use chrono;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{Vec, String, string::ToString};
 
 use fs::{FileSystemRef, FatType};
@@ -36,6 +36,45 @@ pub(crate) const LFN_PART_LEN: usize = 13;
 pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
 pub(crate) const DIR_ENTRY_FREE_FLAG: u8 = 0xE5;
 pub(crate) const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
+
+/// Decoded file short name
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ShortName {
+    name: [u8; 12],
+    len: u8,
+}
+
+impl ShortName {
+    pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
+        // get name components length by looking for space character
+        const SPACE: u8 = ' ' as u8;
+        let name_len = raw_name[0..8].iter().position(|x| *x == SPACE).unwrap_or(8);
+        let ext_len = raw_name[8..11].iter().position(|x| *x == SPACE).unwrap_or(3);
+        let mut name = [SPACE; 12];
+        name[..name_len].copy_from_slice(&raw_name[..name_len]);
+        let total_len = if ext_len > 0 {
+            name[name_len] = '.' as u8;
+            name[name_len+1..name_len+1+ext_len].copy_from_slice(&raw_name[8..8+ext_len]);
+            // Return total name length
+            name_len+1+ext_len
+        } else {
+            // No extension - return length of name part
+            name_len
+        };
+        // Short names in FAT filesystem are encoded in OEM code-page. Rust operates on UTF-8 strings
+        // and there is no built-in conversion so strip non-ascii characters in the name.
+        use strip_non_ascii;
+        strip_non_ascii(&mut name);
+        ShortName {
+            name,
+            len: total_len as u8,
+        }
+    }
+
+    fn to_str(&self) -> &str {
+        str::from_utf8(&self.name[..self.len as usize]).unwrap() // SAFE: all characters outside of ASCII table has been removed
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
@@ -251,10 +290,12 @@ impl DirLfnEntryData {
         Ok(())
     }
 
+    #[cfg(feature = "alloc")]
     pub(crate) fn order(&self) -> u8 {
         self.order
     }
 
+    #[cfg(feature = "alloc")]
     pub(crate) fn checksum(&self) -> u8 {
         self.checksum
     }
@@ -539,6 +580,8 @@ impl DirEntryEditor {
 #[derive(Clone)]
 pub struct DirEntry<'a, 'b: 'a> {
     pub(crate) data: DirFileEntryData,
+    pub(crate) short_name: ShortName,
+    #[cfg(feature = "alloc")]
     pub(crate) lfn: Vec<u16>,
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
@@ -547,25 +590,27 @@ pub struct DirEntry<'a, 'b: 'a> {
 
 impl <'a, 'b> DirEntry<'a, 'b> {
     /// Returns short file name
+    #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
-        let name_str = String::from_utf8_lossy(&self.data.name[0..8]);
-        let ext_str = String::from_utf8_lossy(&self.data.name[8..11]);
-        let name_trimmed = name_str.trim_right();
-        let ext_trimmed = ext_str.trim_right();
-        if ext_trimmed.is_empty() {
-            name_trimmed.to_string()
-        } else {
-            format!("{}.{}", name_trimmed, ext_trimmed)
-        }
+        self.short_name.to_str().to_string()
+    }
+    #[cfg(not(feature = "alloc"))]
+    pub fn short_file_name(&self) -> &str {
+        self.short_name.to_str()
     }
 
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
+    #[cfg(feature = "alloc")]
     pub fn file_name(&self) -> String {
         if self.lfn.len() > 0 {
             String::from_utf16_lossy(&self.lfn)
         } else {
             self.short_file_name()
         }
+    }
+    #[cfg(not(feature = "alloc"))]
+    pub fn file_name(&self) -> &str {
+        self.short_file_name()
     }
 
     /// Returns file attributes

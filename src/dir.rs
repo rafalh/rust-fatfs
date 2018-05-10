@@ -1,5 +1,5 @@
-use core::slice;
-use core::iter;
+#[cfg(feature = "alloc")]
+use core::{slice, iter};
 
 use io::prelude::*;
 use io;
@@ -7,10 +7,12 @@ use io::{ErrorKind, SeekFrom};
 
 use fs::{FileSystemRef, DiskSlice};
 use file::File;
-use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes,
-    DIR_ENTRY_SIZE, LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
+use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 
-#[cfg(not(feature = "std"))]
+#[cfg(feature = "alloc")]
+use dir_entry::{LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::Vec;
 
 #[derive(Clone)]
@@ -254,13 +256,11 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
-        trace!("create_entry {}", name);
-        // check if name doesn't contain unsupported characters
-        validate_long_name(name)?;
-        // generate short name and long entries
-        let short_name = generate_short_name(name);
+    #[cfg(feature = "alloc")]
+    fn create_lfn_entries(&mut self, name: &str, short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+        // get short name checksum
         let lfn_chsum = lfn_checksum(&short_name);
+        // convert long name to UTF-16
         let lfn_utf16 = name.encode_utf16().collect::<Vec<u16>>();
         let lfn_iter = LfnEntriesGenerator::new(&lfn_utf16, lfn_chsum);
         // find space for new entries
@@ -271,6 +271,23 @@ impl <'a, 'b> Dir<'a, 'b> {
         for lfn_entry in lfn_iter {
             lfn_entry.serialize(&mut stream)?;
         }
+        Ok((stream, start_pos))
+    }
+    #[cfg(not(feature = "alloc"))]
+    fn create_lfn_entries(&mut self, _name: &str, _short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+        let mut stream = self.find_free_entries(1)?;
+        let start_pos = stream.seek(io::SeekFrom::Current(0))?;
+        Ok((stream, start_pos))
+    }
+
+    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
+        trace!("create_entry {}", name);
+        // check if name doesn't contain unsupported characters
+        validate_long_name(name)?;
+        // generate short name
+        let short_name = generate_short_name(name);
+        // generate long entries
+        let (mut stream, start_pos) = self.create_lfn_entries(&name, &short_name)?;
         // create and write short name entry
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type());
@@ -281,8 +298,11 @@ impl <'a, 'b> Dir<'a, 'b> {
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
         // return new logical entry descriptor
+        let short_name = ShortName::new(raw_entry.name());
         return Ok(DirEntry {
             data: raw_entry,
+            short_name,
+            #[cfg(feature = "alloc")]
             lfn: Vec::new(),
             fs: self.fs,
             entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is absent only for empty file
@@ -301,6 +321,7 @@ pub struct DirIter<'a, 'b: 'a> {
 
 impl <'a, 'b> DirIter<'a, 'b> {
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
+        #[cfg(feature = "alloc")]
         let mut lfn_buf = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
@@ -315,6 +336,7 @@ impl <'a, 'b> DirIter<'a, 'b> {
                     }
                     // Check if this is deleted or volume ID entry
                     if data.is_free() || data.is_volume() {
+                        #[cfg(feature = "alloc")]
                         lfn_buf.clear();
                         begin_offset = offset;
                         continue;
@@ -322,9 +344,14 @@ impl <'a, 'b> DirIter<'a, 'b> {
                     // Get entry position on volume
                     let abs_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
+                    #[cfg(feature = "alloc")]
                     lfn_buf.validate_chksum(data.name());
+                    // Return directory entry
+                    let short_name = ShortName::new(data.name());
                     return Ok(Some(DirEntry {
                         data,
+                        short_name,
+                        #[cfg(feature = "alloc")]
                         lfn: lfn_buf.to_vec(),
                         fs: self.fs,
                         entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is empty only for empty file
@@ -334,11 +361,13 @@ impl <'a, 'b> DirIter<'a, 'b> {
                 DirEntryData::Lfn(data) => {
                     // Check if this is deleted entry
                     if data.is_free() {
+                        #[cfg(feature = "alloc")]
                         lfn_buf.clear();
                         begin_offset = offset;
                         continue;
                     }
                     // Append to LFN buffer
+                    #[cfg(feature = "alloc")]
                     lfn_buf.process(&data);
                 }
             }
@@ -420,6 +449,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "alloc")]
 fn lfn_checksum(short_name: &[u8]) -> u8 {
     let mut chksum = 0u8;
     for i in 0..11 {
@@ -428,12 +458,14 @@ fn lfn_checksum(short_name: &[u8]) -> u8 {
     chksum
 }
 
+#[cfg(feature = "alloc")]
 struct LongNameBuilder {
     buf: Vec<u16>,
     chksum: u8,
     index: u8,
 }
 
+#[cfg(feature = "alloc")]
 impl LongNameBuilder {
     fn new() -> LongNameBuilder {
         LongNameBuilder {
@@ -510,6 +542,7 @@ impl LongNameBuilder {
     }
 }
 
+#[cfg(feature = "alloc")]
 struct LfnEntriesGenerator<'a> {
     name_parts_iter: iter::Rev<slice::Chunks<'a, u16>>,
     checksum: u8,
@@ -518,6 +551,7 @@ struct LfnEntriesGenerator<'a> {
     ended: bool,
 }
 
+#[cfg(feature = "alloc")]
 impl<'a> LfnEntriesGenerator<'a> {
     fn new(name_utf16: &'a [u16], checksum: u8) -> Self {
         let num_entries = (name_utf16.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
@@ -532,6 +566,7 @@ impl<'a> LfnEntriesGenerator<'a> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<'a> Iterator for LfnEntriesGenerator<'a> {
     type Item = DirLfnEntryData;
 
@@ -577,4 +612,5 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
 }
 
 // name_parts_iter is ExactSizeIterator so size_hint returns one limit
+#[cfg(feature = "alloc")]
 impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
