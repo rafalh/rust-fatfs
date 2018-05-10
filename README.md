@@ -12,9 +12,10 @@ Features:
 * read/write/create/remove file,
 * enumerate directory children,
 * create/remove directory,
-* read/write file timestamps (updated automatically if chrono is available),
+* read/write file timestamps (updated automatically if `chrono` feature is enabled),
 * FAT12, FAT16, FAT32 compatibility,
-* LFN (Long File Names) extension supported.
+* LFN (Long File Names) extension supported,
+* Basic no_std environment support.
 
 Usage
 -----
