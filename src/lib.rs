@@ -22,7 +22,6 @@ extern crate chrono;
 extern crate core_io;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-#[macro_use]
 extern crate alloc;
 
 mod fs;
@@ -31,7 +30,7 @@ mod dir_entry;
 mod file;
 mod table;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc"))]
 mod utils;
 
 #[cfg(not(feature = "std"))]
@@ -54,5 +53,5 @@ pub use dir::*;
 pub use dir_entry::*;
 pub use file::*;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc"))]
 pub use utils::*;

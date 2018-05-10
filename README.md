@@ -48,7 +48,7 @@ Put this in your `Cargo.toml`:
     [dependencies]
     fatfs = { version = "0.2", features = ["core_io"], default-features = false }
 
-Note: LFN support requires `alloc` feature and makes use of `alloc` crate.
+Note: LFN support requires `alloc` and `core_io/collections` features and makes use of `alloc` crate.
 You may have to provide a memory allocator implementation.
 
 For building in `no_std` mode nightly Rust version compatible with current `core_io` crate is required.
