@@ -286,6 +286,7 @@ pub struct FileSystem<'a> {
     bpb: BiosParameterBlock,
     first_data_sector: u32,
     root_dir_sectors: u32,
+    total_clusters: u32,
     fs_info: Option<FsInfoSector>,
 }
 
@@ -338,6 +339,7 @@ impl <'a> FileSystem<'a> {
             bpb: bpb,
             first_data_sector,
             root_dir_sectors,
+            total_clusters,
             fs_info,
         })
     }
@@ -419,7 +421,7 @@ impl <'a> FileSystem<'a> {
             None => None,
         };
         let mut fat = self.fat_slice();
-        alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint)
+        alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)
     }
 
     pub fn read_status_flags(&self) -> io::Result<FsStatusFlags> {
