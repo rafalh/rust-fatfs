@@ -61,8 +61,8 @@ fn find_free_cluster(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io:
     }
 }
 
-pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster: Option<u32>) -> io::Result<u32> {
-    let new_cluster = find_free_cluster(fat, fat_type, 2)?;
+pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster: Option<u32>, hint: Option<u32>) -> io::Result<u32> {
+    let new_cluster = find_free_cluster(fat, fat_type, hint.unwrap_or(2))?;
     write_fat(fat, fat_type, new_cluster, FatValue::EndOfChain)?;
     match prev_cluster {
         Some(n) => write_fat(fat, fat_type, n, FatValue::Data(new_cluster))?,

@@ -4,7 +4,7 @@ use io::prelude::*;
 use io::{Error, ErrorKind, SeekFrom};
 use io;
 use byteorder::LittleEndian;
-use byteorder_ext::ReadBytesExt;
+use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 use file::File;
 use dir::{DirRawStream, Dir};
@@ -205,6 +205,57 @@ impl Default for BootRecord {
     }
 }
 
+struct FsInfoSector {
+    #[allow(dead_code)]
+    free_cluster_count: u32,
+    next_free_cluster: u32,
+}
+
+impl FsInfoSector {
+    const LEAD_SIG: u32 = 0x41615252;
+    const STRUC_SIG: u32 = 0x61417272;
+    const TRAIL_SIG: u32 = 0xAA550000;
+
+    fn deserialize(rdr: &mut Read) -> io::Result<FsInfoSector> {
+        let lead_sig = rdr.read_u32::<LittleEndian>()?;
+        if lead_sig != Self::LEAD_SIG {
+            return Err(Error::new(ErrorKind::Other, "invalid lead_sig in FsInfo sector"));
+        }
+        let mut reserved = [0u8; 480];
+        rdr.read_exact(&mut reserved)?;
+        let struc_sig = rdr.read_u32::<LittleEndian>()?;
+        if struc_sig != Self::STRUC_SIG {
+            return Err(Error::new(ErrorKind::Other, "invalid struc_sig in FsInfo sector"));
+        }
+        let free_cluster_count = rdr.read_u32::<LittleEndian>()?;
+        let next_free_cluster = rdr.read_u32::<LittleEndian>()?;
+        let mut reserved2 = [0u8; 12];
+        rdr.read_exact(&mut reserved2)?;
+        let trail_sig = rdr.read_u32::<LittleEndian>()?;
+        if trail_sig != Self::TRAIL_SIG {
+            return Err(Error::new(ErrorKind::Other, "invalid trail_sig in FsInfo sector"));
+        }
+        Ok(FsInfoSector {
+            free_cluster_count, next_free_cluster
+        })
+    }
+
+    // TODO: save modified FsInfo secton on unmount
+    #[allow(dead_code)]
+    fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+        wrt.write_u32::<LittleEndian>(Self::LEAD_SIG)?;
+        let reserved = [0u8; 480];
+        wrt.write(&reserved)?;
+        wrt.write_u32::<LittleEndian>(Self::STRUC_SIG)?;
+        wrt.write_u32::<LittleEndian>(self.free_cluster_count)?;
+        wrt.write_u32::<LittleEndian>(self.next_free_cluster)?;
+        let reserved2 = [0u8; 12];
+        wrt.write(&reserved2)?;
+        wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
+        Ok(())
+    }
+}
+
 /// FAT filesystem options.
 #[derive(Debug, Clone, Copy)]
 pub struct FsOptions {
@@ -235,6 +286,7 @@ pub struct FileSystem<'a> {
     bpb: BiosParameterBlock,
     first_data_sector: u32,
     root_dir_sectors: u32,
+    fs_info: Option<FsInfoSector>,
 }
 
 impl <'a> FileSystem<'a> {
@@ -272,6 +324,13 @@ impl <'a> FileSystem<'a> {
         let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
         let fat_type = FatType::from_clusters(total_clusters);
 
+        let fs_info = if fat_type == FatType::Fat32 {
+            disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * 512))?;
+            Some(FsInfoSector::deserialize(disk)?)
+        } else {
+            None
+        };
+
         Ok(FileSystem {
             disk: RefCell::new(disk),
             options,
@@ -279,6 +338,7 @@ impl <'a> FileSystem<'a> {
             bpb: bpb,
             first_data_sector,
             root_dir_sectors,
+            fs_info,
         })
     }
 
@@ -354,8 +414,12 @@ impl <'a> FileSystem<'a> {
     }
 
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
-        let mut disk_slice = self.fat_slice();
-        alloc_cluster(&mut disk_slice, self.fat_type, prev_cluster)
+        let hint = match self.fs_info {
+            Some(ref info) => Some(info.next_free_cluster),
+            None => None,
+        };
+        let mut fat = self.fat_slice();
+        alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint)
     }
 
     pub fn read_status_flags(&self) -> io::Result<FsStatusFlags> {
