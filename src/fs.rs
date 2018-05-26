@@ -9,7 +9,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use file::File;
 use dir::{DirRawStream, Dir};
 use dir_entry::DIR_ENTRY_SIZE;
-use table::{ClusterIterator, alloc_cluster, read_fat_flags};
+use table::{ClusterIterator, alloc_cluster, read_fat_flags, count_free_clusters};
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{String, string::ToString};
@@ -283,6 +283,17 @@ impl FsOptions {
     }
 }
 
+/// FAT filesystem statistics
+#[derive(Debug, Clone, Copy)]
+pub struct FileSystemStats {
+    /// Cluster size in bytes
+    pub cluster_size: u32,
+    /// Number of total clusters in filesystem usable for file allocation
+    pub total_clusters: u32,
+    /// Number of free clusters
+    pub free_clusters: u32,
+}
+
 pub(crate) type FileSystemRef<'a, 'b> = &'a FileSystem<'b>;
 
 /// FAT filesystem main struct.
@@ -430,12 +441,32 @@ impl <'a> FileSystem<'a> {
         Ok(cluster)
     }
 
+    /// Returns status flags for this volume.
     pub fn read_status_flags(&self) -> io::Result<FsStatusFlags> {
         let bpb_status = self.bpb.status_flags();
         let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
         Ok(FsStatusFlags {
             dirty: bpb_status.dirty || fat_status.dirty,
             io_error: bpb_status.io_error || fat_status.io_error,
+        })
+    }
+
+    /// Returns filesystem statistics like number of total and free clusters.
+    ///
+    /// For FAT32 volumes number of free clusters from FSInfo sector is returned (may be incorrect).
+    /// For other filesystems number is computed on each call (scans entire FAT so it takes more time).
+    pub fn stats(&self) -> io::Result<FileSystemStats> {
+        let free_clusters = match self.fs_info.borrow().free_cluster_count {
+            Some(n) => n,
+            _ => {
+                let mut fat = self.fat_slice();
+                count_free_clusters(&mut fat, self.fat_type, self.total_clusters)?
+            }
+        };
+        Ok(FileSystemStats {
+            cluster_size: self.cluster_size(),
+            total_clusters: self.total_clusters,
+            free_clusters,
         })
     }
 }

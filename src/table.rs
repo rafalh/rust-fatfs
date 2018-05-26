@@ -24,10 +24,11 @@ enum FatValue {
 }
 
 trait FatTrait {
+    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32>;
     fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue>;
     fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()>;
     fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32>;
-    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32>;
+    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32>;
 }
 
 fn read_fat(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<FatValue> {
@@ -83,8 +84,6 @@ pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster
     Ok(new_cluster)
 }
 
-
-
 pub(crate) fn read_fat_flags(fat: &mut DiskSlice, fat_type: FatType) -> io::Result<FsStatusFlags> {
     // check MSB (except in FAT12)
     let val = match fat_type {
@@ -105,6 +104,15 @@ pub(crate) fn read_fat_flags(fat: &mut DiskSlice, fat_type: FatType) -> io::Resu
     Ok(FsStatusFlags {
         dirty, io_error,
     })
+}
+
+pub(crate) fn count_free_clusters(fat: &mut ReadSeek, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
+    let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
+    match fat_type {
+        FatType::Fat12 => Fat12::count_free(fat, end_cluster),
+        FatType::Fat16 => Fat16::count_free(fat, end_cluster),
+        FatType::Fat32 => Fat32::count_free(fat, end_cluster),
+    }
 }
 
 impl FatTrait for Fat12 {
@@ -173,6 +181,37 @@ impl FatTrait for Fat12 {
             };
         }
     }
+
+    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+        let mut count = 0;
+        let mut cluster = RESERVED_FAT_ENTRIES;
+        fat.seek(io::SeekFrom::Start((cluster*3/2) as u64))?;
+        let mut prev_packed_val = 0u16;
+        loop {
+            let res = match cluster & 1 {
+                0 => fat.read_u16::<LittleEndian>(),
+                _ => fat.read_u8().map(|n| n as u16),
+            };
+            let packed_val = match res {
+                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err),
+                Ok(n) => n,
+            };
+            let val = match cluster & 1 {
+                0 => packed_val & 0x0FFF,
+                _ => (packed_val << 8) | (prev_packed_val >> 12),
+            };
+            prev_packed_val = packed_val;
+            if val == 0 {
+                count += 1;
+            }
+            cluster += 1;
+            if cluster >= end_cluster {
+                break;
+            }
+        }
+        Ok(count)
+    }
 }
 
 impl FatTrait for Fat16 {
@@ -217,6 +256,25 @@ impl FatTrait for Fat16 {
             }
         }
     }
+
+    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+        let mut count = 0;
+        let mut cluster = RESERVED_FAT_ENTRIES;
+        fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
+        loop {
+            match fat.read_u16::<LittleEndian>() {
+                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err),
+                Ok(0) => count += 1,
+                _ => {},
+            }
+            cluster += 1;
+            if cluster >= end_cluster {
+                break;
+            }
+        }
+        Ok(count)
+    }
 }
 
 impl FatTrait for Fat32 {
@@ -260,6 +318,25 @@ impl FatTrait for Fat32 {
                 return Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"));
             }
         }
+    }
+
+    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+        let mut count = 0;
+        let mut cluster = RESERVED_FAT_ENTRIES;
+        fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
+        loop {
+            match fat.read_u32::<LittleEndian>() {
+                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err),
+                Ok(0) => count += 1,
+                _ => {},
+            }
+            cluster += 1;
+            if cluster >= end_cluster {
+                break;
+            }
+        }
+        Ok(count)
     }
 }
 
