@@ -205,10 +205,11 @@ impl Default for BootRecord {
     }
 }
 
+#[derive(Default, Debug, Clone)]
 struct FsInfoSector {
     #[allow(dead_code)]
-    free_cluster_count: u32,
-    next_free_cluster: u32,
+    free_cluster_count: Option<u32>,
+    next_free_cluster: Option<u32>,
 }
 
 impl FsInfoSector {
@@ -227,8 +228,14 @@ impl FsInfoSector {
         if struc_sig != Self::STRUC_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid struc_sig in FsInfo sector"));
         }
-        let free_cluster_count = rdr.read_u32::<LittleEndian>()?;
-        let next_free_cluster = rdr.read_u32::<LittleEndian>()?;
+        let free_cluster_count = match rdr.read_u32::<LittleEndian>()? {
+            0xFFFFFFFF => None,
+            n => Some(n),
+        };
+        let next_free_cluster = match rdr.read_u32::<LittleEndian>()? {
+            0xFFFFFFFF => None,
+            n => Some(n),
+        };
         let mut reserved2 = [0u8; 12];
         rdr.read_exact(&mut reserved2)?;
         let trail_sig = rdr.read_u32::<LittleEndian>()?;
@@ -247,8 +254,8 @@ impl FsInfoSector {
         let reserved = [0u8; 480];
         wrt.write(&reserved)?;
         wrt.write_u32::<LittleEndian>(Self::STRUC_SIG)?;
-        wrt.write_u32::<LittleEndian>(self.free_cluster_count)?;
-        wrt.write_u32::<LittleEndian>(self.next_free_cluster)?;
+        wrt.write_u32::<LittleEndian>(self.free_cluster_count.unwrap_or(0xFFFFFFFF))?;
+        wrt.write_u32::<LittleEndian>(self.next_free_cluster.unwrap_or(0xFFFFFFFF))?;
         let reserved2 = [0u8; 12];
         wrt.write(&reserved2)?;
         wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
@@ -287,7 +294,7 @@ pub struct FileSystem<'a> {
     first_data_sector: u32,
     root_dir_sectors: u32,
     total_clusters: u32,
-    fs_info: Option<FsInfoSector>,
+    fs_info: RefCell<FsInfoSector>,
 }
 
 impl <'a> FileSystem<'a> {
@@ -327,9 +334,9 @@ impl <'a> FileSystem<'a> {
 
         let fs_info = if fat_type == FatType::Fat32 {
             disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * 512))?;
-            Some(FsInfoSector::deserialize(disk)?)
+            FsInfoSector::deserialize(disk)?
         } else {
-            None
+            FsInfoSector::default()
         };
 
         Ok(FileSystem {
@@ -340,7 +347,7 @@ impl <'a> FileSystem<'a> {
             first_data_sector,
             root_dir_sectors,
             total_clusters,
-            fs_info,
+            fs_info: RefCell::new(fs_info),
         })
     }
 
@@ -416,12 +423,11 @@ impl <'a> FileSystem<'a> {
     }
 
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
-        let hint = match self.fs_info {
-            Some(ref info) => Some(info.next_free_cluster),
-            None => None,
-        };
+        let hint = self.fs_info.borrow().next_free_cluster;
         let mut fat = self.fat_slice();
-        alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)
+        let cluster = alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?;
+        self.fs_info.borrow_mut().next_free_cluster = Some(cluster + 1);
+        Ok(cluster)
     }
 
     pub fn read_status_flags(&self) -> io::Result<FsStatusFlags> {
