@@ -13,6 +13,8 @@ type Fat12 = Fat<u8>;
 type Fat16 = Fat<u16>;
 type Fat32 = Fat<u32>;
 
+const RESERVED_FAT_ENTRIES: u32 = 2;
+
 #[derive(Debug, Clone, Copy)]
 enum FatValue {
     Free,
@@ -62,11 +64,12 @@ fn find_free_cluster(fat: &mut ReadSeek, fat_type: FatType, start_cluster: u32, 
 }
 
 pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster: Option<u32>, hint: Option<u32>, total_clusters: u32) -> io::Result<u32> {
+    let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     let start_cluster = match hint {
-        Some(n) if n < total_clusters => n,
+        Some(n) if n < end_cluster => n,
         _ => 2,
     };
-    let new_cluster = match find_free_cluster(fat, fat_type, start_cluster, total_clusters) {
+    let new_cluster = match find_free_cluster(fat, fat_type, start_cluster, end_cluster) {
         Ok(n) => n,
         Err(_) if start_cluster > 2 => find_free_cluster(fat, fat_type, 2, start_cluster)?,
         Err(e) => return Err(e),
