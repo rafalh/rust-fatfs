@@ -261,6 +261,12 @@ impl FsInfoSector {
         wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
         Ok(())
     }
+
+    fn add_free_clusters(&mut self, free_clusters: i32) {
+        if let Some(n) = self.free_cluster_count {
+            self.free_cluster_count = Some((n as i32 + free_clusters) as u32);
+        }
+    }
 }
 
 /// FAT filesystem options.
@@ -433,11 +439,29 @@ impl <'a> FileSystem<'a> {
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
 
+    pub(crate) fn truncate_cluster_chain(&self, cluster: u32) -> io::Result<()> {
+        let mut iter = self.cluster_iter(cluster);
+        let num_free = iter.truncate()?;
+        let mut fs_info = self.fs_info.borrow_mut();
+        fs_info.add_free_clusters(num_free as i32);
+        Ok(())
+    }
+
+    pub(crate) fn free_cluster_chain(&self, cluster: u32) -> io::Result<()> {
+        let mut iter = self.cluster_iter(cluster);
+        let num_free = iter.free()?;
+        let mut fs_info = self.fs_info.borrow_mut();
+        fs_info.add_free_clusters(num_free as i32);
+        Ok(())
+    }
+
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
         let hint = self.fs_info.borrow().next_free_cluster;
         let mut fat = self.fat_slice();
         let cluster = alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?;
-        self.fs_info.borrow_mut().next_free_cluster = Some(cluster + 1);
+        let mut fs_info = self.fs_info.borrow_mut();
+        fs_info.next_free_cluster = Some(cluster + 1);
+        fs_info.add_free_clusters(-1);
         Ok(cluster)
     }
 

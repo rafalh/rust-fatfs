@@ -203,9 +203,8 @@ impl <'a, 'b> Dir<'a, 'b> {
                     return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
                 }
                 // free directory data
-                match e.first_cluster() {
-                    Some(n) => self.fs.cluster_iter(n).free()?,
-                    _ => {},
+                if let Some(n) = e.first_cluster() {
+                    self.fs.free_cluster_chain(n)?;
                 }
                 // free long and short name entries
                 let mut stream = self.stream.clone();

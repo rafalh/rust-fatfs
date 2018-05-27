@@ -51,11 +51,11 @@ impl <'a, 'b> File<'a, 'b> {
         if self.offset > 0 {
             debug_assert!(self.current_cluster.is_some());
             // if offset is not 0 current cluster cannot be empty
-            self.fs.cluster_iter(self.current_cluster.unwrap()).truncate() // SAFE
+            self.fs.truncate_cluster_chain(self.current_cluster.unwrap()) // SAFE
         } else {
             debug_assert!(self.current_cluster.is_none());
             if let Some(n) = self.first_cluster {
-                self.fs.cluster_iter(n).free()?;
+                self.fs.free_cluster_chain(n)?;
                 self.first_cluster = None;
             }
             Ok(())

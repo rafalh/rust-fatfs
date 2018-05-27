@@ -337,14 +337,14 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
     pub(crate) fn new(fat: DiskSlice<'a, 'b>, fat_type: FatType, cluster: u32)
     -> ClusterIterator<'a, 'b> {
         ClusterIterator {
-            fat: fat,
-            fat_type: fat_type,
+            fat,
+            fat_type,
             cluster: Some(cluster),
             err: false,
         }
     }
 
-    pub(crate) fn truncate(&mut self) -> io::Result<()> {
+    pub(crate) fn truncate(&mut self) -> io::Result<u32> {
         match self.cluster {
             Some(n) => {
                 // Move to the next cluster
@@ -354,16 +354,18 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
                 // Free rest of chain
                 self.free()
             },
-            None => Ok(()),
+            None => Ok(0),
         }
     }
 
-    pub(crate) fn free(&mut self) -> io::Result<()> {
+    pub(crate) fn free(&mut self) -> io::Result<u32> {
+        let mut num_free = 0;
         while let Some(n) = self.cluster {
             self.next();
             write_fat(&mut self.fat, self.fat_type, n, FatValue::Free)?;
+            num_free += 1;
         }
-        Ok(())
+        Ok(num_free)
     }
 }
 
