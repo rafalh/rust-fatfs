@@ -68,17 +68,16 @@ pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster
     let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     let start_cluster = match hint {
         Some(n) if n < end_cluster => n,
-        _ => 2,
+        _ => RESERVED_FAT_ENTRIES,
     };
     let new_cluster = match find_free_cluster(fat, fat_type, start_cluster, end_cluster) {
         Ok(n) => n,
-        Err(_) if start_cluster > 2 => find_free_cluster(fat, fat_type, 2, start_cluster)?,
+        Err(_) if start_cluster > RESERVED_FAT_ENTRIES => find_free_cluster(fat, fat_type, RESERVED_FAT_ENTRIES, start_cluster)?,
         Err(e) => return Err(e),
     };
     write_fat(fat, fat_type, new_cluster, FatValue::EndOfChain)?;
-    match prev_cluster {
-        Some(n) => write_fat(fat, fat_type, n, FatValue::Data(new_cluster))?,
-        None => {},
+    if let Some(n) = prev_cluster {
+        write_fat(fat, fat_type, n, FatValue::Data(new_cluster))?;
     }
     trace!("allocated cluster {}", new_cluster);
     Ok(new_cluster)
@@ -187,7 +186,7 @@ impl FatTrait for Fat12 {
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*3/2) as u64))?;
         let mut prev_packed_val = 0u16;
-        loop {
+        while cluster < end_cluster {
             let res = match cluster & 1 {
                 0 => fat.read_u16::<LittleEndian>(),
                 _ => fat.read_u8().map(|n| n as u16),
@@ -206,9 +205,6 @@ impl FatTrait for Fat12 {
                 count += 1;
             }
             cluster += 1;
-            if cluster >= end_cluster {
-                break;
-            }
         }
         Ok(count)
     }
@@ -245,23 +241,21 @@ impl FatTrait for Fat16 {
     fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
-        loop {
+        while cluster < end_cluster {
             let val = fat.read_u16::<LittleEndian>()?;
             if val == 0 {
                 return Ok(cluster);
             }
             cluster += 1;
-            if cluster == end_cluster {
-                return Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"));
-            }
         }
+        Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
     }
 
     fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
-        loop {
+        while cluster < end_cluster {
             match fat.read_u16::<LittleEndian>() {
                 Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(err) => return Err(err),
@@ -269,9 +263,6 @@ impl FatTrait for Fat16 {
                 _ => {},
             }
             cluster += 1;
-            if cluster >= end_cluster {
-                break;
-            }
         }
         Ok(count)
     }
@@ -308,23 +299,21 @@ impl FatTrait for Fat32 {
     fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
-        loop {
+        while cluster < end_cluster {
             let val = fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF;
             if val == 0 {
                 return Ok(cluster);
             }
             cluster += 1;
-            if cluster == end_cluster {
-                return Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"));
-            }
         }
+        Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
     }
 
     fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
-        loop {
+        while cluster < end_cluster {
             match fat.read_u32::<LittleEndian>() {
                 Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(err) => return Err(err),
@@ -332,9 +321,6 @@ impl FatTrait for Fat32 {
                 _ => {},
             }
             cluster += 1;
-            if cluster >= end_cluster {
-                break;
-            }
         }
         Ok(count)
     }
@@ -373,13 +359,9 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
     }
 
     pub(crate) fn free(&mut self) -> io::Result<()> {
-        loop {
-            let prev = self.cluster;
+        while let Some(n) = self.cluster {
             self.next();
-            match prev {
-                Some(n) => write_fat(&mut self.fat, self.fat_type, n, FatValue::Free)?,
-                None => break,
-            };
+            write_fat(&mut self.fat, self.fat_type, n, FatValue::Free)?;
         }
         Ok(())
     }
@@ -392,21 +374,15 @@ impl <'a, 'b> Iterator for ClusterIterator<'a, 'b> {
         if self.err {
             return None;
         }
-        match self.cluster {
-            Some(current_cluster) => {
-                self.cluster = match get_next_cluster(&mut self.fat, self.fat_type, current_cluster) {
-                    Ok(next_cluster) => next_cluster,
-                    Err(err) => {
-                        self.err = true;
-                        return Some(Err(err));
-                    },
-                }
-            },
-            None => {},
-        };
-        match self.cluster {
-            Some(n) => Some(Ok(n)),
-            None => None,
+        if let Some(current_cluster) = self.cluster {
+            self.cluster = match get_next_cluster(&mut self.fat, self.fat_type, current_cluster) {
+                Ok(next_cluster) => next_cluster,
+                Err(err) => {
+                    self.err = true;
+                    return Some(Err(err));
+                },
+            }
         }
+        self.cluster.map(|n| Ok(n))
     }
 }

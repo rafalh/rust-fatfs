@@ -493,10 +493,7 @@ impl LongNameBuilder {
     fn truncate(&mut self) {
         // Truncate 0 and 0xFFFF characters from LFN buffer
         let mut lfn_len = self.buf.len();
-        loop {
-            if lfn_len == 0 {
-                break;
-            }
+        while lfn_len > 0 {
             match self.buf[lfn_len-1] {
                 0xFFFF | 0 => lfn_len -= 1,
                 _ => break,

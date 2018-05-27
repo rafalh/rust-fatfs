@@ -32,27 +32,21 @@ impl <'a, 'b> File<'a, 'b> {
 
     fn update_size(&mut self) {
         let offset = self.offset;
-        match self.entry {
-            Some(ref mut e) => {
-                e.reset_modified();
-                if e.inner().size().map_or(false, |s| offset > s) {
-                    e.set_size(offset);
-                }
-            },
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.reset_modified();
+            if e.inner().size().map_or(false, |s| offset > s) {
+                e.set_size(offset);
+            }
         }
     }
 
     /// Truncate file in current position.
     pub fn truncate(&mut self) -> io::Result<()> {
-        match self.entry {
-            Some(ref mut e) => {
-                e.set_size(self.offset);
-                if self.offset == 0 {
-                    e.set_first_cluster(None, self.fs.fat_type());
-                }
-            },
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.set_size(self.offset);
+            if self.offset == 0 {
+                e.set_first_cluster(None, self.fs.fat_type());
+            }
         }
         if self.offset > 0 {
             debug_assert!(self.current_cluster.is_some());
@@ -60,11 +54,10 @@ impl <'a, 'b> File<'a, 'b> {
             self.fs.cluster_iter(self.current_cluster.unwrap()).truncate() // SAFE
         } else {
             debug_assert!(self.current_cluster.is_none());
-            match self.first_cluster {
-                Some(n) => self.fs.cluster_iter(n).free()?,
-                _ => {},
+            if let Some(n) = self.first_cluster {
+                self.fs.cluster_iter(n).free()?;
+                self.first_cluster = None;
             }
-            self.first_cluster = None;
             Ok(())
         }
     }
@@ -84,9 +77,8 @@ impl <'a, 'b> File<'a, 'b> {
     }
 
     pub(crate) fn flush_dir_entry(&mut self) -> io::Result<()> {
-        match self.entry {
-            Some(ref mut e) => e.flush(self.fs)?,
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.flush(self.fs)?;
         }
         Ok(())
     }
@@ -95,9 +87,8 @@ impl <'a, 'b> File<'a, 'b> {
     ///
     /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
     pub fn set_created(&mut self, date_time: DateTime) {
-        match self.entry {
-            Some(ref mut e) => e.set_created(date_time),
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.set_created(date_time);
         }
     }
 
@@ -105,9 +96,8 @@ impl <'a, 'b> File<'a, 'b> {
     ///
     /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
     pub fn set_accessed(&mut self, date: Date) {
-        match self.entry {
-            Some(ref mut e) => e.set_accessed(date),
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.set_accessed(date);
         }
     }
 
@@ -115,9 +105,8 @@ impl <'a, 'b> File<'a, 'b> {
     ///
     /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
     pub fn set_modified(&mut self, date_time: DateTime) {
-        match self.entry {
-            Some(ref mut e) => e.set_modified(date_time),
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            e.set_modified(date_time);
         }
     }
 
@@ -130,9 +119,8 @@ impl <'a, 'b> File<'a, 'b> {
 
     fn set_first_cluster(&mut self, cluster: u32) {
         self.first_cluster = Some(cluster);
-        match self.entry {
-            Some(ref mut e) => e.set_first_cluster(self.first_cluster, self.fs.fat_type()),
-            None => {},
+        if let Some(ref mut e) = self.entry {
+            e.set_first_cluster(self.first_cluster, self.fs.fat_type());
         }
     }
 
@@ -143,9 +131,8 @@ impl <'a, 'b> File<'a, 'b> {
 
 impl<'a, 'b> Drop for File<'a, 'b> {
     fn drop(&mut self) {
-        match self.flush() {
-            Err(err) => error!("flush failed {}", err),
-            _ => {},
+        if let Err(err) = self.flush() {
+            error!("flush failed {}", err);
         }
     }
 }

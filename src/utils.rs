@@ -130,9 +130,8 @@ impl<T: Read+Write+Seek> Seek for BufStream<T> {
 
 impl<T: Read+Write+Seek> Drop for BufStream<T> {
     fn drop(&mut self) {
-        match self.flush() {
-            Err(err) => error!("flush failed {}", err),
-            _ => {},
+        if let Err(err) = self.flush() {
+            error!("flush failed {}", err);
         }
     }
 }
