@@ -272,6 +272,11 @@ impl FsInfoSector {
         self.next_free_cluster = Some(cluster);
         self.dirty = true;
     }
+
+    fn set_free_cluster_count(&mut self, free_cluster_count: u32) {
+        self.free_cluster_count = Some(free_cluster_count);
+        self.dirty = true;
+    }
 }
 
 /// FAT filesystem options.
@@ -493,18 +498,24 @@ impl <'a> FileSystem<'a> {
     /// For FAT32 volumes number of free clusters from FSInfo sector is returned (may be incorrect).
     /// For other filesystems number is computed on each call (scans entire FAT so it takes more time).
     pub fn stats(&self) -> io::Result<FileSystemStats> {
-        let free_clusters = match self.fs_info.borrow().free_cluster_count {
+        let free_clusters_option = self.fs_info.borrow().free_cluster_count;
+        let free_clusters = match free_clusters_option {
             Some(n) => n,
-            _ => {
-                let mut fat = self.fat_slice();
-                count_free_clusters(&mut fat, self.fat_type, self.total_clusters)?
-            }
+            _ => self.recalc_free_clusters()?,
         };
         Ok(FileSystemStats {
             cluster_size: self.cluster_size(),
             total_clusters: self.total_clusters,
             free_clusters,
         })
+    }
+
+    // Forces free clusters recalculation
+    fn recalc_free_clusters(&self) -> io::Result<u32> {
+        let mut fat = self.fat_slice();
+        let free_cluster_count = count_free_clusters(&mut fat, self.fat_type, self.total_clusters)?;
+        self.fs_info.borrow_mut().set_free_cluster_count(free_cluster_count);
+        Ok(free_cluster_count)
     }
 
     /// Unmounts filesystem. Updates FSInfo sector if required in options.
