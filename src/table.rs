@@ -361,8 +361,11 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
     pub(crate) fn truncate(&mut self) -> io::Result<()> {
         match self.cluster {
             Some(n) => {
-                write_fat(&mut self.fat, self.fat_type, n, FatValue::EndOfChain)?;
+                // Move to the next cluster
                 self.next();
+                // Mark previous cluster as end of chain
+                write_fat(&mut self.fat, self.fat_type, n, FatValue::EndOfChain)?;
+                // Free rest of chain
                 self.free()
             },
             None => Ok(()),
