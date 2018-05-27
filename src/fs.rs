@@ -207,9 +207,9 @@ impl Default for BootRecord {
 
 #[derive(Default, Debug, Clone)]
 struct FsInfoSector {
-    #[allow(dead_code)]
     free_cluster_count: Option<u32>,
     next_free_cluster: Option<u32>,
+    dirty: bool,
 }
 
 impl FsInfoSector {
@@ -243,12 +243,11 @@ impl FsInfoSector {
             return Err(Error::new(ErrorKind::Other, "invalid trail_sig in FsInfo sector"));
         }
         Ok(FsInfoSector {
-            free_cluster_count, next_free_cluster
+            free_cluster_count, next_free_cluster,
+            dirty: false,
         })
     }
 
-    // TODO: save modified FsInfo secton on unmount
-    #[allow(dead_code)]
     fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
         wrt.write_u32::<LittleEndian>(Self::LEAD_SIG)?;
         let reserved = [0u8; 480];
@@ -265,7 +264,13 @@ impl FsInfoSector {
     fn add_free_clusters(&mut self, free_clusters: i32) {
         if let Some(n) = self.free_cluster_count {
             self.free_cluster_count = Some((n as i32 + free_clusters) as u32);
+            self.dirty = true;
         }
+    }
+
+    fn set_next_free_cluster(&mut self, cluster: u32) {
+        self.next_free_cluster = Some(cluster);
+        self.dirty = true;
     }
 }
 
@@ -468,7 +473,7 @@ impl <'a> FileSystem<'a> {
         let mut fat = self.fat_slice();
         let cluster = alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?;
         let mut fs_info = self.fs_info.borrow_mut();
-        fs_info.next_free_cluster = Some(cluster + 1);
+        fs_info.set_next_free_cluster(cluster + 1);
         fs_info.add_free_clusters(-1);
         Ok(cluster)
     }
@@ -515,10 +520,12 @@ impl <'a> FileSystem<'a> {
     }
 
     fn flush_fs_info(&self) -> io::Result<()> {
-        if self.fat_type == FatType::Fat32 {
+        let mut fs_info = self.fs_info.borrow_mut();
+        if self.fat_type == FatType::Fat32 && fs_info.dirty {
             let mut disk = self.disk.borrow_mut();
             disk.seek(SeekFrom::Start(self.bpb.fs_info_sector as u64 * 512))?;
-            self.fs_info.borrow().serialize(&mut *disk)?;
+            fs_info.serialize(&mut *disk)?;
+            fs_info.dirty = false;
         }
         Ok(())
     }
