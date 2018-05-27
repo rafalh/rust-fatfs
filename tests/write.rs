@@ -24,7 +24,7 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     {
         let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
         let mut buf_file = BufStream::new(file);
-        let options = FsOptions::new().update_accessed_date(true);
+        let options = FsOptions::new().update_accessed_date(true).update_fs_info(true);
         let fs = FileSystem::new(&mut buf_file, options).unwrap();
         f(fs);
     }
