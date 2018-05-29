@@ -105,6 +105,21 @@ impl DirFileEntryData {
         &self.name
     }
 
+    pub(crate) fn lowercase_name(&self) -> String {
+        let mut name_copy: [u8; 11] = self.name;
+        if self.lowercase_basename() {
+            for c in &mut name_copy[..8] {
+                *c = (*c as char).to_ascii_lowercase() as u8;
+            }
+        }
+        if self.lowercase_ext() {
+            for c in &mut name_copy[8..] {
+                *c = (*c as char).to_ascii_lowercase() as u8;
+            }
+        }
+        ShortName::new(&name_copy).to_str().to_string()
+    }
+
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
         let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
         let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
@@ -137,6 +152,14 @@ impl DirFileEntryData {
 
     pub(crate) fn is_file(&self) -> bool {
         !self.is_dir()
+    }
+
+    pub(crate) fn lowercase_basename(&self) -> bool {
+        self.reserved_0 & (1 << 3) != 0
+    }
+
+    pub(crate) fn lowercase_ext(&self) -> bool {
+        self.reserved_0 & (1 << 4) != 0
     }
 
     fn created(&self) -> DateTime {
@@ -605,7 +628,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
         if self.lfn.len() > 0 {
             String::from_utf16_lossy(&self.lfn)
         } else {
-            self.short_file_name()
+            self.data.lowercase_name()
         }
     }
     #[cfg(not(feature = "alloc"))]
