@@ -725,4 +725,22 @@ mod tests {
         raw_short_name.copy_from_slice("FOO        ".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_str(), "FOO");
     }
+
+    #[test]
+    fn lowercase_short_name() {
+        let mut raw_short_name = [0u8;11];
+        raw_short_name.copy_from_slice("FOO     RS ".as_bytes());
+        let mut raw_entry = DirFileEntryData {
+            name: raw_short_name,
+            reserved_0: (1 << 3) | (1 << 4),
+            ..Default::default()
+        };
+        assert_eq!(raw_entry.lowercase_name(), "foo.rs");
+        raw_entry.reserved_0 = 1 << 3;
+        assert_eq!(raw_entry.lowercase_name(), "foo.RS");
+        raw_entry.reserved_0 = 1 << 4;
+        assert_eq!(raw_entry.lowercase_name(), "FOO.rs");
+        raw_entry.reserved_0 = 0;
+        assert_eq!(raw_entry.lowercase_name(), "FOO.RS");
+    }
 }
