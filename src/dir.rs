@@ -610,3 +610,23 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
 // name_parts_iter is ExactSizeIterator so size_hint returns one limit
 #[cfg(feature = "alloc")]
 impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_path() {
+        assert_eq!(split_path("aaa/bbb/ccc"), ("aaa", Some("bbb/ccc")));
+        assert_eq!(split_path("aaa/bbb"), ("aaa", Some("bbb")));
+        assert_eq!(split_path("aaa"), ("aaa", None));
+    }
+
+    #[test]
+    fn test_generate_short_name() {
+        assert_eq!(&generate_short_name("Foo"), "FOO        ".as_bytes());
+        assert_eq!(&generate_short_name("Foo.b"), "FOO     B  ".as_bytes());
+        assert_eq!(&generate_short_name("Foo.baR"), "FOO     BAR".as_bytes());
+        assert_eq!(&generate_short_name("Foo+1.baR"), "FOO?1   BAR".as_bytes());
+    }
+}

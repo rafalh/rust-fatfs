@@ -707,3 +707,22 @@ impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
         self.data.fmt(f)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_name_with_ext() {
+        let mut raw_short_name = [0u8;11];
+        raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
+        assert_eq!(ShortName::new(&raw_short_name).to_str(), "FOO.BAR");
+    }
+
+    #[test]
+    fn short_name_without_ext() {
+        let mut raw_short_name = [0u8;11];
+        raw_short_name.copy_from_slice("FOO        ".as_bytes());
+        assert_eq!(ShortName::new(&raw_short_name).to_str(), "FOO");
+    }
+}
