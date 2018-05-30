@@ -105,7 +105,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
-            if e.file_name().eq_ignore_ascii_case(name) {
+            if e.file_name().eq_ignore_ascii_case(name) || e.short_file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
             }
             if let Some(ref mut gen) = short_name_gen {

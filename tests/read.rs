@@ -123,6 +123,8 @@ fn test_get_dir_by_path(fs: FileSystem) {
     let root_names = root_dir2.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     let root_names2 = root_dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(root_names, root_names2);
+
+    root_dir.open_dir("VERY-L~1").unwrap();
 }
 
 #[test]
@@ -147,10 +149,12 @@ fn test_get_file_by_path(fs: FileSystem) {
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
 
-    // let mut file = root_dir.open_file("very-long-dir-name/very-long-file-name.txt").unwrap();
-    // let mut buf = Vec::new();
-    // file.read_to_end(&mut buf).unwrap();
-    // assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
+    let mut file = root_dir.open_file("very-long-dir-name/very-long-file-name.txt").unwrap();
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).unwrap();
+    assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
+
+    root_dir.open_file("VERY-L~1/VERY-L~1.TXT").unwrap();
 }
 
 #[test]
