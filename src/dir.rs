@@ -138,11 +138,13 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Creates new file or opens existing without truncating.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(&mut short_name_gen));
         match rest_opt {
-            Some(rest) => r?.to_dir().create_file(rest),
+            // path contains more than 1 component
+            Some(rest) => self.find_entry(name, None)?.to_dir().create_file(rest),
             None => {
+                // this is final filename in the path
+                let mut short_name_gen = ShortNameGenerator::new(name);
+                let r = self.find_entry(name, Some(&mut short_name_gen));
                 match r {
                     Err(ref err) if err.kind() == ErrorKind::NotFound => {
                         let short_name = short_name_gen.generate()?;
@@ -158,11 +160,13 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Creates new directory or opens existing.
     pub fn create_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(&mut short_name_gen));
         match rest_opt {
-            Some(rest) => r?.to_dir().create_dir(rest),
+            // path contains more than 1 component
+            Some(rest) => self.find_entry(name, None)?.to_dir().create_dir(rest),
             None => {
+                // this is final filename in the path
+                let mut short_name_gen = ShortNameGenerator::new(name);
+                let r = self.find_entry(name, Some(&mut short_name_gen));
                 match r {
                     Err(ref err) if err.kind() == ErrorKind::NotFound => {
                         // alloc cluster for directory data
