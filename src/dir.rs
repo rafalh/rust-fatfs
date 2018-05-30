@@ -635,10 +635,11 @@ impl ShortNameGenerator {
             }
             // Make sure character is allowed in 8.3 name
             let fixed_c = match c {
-                // strip spaces
-                ' ' => continue,
-                // strip leading dots
-                '.' if dst_pos == 0 => continue,
+                // strip spaces and dots
+                ' ' | '.' => {
+                    lossy_conv = true;
+                    continue;
+                },
                 // copy allowed characters
                 'A'...'Z' | 'a'...'z' | '0'...'9' |
                 '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' |
@@ -757,10 +758,8 @@ mod tests {
         assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), "FOO     B  ".as_bytes());
         assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), "FOO     BAR".as_bytes());
         assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), "FOO_1~1 BAR".as_bytes());
-        // Note: Wikipedia says its 'VER_12~1.TEX' (TODO: check)
-        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), "VER_1_~1TEX".as_bytes());
-        // Note: Wikipedia says its 'BASHRC~1.SWP' (TODO: check)
-        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), "BASHRC  SWP".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), "VER_12~1TEX".as_bytes());
+        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), "BASHRC~1SWP".as_bytes());
     }
 
     #[test]
