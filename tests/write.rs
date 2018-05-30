@@ -140,7 +140,7 @@ fn test_create_file(fs: FileSystem) {
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt", "new-file-with-long-name.txt"]);
     names = dir.iter().map(|r| r.unwrap().short_file_name()).collect::<Vec<String>>();
-    assert_eq!(names, [".", "..", "TEST.TXT", "NEW-FILE.TXT"]);
+    assert_eq!(names, [".", "..", "TEST.TXT", "NEW-FI~1.TXT"]);
     {
         // check contents
         let mut file = root_dir.open_file("very/long/path/new-file-with-long-name.txt").unwrap();

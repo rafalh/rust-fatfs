@@ -700,6 +700,10 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     pub fn modified(&self) -> DateTime {
         self.data.modified()
     }
+
+    pub(crate) fn raw_short_name(&self) -> &[u8; 11] {
+        &self.data.name
+    }
 }
 
 impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {

@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc")]
 use core::{slice, iter};
+use core::{str, char, cmp};
 
 use io::prelude::*;
 use io;
@@ -100,12 +101,15 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn find_entry(&mut self, name: &str) -> io::Result<DirEntry<'a, 'b>> {
+    fn find_entry(&mut self, name: &str, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
             if e.file_name().eq_ignore_ascii_case(name) {
                 return Ok(e);
+            }
+            if let Some(ref mut gen) = short_name_gen {
+                gen.add_existing(e.raw_short_name());
             }
         }
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
@@ -114,7 +118,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Opens existing directory
     pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name)?;
+        let e = self.find_entry(name, None)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_dir(rest),
             None => Ok(e.to_dir())
@@ -124,7 +128,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Opens existing file.
     pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name)?;
+        let e = self.find_entry(name, None)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_file(rest),
             None => Ok(e.to_file())
@@ -134,13 +138,16 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Creates new file or opens existing without truncating.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let r = self.find_entry(name);
+        let mut short_name_gen = ShortNameGenerator::new(name);
+        let r = self.find_entry(name, Some(&mut short_name_gen));
         match rest_opt {
             Some(rest) => r?.to_dir().create_file(rest),
             None => {
                 match r {
-                    Err(ref err) if err.kind() == ErrorKind::NotFound =>
-                        Ok(self.create_entry(name, FileAttributes::from_bits_truncate(0), None)?.to_file()),
+                    Err(ref err) if err.kind() == ErrorKind::NotFound => {
+                        let short_name = short_name_gen.generate()?;
+                        Ok(self.create_entry(name, short_name, FileAttributes::from_bits_truncate(0), None)?.to_file())
+                    },
                     Err(err) => Err(err),
                     Ok(e) => Ok(e.to_file()),
                 }
@@ -151,7 +158,8 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Creates new directory or opens existing.
     pub fn create_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
         let (name, rest_opt) = split_path(path);
-        let r = self.find_entry(name);
+        let mut short_name_gen = ShortNameGenerator::new(name);
+        let r = self.find_entry(name, Some(&mut short_name_gen));
         match rest_opt {
             Some(rest) => r?.to_dir().create_dir(rest),
             None => {
@@ -160,11 +168,14 @@ impl <'a, 'b> Dir<'a, 'b> {
                         // alloc cluster for directory data
                         let cluster = self.fs.alloc_cluster(None)?;
                         // create entry in parent directory
-                        let entry = self.create_entry(name, FileAttributes::DIRECTORY, Some(cluster))?;
+                        let short_name = short_name_gen.generate()?;
+                        let entry = self.create_entry(name, short_name, FileAttributes::DIRECTORY, Some(cluster))?;
                         let mut dir = entry.to_dir();
                         // create special entries "." and ".."
-                        dir.create_entry(".", FileAttributes::DIRECTORY, entry.first_cluster())?;
-                        dir.create_entry("..", FileAttributes::DIRECTORY, self.stream.first_cluster())?;
+                        let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
+                        dir.create_entry(".", dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster())?;
+                        let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
+                        dir.create_entry("..", dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster())?;
                         Ok(dir)
                     },
                     Err(err) => Err(err),
@@ -193,7 +204,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// can happen.
     pub fn remove(&mut self, path: &str) -> io::Result<()> {
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name)?;
+        let e = self.find_entry(name, None)?;
         match rest_opt {
             Some(rest) => e.to_dir().remove(rest),
             None => {
@@ -279,12 +290,10 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok((stream, start_pos))
     }
 
-    fn create_entry(&mut self, name: &str, attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
+    fn create_entry(&mut self, name: &str, short_name: [u8; 11], attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
         trace!("create_entry {}", name);
         // check if name doesn't contain unsupported characters
         validate_long_name(name)?;
-        // generate short name
-        let short_name = generate_short_name(name);
         // generate long entries
         let (mut stream, start_pos) = self.create_lfn_entries(&name, &short_name)?;
         // create and write short name entry
@@ -391,43 +400,6 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
             },
         }
     }
-}
-
-fn copy_short_name_part(dst: &mut [u8], src: &str) {
-    let mut j = 0;
-    for c in src.chars() {
-        if j == dst.len() { break; }
-        // replace characters allowed in long name but disallowed in short
-        let c2 = match c {
-            '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => '?',
-            _ if c < '\u{80}' => c,
-            _ => '?',
-        };
-        // short name is always uppercase
-        let upper = c2.to_uppercase().next().unwrap(); // SAFE: uppercase must return at least one character
-        let byte = upper as u8; // SAFE: upper is in range 0x20-0x7F
-        dst[j] = byte;
-        j += 1;
-    }
-}
-
-fn generate_short_name(name: &str) -> [u8;11] {
-    // padded by ' '
-    let mut short_name = [0x20u8; 11];
-    // find extension after last dot
-    match name.rfind('.') {
-        Some(index) => {
-            // extension found - copy parts before and after dot
-            copy_short_name_part(&mut short_name[0..8], &name[..index]);
-            copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
-        },
-        None => {
-            // no extension - copy name and leave extension empty
-            copy_short_name_part(&mut short_name[0..8], &name);
-        }
-    }
-    // FIXME: make sure short name is unique...
-    short_name
 }
 
 fn validate_long_name(name: &str) -> io::Result<()> {
@@ -611,6 +583,154 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
 #[cfg(feature = "alloc")]
 impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
 
+#[derive(Default, Debug, Clone)]
+struct ShortNameGenerator {
+    chksum: u16,
+    long_prefix_bitmap: u16,
+    prefix_chksum_bitmap: u16,
+    name_fits: bool,
+    lossy_conv: bool,
+    exact_match: bool,
+    basename_len: u8,
+    short_name: [u8; 11],
+}
+
+impl ShortNameGenerator {
+    fn new(name: &str) -> Self {
+        // padded by ' '
+        let mut short_name = [0x20u8; 11];
+        // find extension after last dot
+        let (basename_len, name_fits, lossy_conv) = match name.rfind('.') {
+            Some(index) => {
+                // extension found - copy parts before and after dot
+                let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name[..index]);
+                let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
+                (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
+            },
+            None => {
+                // no extension - copy name and leave extension empty
+                let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name);
+                (basename_len, basename_fits, basename_lossy)
+            }
+        };
+        let chksum = Self::checksum(name);
+        Self {
+            short_name, chksum, name_fits, lossy_conv,
+            basename_len: basename_len as u8,
+            ..Default::default()
+        }
+    }
+
+    fn copy_short_name_part(dst: &mut [u8], src: &str) -> (usize, bool, bool) {
+        let mut dst_pos = 0;
+        let mut lossy_conv = false;
+        for c in src.chars() {
+            if dst_pos == dst.len() {
+                // result buffer is full
+                return (dst_pos, false, lossy_conv);
+            }
+            // Make sure character is allowed in 8.3 name
+            let fixed_c = match c {
+                // strip spaces
+                ' ' => continue,
+                // strip leading dots
+                '.' if dst_pos == 0 => continue,
+                // copy allowed characters
+                'A'...'Z' | 'a'...'z' | '0'...'9' |
+                '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' |
+                '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
+                // replace disallowed characters by underscore
+                _ => '_',
+            };
+            // Update 'lossy conversion' flag
+            lossy_conv = lossy_conv || (fixed_c != c);
+            // short name is always uppercase
+            let upper = fixed_c.to_ascii_uppercase();
+            dst[dst_pos] = upper as u8; // SAFE: upper is in range 0x20-0x7F
+            dst_pos += 1;
+        }
+        (dst_pos, true, lossy_conv)
+    }
+
+    fn add_existing(&mut self, short_name: &[u8; 11]) {
+        if short_name == &self.short_name {
+            self.exact_match = true;
+        }
+        let num_suffix = if short_name[6] as char == '~' { (short_name[7] as char).to_digit(10) } else { None };
+        let ext_matches = short_name[8..] == self.short_name[8..];
+        if short_name[..6] == self.short_name[..6] && num_suffix.is_some() && ext_matches {
+            // prefix6-number form (TEXTFI~1.TXT)
+            let num = num_suffix.unwrap(); // SAFE
+            self.long_prefix_bitmap |= 1 << num;
+        }
+        if short_name[..2] == self.short_name[..2] && num_suffix.is_some() && ext_matches {
+            // prefix2-chsum-number form (TE021F~1.TXT)
+            let chksum_res = str::from_utf8(&short_name[2..6]).map(|s| u16::from_str_radix(s, 16));
+            if chksum_res == Ok(Ok(self.chksum)) {
+                let num = num_suffix.unwrap(); // SAFE
+                self.prefix_chksum_bitmap |= 1 << num;
+            }
+        }
+    }
+
+    fn checksum(name: &str) -> u16 {
+        // BSD checksum algorithm
+        let mut chksum = 0u16;
+        for c in name.chars() {
+            chksum = (chksum >> 1) + ((chksum & 1) << 15) + (c as u16);
+        }
+        chksum
+    }
+
+    fn generate(&self) -> io::Result<[u8; 11]> {
+        if !self.lossy_conv && self.name_fits && !self.exact_match {
+            // If there was no lossy conversion and name fits into
+            // 8.3 convention and there is no collision return it as is
+            return Ok(self.short_name);
+        }
+        // Try using long 6-characters prefix
+        for i in 1..5 {
+            if self.long_prefix_bitmap & (1 << i) == 0 {
+                return Ok(self.build_prefixed_name(i, false));
+            }
+        }
+        // Try prefix with checksum
+        for i in 1..10 {
+            if self.prefix_chksum_bitmap & (1 << i) == 0 {
+                return Ok(self.build_prefixed_name(i, true));
+            }
+        }
+        // Too many collisions - fail
+        Err(io::Error::new(ErrorKind::AlreadyExists, "short name already exists"))
+    }
+
+    fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; 11] {
+        let mut buf = [0x20u8; 11];
+        let prefix_len = if with_chksum {
+            let prefix_len = cmp::min(self.basename_len as usize, 2);
+            buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
+            buf[prefix_len..prefix_len + 4].copy_from_slice(&Self::u16_to_u8_array(self.chksum));
+            prefix_len + 4
+        } else {
+            let prefix_len = cmp::min(self.basename_len as usize, 6);
+            buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
+            prefix_len
+        };
+        buf[prefix_len] = '~' as u8;
+        buf[prefix_len + 1] = char::from_digit(num, 10).unwrap() as u8; // SAFE
+        buf[8..].copy_from_slice(&self.short_name[8..]);
+        buf
+    }
+
+    fn u16_to_u8_array(x: u16) -> [u8;4] {
+        let c1 = char::from_digit((x as u32 >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c2 = char::from_digit((x as u32 >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c3 = char::from_digit((x as u32 >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c4 = char::from_digit((x as u32 >> 0) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        return [c1, c2, c3, c4]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,9 +744,30 @@ mod tests {
 
     #[test]
     fn test_generate_short_name() {
-        assert_eq!(&generate_short_name("Foo"), "FOO        ".as_bytes());
-        assert_eq!(&generate_short_name("Foo.b"), "FOO     B  ".as_bytes());
-        assert_eq!(&generate_short_name("Foo.baR"), "FOO     BAR".as_bytes());
-        assert_eq!(&generate_short_name("Foo+1.baR"), "FOO?1   BAR".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("Foo").generate().unwrap(), "FOO        ".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), "FOO     B  ".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), "FOO     BAR".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), "FOO_1~1 BAR".as_bytes());
+        // Note: Wikipedia says its 'VER_12~1.TEX' (TODO: check)
+        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), "VER_1_~1TEX".as_bytes());
+        // Note: Wikipedia says its 'BASHRC~1.SWP' (TODO: check)
+        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), "BASHRC  SWP".as_bytes());
+    }
+
+    #[test]
+    fn test_generate_short_name_collisions() {
+        let mut buf = [0u8; 11];
+        let mut gen = ShortNameGenerator::new("TextFile.Mine.txt");
+        assert_eq!(&gen.generate().unwrap(), "TEXTFI~1TXT".as_bytes());
+        buf.copy_from_slice("TEXTFI~1TXT".as_bytes());
+        gen.add_existing(&buf);
+        assert_eq!(&gen.generate().unwrap(), "TEXTFI~2TXT".as_bytes());
+        buf.copy_from_slice("TEXTFI~2TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf.copy_from_slice("TEXTFI~3TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf.copy_from_slice("TEXTFI~4TXT".as_bytes());
+        gen.add_existing(&buf);
+        assert_eq!(&gen.generate().unwrap(), "TE527D~1TXT".as_bytes());
     }
 }
