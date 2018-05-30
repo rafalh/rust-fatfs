@@ -657,19 +657,24 @@ impl ShortNameGenerator {
     }
 
     fn add_existing(&mut self, short_name: &[u8; 11]) {
+        // check for exact match collision
         if short_name == &self.short_name {
             self.exact_match = true;
         }
-        let num_suffix = if short_name[6] as char == '~' { (short_name[7] as char).to_digit(10) } else { None };
+        // check for long prefix form collision (TEXTFI~1.TXT)
+        let prefix_len = cmp::min(self.basename_len, 6) as usize;
+        let num_suffix = if short_name[prefix_len] as char == '~' { (short_name[prefix_len+1] as char).to_digit(10) } else { None };
         let ext_matches = short_name[8..] == self.short_name[8..];
-        if short_name[..6] == self.short_name[..6] && num_suffix.is_some() && ext_matches {
-            // prefix6-number form (TEXTFI~1.TXT)
+        if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
             let num = num_suffix.unwrap(); // SAFE
             self.long_prefix_bitmap |= 1 << num;
         }
-        if short_name[..2] == self.short_name[..2] && num_suffix.is_some() && ext_matches {
-            // prefix2-chsum-number form (TE021F~1.TXT)
-            let chksum_res = str::from_utf8(&short_name[2..6]).map(|s| u16::from_str_radix(s, 16));
+
+        // check for short prefix + checksum form collision (TE021F~1.TXT)
+        let prefix_len = cmp::min(self.basename_len, 2) as usize;
+        let num_suffix = if short_name[prefix_len+4] as char == '~' { (short_name[prefix_len+4+1] as char).to_digit(10) } else { None };
+        if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
+            let chksum_res = str::from_utf8(&short_name[prefix_len..prefix_len+4]).map(|s| u16::from_str_radix(s, 16));
             if chksum_res == Ok(Ok(self.chksum)) {
                 let num = num_suffix.unwrap(); // SAFE
                 self.prefix_chksum_bitmap |= 1 << num;
@@ -759,19 +764,51 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_short_name_collisions() {
-        let mut buf = [0u8; 11];
+    fn test_generate_short_name_collisions_long() {
+        let mut buf: [u8; 11];
         let mut gen = ShortNameGenerator::new("TextFile.Mine.txt");
-        assert_eq!(&gen.generate().unwrap(), "TEXTFI~1TXT".as_bytes());
-        buf.copy_from_slice("TEXTFI~1TXT".as_bytes());
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TEXTFI~1TXT".as_bytes());
         gen.add_existing(&buf);
-        assert_eq!(&gen.generate().unwrap(), "TEXTFI~2TXT".as_bytes());
-        buf.copy_from_slice("TEXTFI~2TXT".as_bytes());
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TEXTFI~2TXT".as_bytes());
         gen.add_existing(&buf);
-        buf.copy_from_slice("TEXTFI~3TXT".as_bytes());
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TEXTFI~3TXT".as_bytes());
         gen.add_existing(&buf);
-        buf.copy_from_slice("TEXTFI~4TXT".as_bytes());
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TEXTFI~4TXT".as_bytes());
         gen.add_existing(&buf);
-        assert_eq!(&gen.generate().unwrap(), "TE527D~1TXT".as_bytes());
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TE527D~1TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TE527D~2TXT".as_bytes());
+    }
+
+    #[test]
+    fn test_generate_short_name_collisions_short() {
+        let mut buf: [u8; 11];
+        let mut gen = ShortNameGenerator::new("x.txt");
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X       TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X~1     TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X~2     TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X~3     TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X~4     TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X40DA~1 TXT".as_bytes());
+        gen.add_existing(&buf);
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "X40DA~2 TXT".as_bytes());
     }
 }
