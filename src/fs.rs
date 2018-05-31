@@ -290,7 +290,7 @@ impl FsOptions {
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
-            update_fs_info: false,
+            update_fs_info: true,
         }
     }
 
