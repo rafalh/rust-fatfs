@@ -65,19 +65,20 @@ impl <T: ReadWriteSeek> Seek for Partition<T> {
     }
 }
 
-fn main() {
+fn main() -> io::Result<()> {
     // Open disk image
-    let file = fs::File::open("resources/fat32.img").unwrap();
+    let file = fs::File::open("resources/fat32.img")?;
     // Provide sample partition localization. In real application it should be read from MBR/GPT.
     let first_lba = 0;
     let last_lba = 10000;
     // Create partition using provided start address and size in bytes
-    let partition = Partition::<fs::File>::new(file, first_lba, last_lba - first_lba + 1).unwrap();
+    let partition = Partition::<fs::File>::new(file, first_lba, last_lba - first_lba + 1)?;
     // Create buffered stream to optimize file access
     let mut buf_rdr = BufStream::new(partition);
     // Finally initialize filesystem struct using provided partition
-    let fs = FileSystem::new(&mut buf_rdr, FsOptions::new()).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr, FsOptions::new())?;
     // Read and display volume label
     println!("Volume Label: {}", fs.volume_label());
-    // other operations
+    // other operations...
+    Ok(())
 }

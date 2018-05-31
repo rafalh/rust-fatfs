@@ -3,6 +3,7 @@ extern crate chrono;
 
 use std::env;
 use std::fs::File;
+use std::io;
 use chrono::{DateTime, Local};
 
 use fatfs::{FileSystem, FsOptions, BufStream};
@@ -22,19 +23,20 @@ fn format_file_size(size: u64) -> String {
     }
 }
 
-fn main() {
-    let file = File::open("resources/fat32.img").unwrap();
+fn main() -> io::Result<()> {
+    let file = File::open("resources/fat32.img")?;
     let mut buf_rdr = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_rdr, FsOptions::new()).unwrap();
+    let fs = FileSystem::new(&mut buf_rdr, FsOptions::new())?;
     let mut root_dir = fs.root_dir();
     let dir = match env::args().nth(1) {
         None => root_dir,
         Some(ref path) if path == "." => root_dir,
-        Some(ref path) => root_dir.open_dir(&path).unwrap(),
+        Some(ref path) => root_dir.open_dir(&path)?,
     };
     for r in dir.iter() {
-        let e = r.unwrap();
+        let e = r?;
         let modified = DateTime::<Local>::from(e.modified()).format("%Y-%m-%d %H:%M:%S").to_string();
         println!("{:4}  {}  {}", format_file_size(e.len()), modified, e.file_name());
     }
+    Ok(())
 }
