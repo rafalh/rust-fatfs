@@ -2,12 +2,6 @@ use io::prelude::*;
 use io;
 use core::cmp;
 
-pub trait ReadSeek: Read + Seek {}
-impl<T> ReadSeek for T where T: Read + Seek {}
-
-pub trait ReadWriteSeek: Read + Write + Seek {}
-impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
-
 const BUF_SIZE: usize = 512;
 
 pub struct BufStream<T: Read+Write+Seek>  {
