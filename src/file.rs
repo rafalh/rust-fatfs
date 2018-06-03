@@ -76,7 +76,7 @@ impl <'a, 'b> File<'a, 'b> {
         }
     }
 
-    pub(crate) fn flush_dir_entry(&mut self) -> io::Result<()> {
+    fn flush_dir_entry(&mut self) -> io::Result<()> {
         if let Some(ref mut e) = self.entry {
             e.flush(self.fs)?;
         }

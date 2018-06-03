@@ -421,11 +421,11 @@ impl <'a> FileSystem<'a> {
         Dir::new(root_rdr, self)
     }
 
-    pub(crate) fn offset_from_sector(&self, sector: u32) -> u64 {
+    fn offset_from_sector(&self, sector: u32) -> u64 {
         (sector as u64) * self.bpb.bytes_per_sector as u64
     }
 
-    pub(crate) fn sector_from_cluster(&self, cluster: u32) -> u32 {
+    fn sector_from_cluster(&self, cluster: u32) -> u32 {
         ((cluster - 2) * self.bpb.sectors_per_cluster as u32) + self.first_data_sector
     }
 

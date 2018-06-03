@@ -105,7 +105,7 @@ impl DirFileEntryData {
         &self.name
     }
 
-    pub(crate) fn lowercase_name(&self) -> String {
+    fn lowercase_name(&self) -> String {
         let mut name_copy: [u8; 11] = self.name;
         if self.lowercase_basename() {
             for c in &mut name_copy[..8] {
@@ -146,19 +146,19 @@ impl DirFileEntryData {
         self.size = size;
     }
 
-    pub(crate) fn is_dir(&self) -> bool {
+    fn is_dir(&self) -> bool {
         self.attrs.contains(FileAttributes::DIRECTORY)
     }
 
-    pub(crate) fn is_file(&self) -> bool {
+    fn is_file(&self) -> bool {
         !self.is_dir()
     }
 
-    pub(crate) fn lowercase_basename(&self) -> bool {
+    fn lowercase_basename(&self) -> bool {
         self.reserved_0 & (1 << 3) != 0
     }
 
-    pub(crate) fn lowercase_ext(&self) -> bool {
+    fn lowercase_ext(&self) -> bool {
         self.reserved_0 & (1 << 4) != 0
     }
 

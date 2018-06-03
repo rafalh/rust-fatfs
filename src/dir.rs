@@ -23,14 +23,14 @@ pub(crate) enum DirRawStream<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> DirRawStream<'a, 'b> {
-    pub(crate) fn abs_pos(&self) -> Option<u64> {
+    fn abs_pos(&self) -> Option<u64> {
         match self {
             &DirRawStream::File(ref file) => file.abs_pos(),
             &DirRawStream::Root(ref slice) => Some(slice.abs_pos()),
         }
     }
 
-    pub(crate) fn first_cluster(&self) -> Option<u32> {
+    fn first_cluster(&self) -> Option<u32> {
         match self {
             &DirRawStream::File(ref file) => file.first_cluster(),
             &DirRawStream::Root(_) => None,
@@ -87,7 +87,6 @@ pub struct Dir<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> Dir<'a, 'b> {
-
     pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
         Dir { stream, fs }
     }
