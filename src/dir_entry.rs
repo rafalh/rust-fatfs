@@ -105,6 +105,7 @@ impl DirFileEntryData {
         &self.name
     }
 
+    #[cfg(feature = "alloc")]
     fn lowercase_name(&self) -> String {
         let mut name_copy: [u8; 11] = self.name;
         if self.lowercase_basename() {
