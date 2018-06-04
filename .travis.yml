@@ -1,8 +1,19 @@
 language: rust
-rust:
-  - stable
-  - beta
-  - nightly
 matrix:
+  include:
+    # Minimal supported rustc version
+    - rust: 1.24.0
+      script:
+        # Build only the library (examples may fail)
+        - cargo build
+    - rust: stable
+    - rust: beta
+    - rust: nightly
+    - rust: nightly-2018-03-07
+      script:
+        # nostd build
+        - cargo build --no-default-features --features core_io
+        - cargo build --no-default-features --features core_io,alloc,core_io/collections
+
   allow_failures:
     - rust: nightly
