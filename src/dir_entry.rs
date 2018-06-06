@@ -101,6 +101,12 @@ impl DirFileEntryData {
         }
     }
 
+    pub(crate) fn renamed(&self, new_name: [u8; 11]) -> Self {
+        let mut sfn_entry = self.clone();
+        sfn_entry.name = new_name;
+        sfn_entry
+    }
+
     pub(crate) fn name(&self) -> &[u8; 11] {
         &self.name
     }

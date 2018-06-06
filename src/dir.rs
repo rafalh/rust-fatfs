@@ -147,7 +147,8 @@ impl <'a, 'b> Dir<'a, 'b> {
                 match r {
                     Err(ref err) if err.kind() == ErrorKind::NotFound => {
                         let short_name = short_name_gen.generate()?;
-                        Ok(self.create_entry(name, short_name, FileAttributes::from_bits_truncate(0), None)?.to_file())
+                        let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::from_bits_truncate(0), None);
+                        Ok(self.write_entry(name, sfn_entry)?.to_file())
                     },
                     Err(err) => Err(err),
                     Ok(e) => Ok(e.to_file()),
@@ -172,13 +173,16 @@ impl <'a, 'b> Dir<'a, 'b> {
                         let cluster = self.fs.alloc_cluster(None)?;
                         // create entry in parent directory
                         let short_name = short_name_gen.generate()?;
-                        let entry = self.create_entry(name, short_name, FileAttributes::DIRECTORY, Some(cluster))?;
+                        let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
+                        let entry = self.write_entry(name, sfn_entry)?;
                         let mut dir = entry.to_dir();
                         // create special entries "." and ".."
                         let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
-                        dir.create_entry(".", dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster())?;
+                        let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
+                        dir.write_entry(".", sfn_entry)?;
                         let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
-                        dir.create_entry("..", dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster())?;
+                        let sfn_entry = self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
+                        dir.write_entry("..", sfn_entry)?;
                         Ok(dir)
                     },
                     Err(err) => Err(err),
@@ -234,6 +238,56 @@ impl <'a, 'b> Dir<'a, 'b> {
                 Ok(())
             }
         }
+    }
+
+    /// Renames or moves existing file or directory.
+    ///
+    /// Destination directory can be cloned source directory in case of rename without moving operation.
+    /// Make sure there is no reference to this file (no File instance) or filesystem corruption
+    /// can happen.
+    pub fn rename(&mut self, src_path: &str, dst_dir: &mut Dir, dst_path: &str) -> io::Result<()> {
+        // traverse source path
+        let (name, rest_opt) = split_path(src_path);
+        if let Some(rest) = rest_opt {
+            let e = self.find_entry(name, None)?;
+            return e.to_dir().rename(rest, dst_dir, dst_path);
+        }
+        // traverse destination path
+        let (name, rest_opt) = split_path(dst_path);
+        if let Some(rest) = rest_opt {
+            let e = dst_dir.find_entry(name, None)?;
+            return self.rename(src_path, &mut e.to_dir(), rest);
+        }
+        // move/rename file
+        self.rename_internal(src_path, dst_dir, dst_path)
+    }
+
+    fn rename_internal(&mut self, src_name: &str, dst_dir: &mut Dir, dst_name: &str) -> io::Result<()> {
+        trace!("moving {} to {}", src_name, dst_name);
+        // find existing file
+        let e = self.find_entry(src_name, None)?;
+        // free long and short name entries
+        let mut stream = self.stream.clone();
+        stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
+        let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
+        for _ in 0..num {
+            let mut data = DirEntryData::deserialize(&mut stream)?;
+            trace!("removing LFN entry {:?}", data);
+            data.set_free();
+            stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
+            data.serialize(&mut stream)?;
+        }
+        // check if destionation filename is unused
+        let mut short_name_gen = ShortNameGenerator::new(dst_name);
+        let r = dst_dir.find_entry(dst_name, Some(&mut short_name_gen));
+        if r.is_ok() {
+            return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
+        }
+        // save new directory entry
+        let short_name = short_name_gen.generate()?;
+        let sfn_entry = e.data.renamed(short_name);
+        dst_dir.write_entry(dst_name, sfn_entry)?;
+        Ok(())
     }
 
     fn find_free_entries(&mut self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
@@ -293,18 +347,22 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok((stream, start_pos))
     }
 
-    fn create_entry(&mut self, name: &str, short_name: [u8; 11], attrs: FileAttributes, first_cluster: Option<u32>) -> io::Result<DirEntry<'a, 'b>> {
-        trace!("create_entry {}", name);
-        // check if name doesn't contain unsupported characters
-        validate_long_name(name)?;
-        // generate long entries
-        let (mut stream, start_pos) = self.create_lfn_entries(&name, &short_name)?;
-        // create and write short name entry
+    fn create_sfn_entry(&self, short_name: [u8; 11], attrs: FileAttributes, first_cluster: Option<u32>) -> DirFileEntryData {
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type());
         raw_entry.reset_created();
         raw_entry.reset_accessed();
         raw_entry.reset_modified();
+        raw_entry
+    }
+
+    fn write_entry(&mut self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, 'b>> {
+        trace!("write_entry {}", name);
+        // check if name doesn't contain unsupported characters
+        validate_long_name(name)?;
+        // generate long entries
+        let (mut stream, start_pos) = self.create_lfn_entries(&name, raw_entry.name())?;
+        // write short name entry
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
