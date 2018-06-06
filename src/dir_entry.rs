@@ -357,7 +357,7 @@ impl DirEntryData {
         }
     }
 
-    pub(crate) fn deserialize(rdr: &mut Read) -> io::Result<DirEntryData> {
+    pub(crate) fn deserialize(rdr: &mut Read) -> io::Result<Self> {
         let mut name = [0; 11];
         match rdr.read_exact(&mut name) {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
@@ -531,7 +531,7 @@ pub(crate) struct DirEntryEditor {
 }
 
 impl DirEntryEditor {
-    fn new(data: DirFileEntryData, pos: u64) -> DirEntryEditor {
+    fn new(data: DirFileEntryData, pos: u64) -> Self {
         DirEntryEditor {
             data, pos,
             dirty: false,

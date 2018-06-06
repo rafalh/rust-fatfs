@@ -334,8 +334,7 @@ pub(crate) struct ClusterIterator<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> ClusterIterator<'a, 'b> {
-    pub(crate) fn new(fat: DiskSlice<'a, 'b>, fat_type: FatType, cluster: u32)
-    -> ClusterIterator<'a, 'b> {
+    pub(crate) fn new(fat: DiskSlice<'a, 'b>, fat_type: FatType, cluster: u32) -> Self {
         ClusterIterator {
             fat,
             fat_type,

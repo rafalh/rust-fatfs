@@ -87,7 +87,7 @@ pub struct Dir<'a, 'b: 'a> {
 }
 
 impl <'a, 'b> Dir<'a, 'b> {
-    pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Dir<'a, 'b> {
+    pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Self {
         Dir { stream, fs }
     }
 
@@ -115,7 +115,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Opens existing directory
-    pub fn open_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
+    pub fn open_dir(&mut self, path: &str) -> io::Result<Self> {
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, None)?;
         match rest_opt {
@@ -158,7 +158,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Creates new directory or opens existing.
-    pub fn create_dir(&mut self, path: &str) -> io::Result<Dir<'a, 'b>> {
+    pub fn create_dir(&mut self, path: &str) -> io::Result<Self> {
         let (name, rest_opt) = split_path(path);
         match rest_opt {
             // path contains more than 1 component
@@ -499,7 +499,7 @@ struct LongNameBuilder {
 
 #[cfg(feature = "alloc")]
 impl LongNameBuilder {
-    fn new() -> LongNameBuilder {
+    fn new() -> Self {
         LongNameBuilder {
             buf: Vec::<u16>::new(),
             chksum: 0,

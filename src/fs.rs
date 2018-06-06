@@ -365,7 +365,7 @@ impl <'a> FileSystem<'a> {
     ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause filesystem corruption.
-    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, options: FsOptions) -> io::Result<FileSystem<'a>> {
+    pub fn new<T: ReadWriteSeek>(disk: &'a mut T, options: FsOptions) -> io::Result<Self> {
         // Make sure given image is not seeked
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
