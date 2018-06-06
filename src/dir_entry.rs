@@ -429,7 +429,7 @@ impl DirEntryData {
 }
 
 /// DOS compatible date
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Date {
     pub year: u16,
     pub month: u16,
@@ -449,7 +449,7 @@ impl Date {
 }
 
 /// DOS compatible time
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Time {
     pub hour: u16,
     pub min: u16,
@@ -468,7 +468,7 @@ impl Time {
 }
 
 /// DOS compatible date and time
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct DateTime {
     pub date: Date,
     pub time: Time,

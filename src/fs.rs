@@ -20,7 +20,7 @@ use core::str;
 //   http://wiki.osdev.org/FAT
 //   https://www.win.tue.nl/~aeb/linux/fs/fat/fat-1.html
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FatType {
     Fat12, Fat16, Fat32,
 }
@@ -37,6 +37,7 @@ impl FatType {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct FsStatusFlags {
     pub(crate) dirty: bool,
     pub(crate) io_error: bool,
@@ -215,7 +216,7 @@ impl Default for BootRecord {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Clone, Default, Debug)]
 struct FsInfoSector {
     free_cluster_count: Option<u32>,
     next_free_cluster: Option<u32>,
@@ -290,7 +291,7 @@ impl FsInfoSector {
 }
 
 /// FAT filesystem options.
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug)]
 pub struct FsOptions {
     pub(crate) update_accessed_date: bool,
     pub(crate) update_fs_info: bool,
@@ -318,7 +319,7 @@ impl FsOptions {
 }
 
 /// FAT filesystem statistics
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct FileSystemStats {
     /// Cluster size in bytes
     cluster_size: u32,
