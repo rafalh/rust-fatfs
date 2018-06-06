@@ -252,7 +252,7 @@ fn test_rename_file(fs: FileSystem) {
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_STR2);
 
     let new_stats = fs.stats().unwrap();
-    assert_eq!(new_stats.free_clusters, stats.free_clusters);
+    assert_eq!(new_stats.free_clusters(), stats.free_clusters());
 }
 
 #[test]

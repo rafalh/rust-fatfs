@@ -218,9 +218,9 @@ fn test_status_flags_fat32() {
 fn test_stats_fat12() {
     call_with_fs(&|fs| {
         let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size, 512);
-        assert_eq!(stats.total_clusters, 1955); // 1000 * 1024 / 512 = 2000
-        assert_eq!(stats.free_clusters, 1920);
+        assert_eq!(stats.cluster_size(), 512);
+        assert_eq!(stats.total_clusters(), 1955); // 1000 * 1024 / 512 = 2000
+        assert_eq!(stats.free_clusters(), 1920);
     }, FAT12_IMG)
 }
 
@@ -228,9 +228,9 @@ fn test_stats_fat12() {
 fn test_stats_fat16() {
     call_with_fs(&|fs| {
         let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size, 512);
-        assert_eq!(stats.total_clusters, 4927); // 2500 * 1024 / 512 = 5000
-        assert_eq!(stats.free_clusters, 4892);
+        assert_eq!(stats.cluster_size(), 512);
+        assert_eq!(stats.total_clusters(), 4927); // 2500 * 1024 / 512 = 5000
+        assert_eq!(stats.free_clusters(), 4892);
     }, FAT16_IMG)
 }
 
@@ -238,8 +238,8 @@ fn test_stats_fat16() {
 fn test_stats_fat32() {
     call_with_fs(&|fs| {
         let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size, 512);
-        assert_eq!(stats.total_clusters, 66922); // 34000 * 1024 / 512 = 68000
-        assert_eq!(stats.free_clusters, 66886);
+        assert_eq!(stats.cluster_size(), 512);
+        assert_eq!(stats.total_clusters(), 66922); // 34000 * 1024 / 512 = 68000
+        assert_eq!(stats.free_clusters(), 66886);
     }, FAT32_IMG)
 }

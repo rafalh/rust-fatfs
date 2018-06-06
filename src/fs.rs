@@ -311,11 +311,25 @@ impl FsOptions {
 #[derive(Debug, Clone, Copy)]
 pub struct FileSystemStats {
     /// Cluster size in bytes
-    pub cluster_size: u32,
+    cluster_size: u32,
     /// Number of total clusters in filesystem usable for file allocation
-    pub total_clusters: u32,
+    total_clusters: u32,
     /// Number of free clusters
-    pub free_clusters: u32,
+    free_clusters: u32,
+}
+
+impl FileSystemStats {
+    pub fn cluster_size(&self) -> u32 {
+        self.cluster_size
+    }
+
+    pub fn total_clusters(&self) -> u32 {
+        self.total_clusters
+    }
+
+    pub fn free_clusters(&self) -> u32 {
+        self.free_clusters
+    }
 }
 
 pub(crate) type FileSystemRef<'a, 'b> = &'a FileSystem<'b>;
