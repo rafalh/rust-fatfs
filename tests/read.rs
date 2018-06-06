@@ -195,8 +195,8 @@ fn test_volume_metadata_fat32() {
 
 fn test_status_flags(fs: FileSystem) {
     let status_flags = fs.read_status_flags().unwrap();
-    assert_eq!(status_flags.dirty, false);
-    assert_eq!(status_flags.io_error, false);
+    assert_eq!(status_flags.dirty(), false);
+    assert_eq!(status_flags.io_error(), false);
 }
 
 #[test]

@@ -38,8 +38,18 @@ impl FatType {
 }
 
 pub struct FsStatusFlags {
-    pub dirty: bool,
-    pub io_error: bool,
+    pub(crate) dirty: bool,
+    pub(crate) io_error: bool,
+}
+
+impl FsStatusFlags {
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn io_error(&self) -> bool {
+        self.io_error
+    }
 }
 
 pub trait ReadSeek: Read + Seek {}
