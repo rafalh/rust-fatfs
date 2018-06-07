@@ -366,10 +366,10 @@ impl <'a> FileSystem<'a> {
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause filesystem corruption.
     pub fn new<T: ReadWriteSeek>(disk: &'a mut T, options: FsOptions) -> io::Result<Self> {
-        // Make sure given image is not seeked
+        // make sure given image is not seeked
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
-        // Read boot sector
+        // read boot sector
         let bpb = {
             let boot = BootRecord::deserialize(disk)?;
             if boot.boot_sig != [0x55, 0xAA] {
@@ -392,13 +392,20 @@ impl <'a> FileSystem<'a> {
         let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
         let fat_type = FatType::from_clusters(total_clusters);
 
-        let fs_info = if fat_type == FatType::Fat32 {
+        // read FSInfo sector if this is FAT32
+        let mut fs_info = if fat_type == FatType::Fat32 {
             disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * 512))?;
             FsInfoSector::deserialize(disk)?
         } else {
             FsInfoSector::default()
         };
 
+        // if dirty flag is set completly ignore free_cluster_count in FSInfo
+        if bpb.status_flags().dirty {
+            fs_info.free_cluster_count = None;
+        }
+
+        // return FileSystem struct
         Ok(FileSystem {
             disk: RefCell::new(disk),
             options,
