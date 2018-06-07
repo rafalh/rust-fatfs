@@ -120,7 +120,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         let e = self.find_entry(name, None)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_dir(rest),
-            None => Ok(e.to_dir())
+            None => Ok(e.to_dir()),
         }
     }
 
@@ -130,65 +130,67 @@ impl <'a, 'b> Dir<'a, 'b> {
         let e = self.find_entry(name, None)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_file(rest),
-            None => Ok(e.to_file())
+            None => Ok(e.to_file()),
         }
     }
 
     /// Creates new file or opens existing without truncating.
     pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
+        // traverse path
         let (name, rest_opt) = split_path(path);
-        match rest_opt {
-            // path contains more than 1 component
-            Some(rest) => self.find_entry(name, None)?.to_dir().create_file(rest),
-            None => {
-                // this is final filename in the path
-                let mut short_name_gen = ShortNameGenerator::new(name);
-                let r = self.find_entry(name, Some(&mut short_name_gen));
-                match r {
-                    Err(ref err) if err.kind() == ErrorKind::NotFound => {
-                        let short_name = short_name_gen.generate()?;
-                        let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::from_bits_truncate(0), None);
-                        Ok(self.write_entry(name, sfn_entry)?.to_file())
-                    },
-                    Err(err) => Err(err),
-                    Ok(e) => Ok(e.to_file()),
-                }
-            }
+        if let Some(rest) = rest_opt {
+            return self.find_entry(name, None)?.to_dir().create_file(rest);
+        }
+        // this is final filename in the path
+        let mut short_name_gen = ShortNameGenerator::new(name);
+        let r = self.find_entry(name, Some(&mut short_name_gen));
+        match r {
+            // file does not exist - create it
+            Err(ref err) if err.kind() == ErrorKind::NotFound => {
+                let short_name = short_name_gen.generate()?;
+                let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::from_bits_truncate(0), None);
+                Ok(self.write_entry(name, sfn_entry)?.to_file())
+            },
+            // other error
+            Err(err) => Err(err),
+            // file already exists - return it
+            Ok(e) => Ok(e.to_file()),
         }
     }
 
     /// Creates new directory or opens existing.
     pub fn create_dir(&mut self, path: &str) -> io::Result<Self> {
+        // traverse path
         let (name, rest_opt) = split_path(path);
-        match rest_opt {
-            // path contains more than 1 component
-            Some(rest) => self.find_entry(name, None)?.to_dir().create_dir(rest),
-            None => {
-                // this is final filename in the path
-                let mut short_name_gen = ShortNameGenerator::new(name);
-                let r = self.find_entry(name, Some(&mut short_name_gen));
-                match r {
-                    Err(ref err) if err.kind() == ErrorKind::NotFound => {
-                        // alloc cluster for directory data
-                        let cluster = self.fs.alloc_cluster(None)?;
-                        // create entry in parent directory
-                        let short_name = short_name_gen.generate()?;
-                        let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
-                        let entry = self.write_entry(name, sfn_entry)?;
-                        let mut dir = entry.to_dir();
-                        // create special entries "." and ".."
-                        let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
-                        let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
-                        dir.write_entry(".", sfn_entry)?;
-                        let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
-                        let sfn_entry = self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
-                        dir.write_entry("..", sfn_entry)?;
-                        Ok(dir)
-                    },
-                    Err(err) => Err(err),
-                    Ok(e) => Ok(e.to_dir()),
-                }
-            }
+        if let Some(rest) = rest_opt {
+            return self.find_entry(name, None)?.to_dir().create_dir(rest);
+        }
+        // this is final filename in the path
+        let mut short_name_gen = ShortNameGenerator::new(name);
+        let r = self.find_entry(name, Some(&mut short_name_gen));
+        match r {
+            // directory does not exist - create it
+            Err(ref err) if err.kind() == ErrorKind::NotFound => {
+                // alloc cluster for directory data
+                let cluster = self.fs.alloc_cluster(None)?;
+                // create entry in parent directory
+                let short_name = short_name_gen.generate()?;
+                let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
+                let entry = self.write_entry(name, sfn_entry)?;
+                let mut dir = entry.to_dir();
+                // create special entries "." and ".."
+                let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
+                let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
+                dir.write_entry(".", sfn_entry)?;
+                let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
+                let sfn_entry = self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
+                dir.write_entry("..", sfn_entry)?;
+                Ok(dir)
+            },
+            // other error
+            Err(err) => Err(err),
+            // directory already exists - return it
+            Ok(e) => Ok(e.to_dir()),
         }
     }
 
@@ -210,34 +212,33 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn remove(&mut self, path: &str) -> io::Result<()> {
+        // traverse path
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, None)?;
-        match rest_opt {
-            Some(rest) => e.to_dir().remove(rest),
-            None => {
-                trace!("removing {}", path);
-                // in case of directory check if it is empty
-                if e.is_dir() && !e.to_dir().is_empty()? {
-                    return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
-                }
-                // free directory data
-                if let Some(n) = e.first_cluster() {
-                    self.fs.free_cluster_chain(n)?;
-                }
-                // free long and short name entries
-                let mut stream = self.stream.clone();
-                stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
-                let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
-                for _ in 0..num {
-                    let mut data = DirEntryData::deserialize(&mut stream)?;
-                    trace!("removing dir entry {:?}", data);
-                    data.set_free();
-                    stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
-                    data.serialize(&mut stream)?;
-                }
-                Ok(())
-            }
+        if let Some(rest) = rest_opt {
+            return e.to_dir().remove(rest);
         }
+        trace!("removing {}", path);
+        // in case of directory check if it is empty
+        if e.is_dir() && !e.to_dir().is_empty()? {
+            return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
+        }
+        // free data
+        if let Some(n) = e.first_cluster() {
+            self.fs.free_cluster_chain(n)?;
+        }
+        // free long and short name entries
+        let mut stream = self.stream.clone();
+        stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
+        let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
+        for _ in 0..num {
+            let mut data = DirEntryData::deserialize(&mut stream)?;
+            trace!("removing dir entry {:?}", data);
+            data.set_free();
+            stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
+            data.serialize(&mut stream)?;
+        }
+        Ok(())
     }
 
     /// Renames or moves existing file or directory.
@@ -464,12 +465,14 @@ impl <'a, 'b> Iterator for DirIter<'a, 'b> {
 }
 
 fn validate_long_name(name: &str) -> io::Result<()> {
+    // check if length is valid
     if name.len() == 0 {
         return Err(io::Error::new(ErrorKind::InvalidInput, "filename cannot be empty"));
     }
     if name.len() > 255 {
         return Err(io::Error::new(ErrorKind::InvalidInput, "filename is too long"));
     }
+    // check if there are only valid characters
     for c in name.chars() {
         match c {
             'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
