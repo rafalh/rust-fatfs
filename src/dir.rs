@@ -100,13 +100,18 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn find_entry(&mut self, name: &str, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
+    fn find_entry(&mut self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
             if e.file_name().eq_ignore_ascii_case(name) || e.short_file_name().eq_ignore_ascii_case(name) {
+                // check if file or directory is expected
+                if is_dir.is_some() && Some(e.is_dir()) != is_dir {
+                    return Err(io::Error::new(ErrorKind::NotFound, "unexpected file type in a path"))
+                }
                 return Ok(e);
             }
+            // update short name generator state
             if let Some(ref mut gen) = short_name_gen {
                 gen.add_existing(e.raw_short_name());
             }
@@ -117,7 +122,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Opens existing directory
     pub fn open_dir(&mut self, path: &str) -> io::Result<Self> {
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name, None)?;
+        let e = self.find_entry(name, Some(true), None)?;
         match rest_opt {
             Some(rest) => e.to_dir().open_dir(rest),
             None => Ok(e.to_dir()),
@@ -126,12 +131,15 @@ impl <'a, 'b> Dir<'a, 'b> {
 
     /// Opens existing file.
     pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
+        // traverse path
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name, None)?;
-        match rest_opt {
-            Some(rest) => e.to_dir().open_file(rest),
-            None => Ok(e.to_file()),
+        if let Some(rest) = rest_opt {
+            let e = self.find_entry(name, Some(true), None)?;
+            return e.to_dir().open_file(rest);
         }
+        // convert entry to a file
+        let e = self.find_entry(name, Some(false), None)?;
+        Ok(e.to_file())
     }
 
     /// Creates new file or opens existing without truncating.
@@ -139,11 +147,11 @@ impl <'a, 'b> Dir<'a, 'b> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
-            return self.find_entry(name, None)?.to_dir().create_file(rest);
+            return self.find_entry(name, Some(true), None)?.to_dir().create_file(rest);
         }
         // this is final filename in the path
         let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(&mut short_name_gen));
+        let r = self.find_entry(name, Some(false), Some(&mut short_name_gen));
         match r {
             // file does not exist - create it
             Err(ref err) if err.kind() == ErrorKind::NotFound => {
@@ -163,11 +171,11 @@ impl <'a, 'b> Dir<'a, 'b> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
-            return self.find_entry(name, None)?.to_dir().create_dir(rest);
+            return self.find_entry(name, Some(true), None)?.to_dir().create_dir(rest);
         }
         // this is final filename in the path
         let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(&mut short_name_gen));
+        let r = self.find_entry(name, Some(false), Some(&mut short_name_gen));
         match r {
             // directory does not exist - create it
             Err(ref err) if err.kind() == ErrorKind::NotFound => {
@@ -214,12 +222,13 @@ impl <'a, 'b> Dir<'a, 'b> {
     pub fn remove(&mut self, path: &str) -> io::Result<()> {
         // traverse path
         let (name, rest_opt) = split_path(path);
-        let e = self.find_entry(name, None)?;
         if let Some(rest) = rest_opt {
+            let e = self.find_entry(name, Some(true), None)?;
             return e.to_dir().remove(rest);
         }
         trace!("removing {}", path);
         // in case of directory check if it is empty
+        let e = self.find_entry(name, None, None)?;
         if e.is_dir() && !e.to_dir().is_empty()? {
             return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
         }
@@ -250,13 +259,13 @@ impl <'a, 'b> Dir<'a, 'b> {
         // traverse source path
         let (name, rest_opt) = split_path(src_path);
         if let Some(rest) = rest_opt {
-            let e = self.find_entry(name, None)?;
+            let e = self.find_entry(name, Some(true), None)?;
             return e.to_dir().rename(rest, dst_dir, dst_path);
         }
         // traverse destination path
         let (name, rest_opt) = split_path(dst_path);
         if let Some(rest) = rest_opt {
-            let e = dst_dir.find_entry(name, None)?;
+            let e = dst_dir.find_entry(name, Some(true), None)?;
             return self.rename(src_path, &mut e.to_dir(), rest);
         }
         // move/rename file
@@ -266,7 +275,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     fn rename_internal(&mut self, src_name: &str, dst_dir: &mut Dir, dst_name: &str) -> io::Result<()> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
-        let e = self.find_entry(src_name, None)?;
+        let e = self.find_entry(src_name, None, None)?;
         // free long and short name entries
         let mut stream = self.stream.clone();
         stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
@@ -280,7 +289,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
         // check if destionation filename is unused
         let mut short_name_gen = ShortNameGenerator::new(dst_name);
-        let r = dst_dir.find_entry(dst_name, Some(&mut short_name_gen));
+        let r = dst_dir.find_entry(dst_name, None, Some(&mut short_name_gen));
         if r.is_ok() {
             return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
         }

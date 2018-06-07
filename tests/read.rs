@@ -155,6 +155,14 @@ fn test_get_file_by_path(fs: FileSystem) {
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_TEXT);
 
     root_dir.open_file("VERY-L~1/VERY-L~1.TXT").unwrap();
+
+    // try opening dir as file
+    assert!(root_dir.open_file("very/long/path").is_err());
+    // try opening file as dir
+    assert!(root_dir.open_dir("very/long/path/test.txt").is_err());
+    // try using invalid path containing file as non-last component
+    assert!(root_dir.open_file("very/long/path/test.txt/abc").is_err());
+    assert!(root_dir.open_dir("very/long/path/test.txt/abc").is_err());
 }
 
 #[test]
