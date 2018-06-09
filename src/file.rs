@@ -1,10 +1,13 @@
 use core::cmp;
+use core;
 use io::prelude::*;
 use io::{SeekFrom, ErrorKind};
 use io;
 
 use fs::FileSystemRef;
 use dir_entry::{DirEntryEditor, DateTime, Date};
+
+const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
 /// FAT file used for reading and writing.
 #[derive(Clone)]
@@ -193,7 +196,9 @@ impl<'a, 'b> Write for File<'a, 'b> {
         let cluster_size = self.fs.cluster_size();
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
+        let bytes_left_until_max_file_size = (MAX_FILE_SIZE - self.offset) as usize;
         let write_size = cmp::min(buf.len(), bytes_left_in_cluster);
+        let write_size = cmp::min(write_size, bytes_left_until_max_file_size);
         // Exit early if we are going to write no data
         if write_size == 0 {
             return Ok(0);
