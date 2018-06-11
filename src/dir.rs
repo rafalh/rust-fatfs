@@ -100,7 +100,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn find_entry(&mut self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
+    fn find_entry(&self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
@@ -120,7 +120,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Opens existing directory
-    pub fn open_dir(&mut self, path: &str) -> io::Result<Self> {
+    pub fn open_dir(&self, path: &str) -> io::Result<Self> {
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, Some(true), None)?;
         match rest_opt {
@@ -130,7 +130,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Opens existing file.
-    pub fn open_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
+    pub fn open_file(&self, path: &str) -> io::Result<File<'a, 'b>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -143,7 +143,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Creates new file or opens existing without truncating.
-    pub fn create_file(&mut self, path: &str) -> io::Result<File<'a, 'b>> {
+    pub fn create_file(&self, path: &str) -> io::Result<File<'a, 'b>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -167,7 +167,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Creates new directory or opens existing.
-    pub fn create_dir(&mut self, path: &str) -> io::Result<Self> {
+    pub fn create_dir(&self, path: &str) -> io::Result<Self> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -202,7 +202,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn is_empty(&mut self) -> io::Result<bool> {
+    fn is_empty(&self) -> io::Result<bool> {
         // check if directory contains no files
         for r in self.iter() {
             let e = r?;
@@ -219,7 +219,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     ///
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
-    pub fn remove(&mut self, path: &str) -> io::Result<()> {
+    pub fn remove(&self, path: &str) -> io::Result<()> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -255,7 +255,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Destination directory can be cloned source directory in case of rename without moving operation.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
-    pub fn rename(&mut self, src_path: &str, dst_dir: &mut Dir, dst_path: &str) -> io::Result<()> {
+    pub fn rename(&self, src_path: &str, dst_dir: &Dir, dst_path: &str) -> io::Result<()> {
         // traverse source path
         let (name, rest_opt) = split_path(src_path);
         if let Some(rest) = rest_opt {
@@ -272,7 +272,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
-    fn rename_internal(&mut self, src_name: &str, dst_dir: &mut Dir, dst_name: &str) -> io::Result<()> {
+    fn rename_internal(&self, src_name: &str, dst_dir: &Dir, dst_name: &str) -> io::Result<()> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
@@ -300,7 +300,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok(())
     }
 
-    fn find_free_entries(&mut self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
+    fn find_free_entries(&self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
         let mut stream = self.stream.clone();
         let mut first_free = 0;
         let mut num_free = 0;
@@ -334,7 +334,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     #[cfg(feature = "alloc")]
-    fn create_lfn_entries(&mut self, name: &str, short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+    fn create_lfn_entries(&self, name: &str, short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(&short_name);
         // convert long name to UTF-16
@@ -351,7 +351,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok((stream, start_pos))
     }
     #[cfg(not(feature = "alloc"))]
-    fn create_lfn_entries(&mut self, _name: &str, _short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+    fn create_lfn_entries(&self, _name: &str, _short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
         let mut stream = self.find_free_entries(1)?;
         let start_pos = stream.seek(io::SeekFrom::Current(0))?;
         Ok((stream, start_pos))
@@ -366,7 +366,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         raw_entry
     }
 
-    fn write_entry(&mut self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, 'b>> {
+    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, 'b>> {
         trace!("write_entry {}", name);
         // check if name doesn't contain unsupported characters
         validate_long_name(name)?;

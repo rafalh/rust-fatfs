@@ -35,7 +35,7 @@ You can start using library now:
     let img_file = File::open("fat.img")?;
     let mut buf_stream = fatfs::BufStream::new(img_file);
     let fs = fatfs::FileSystem::new(&mut buf_stream, fatfs::FsOptions::new())?;
-    let mut root_dir = fs.root_dir();
+    let root_dir = fs.root_dir();
     let mut file = root_dir.create_file("hello.txt")?;
     file.write_all(b"Hello World!")?;
 

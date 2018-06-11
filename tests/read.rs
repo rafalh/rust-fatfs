@@ -49,7 +49,7 @@ fn test_root_dir_fat32() {
 }
 
 fn test_read_seek_short_file(fs: FileSystem) {
-    let mut root_dir = fs.root_dir();
+    let root_dir = fs.root_dir();
     let mut short_file = root_dir.open_file("short.txt").unwrap();
     let mut buf = Vec::new();
     short_file.read_to_end(&mut buf).unwrap();
@@ -81,7 +81,7 @@ fn test_read_seek_short_file_fat32() {
 }
 
 fn test_read_long_file(fs: FileSystem) {
-    let mut root_dir = fs.root_dir();
+    let root_dir = fs.root_dir();
     let mut long_file = root_dir.open_file("long.txt").unwrap();
     let mut buf = Vec::new();
     long_file.read_to_end(&mut buf).unwrap();
@@ -110,7 +110,7 @@ fn test_read_long_file_fat32() {
 }
 
 fn test_get_dir_by_path(fs: FileSystem) {
-    let mut root_dir = fs.root_dir();
+    let root_dir = fs.root_dir();
     let dir = root_dir.open_dir("very/long/path/").unwrap();
     let names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names, [".", "..", "test.txt"]);
@@ -143,7 +143,7 @@ fn test_get_dir_by_path_fat32() {
 }
 
 fn test_get_file_by_path(fs: FileSystem) {
-    let mut root_dir = fs.root_dir();
+    let root_dir = fs.root_dir();
     let mut file = root_dir.open_file("very/long/path/test.txt").unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();

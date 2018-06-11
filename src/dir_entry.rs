@@ -350,10 +350,10 @@ pub(crate) enum DirEntryData {
 }
 
 impl DirEntryData {
-    pub(crate) fn serialize(&mut self, wrt: &mut Write) -> io::Result<()> {
+    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
         match self {
-            &mut DirEntryData::File(ref mut file) => file.serialize(wrt),
-            &mut DirEntryData::Lfn(ref mut lfn) => lfn.serialize(wrt),
+            &DirEntryData::File(ref file) => file.serialize(wrt),
+            &DirEntryData::Lfn(ref lfn) => lfn.serialize(wrt),
         }
     }
 
