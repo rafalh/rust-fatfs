@@ -74,9 +74,9 @@ fn main() -> io::Result<()> {
     // Create partition using provided start address and size in bytes
     let partition = Partition::<fs::File>::new(file, first_lba, last_lba - first_lba + 1)?;
     // Create buffered stream to optimize file access
-    let mut buf_rdr = BufStream::new(partition);
+    let buf_rdr = BufStream::new(partition);
     // Finally initialize filesystem struct using provided partition
-    let fs = FileSystem::new(&mut buf_rdr, FsOptions::new())?;
+    let fs = FileSystem::new(buf_rdr, FsOptions::new())?;
     // Read and display volume label
     println!("Volume Label: {}", fs.volume_label());
     // other operations...
