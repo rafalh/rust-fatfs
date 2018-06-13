@@ -6,24 +6,26 @@ use std::io::SeekFrom;
 use std::io::prelude::*;
 use std::str;
 
-use fatfs::{FileSystem, FsOptions, FatType, DirEntry, BufStream};
+use fatfs::{FsOptions, FatType, BufStream};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";
 const FAT16_IMG: &str = "resources/fat16.img";
 const FAT32_IMG: &str = "resources/fat32.img";
 
+type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
+
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str) {
     let _ = env_logger::try_init();
     let file = fs::File::open(filename).unwrap();
-    let mut buf_file = BufStream::new(file);
-    let fs = FileSystem::new(&mut buf_file, FsOptions::new()).unwrap();
+    let buf_file = BufStream::new(file);
+    let fs = FileSystem::new(buf_file, FsOptions::new()).unwrap();
     f(fs);
 }
 
 fn test_root_dir(fs: FileSystem) {
     let root_dir = fs.root_dir();
-    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<DirEntry>>();
+    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<_>>();
     let short_names = entries.iter().map(|e| e.short_file_name()).collect::<Vec<String>>();
     assert_eq!(short_names, ["LONG.TXT", "SHORT.TXT", "VERY", "VERY-L~1"]);
     let names = entries.iter().map(|e| e.file_name()).collect::<Vec<String>>();

@@ -4,14 +4,13 @@ use io::prelude::*;
 use io::{SeekFrom, ErrorKind};
 use io;
 
-use fs::FileSystemRef;
+use fs::{FileSystem, ReadWriteSeek};
 use dir_entry::{DirEntryEditor, DateTime, Date};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
 /// FAT file used for reading and writing.
-#[derive(Clone)]
-pub struct File<'a, 'b: 'a> {
+pub struct File<'a, T: ReadWriteSeek + 'a> {
     // Note first_cluster is None if file is empty
     first_cluster: Option<u32>,
     // Note: if offset points between clusters current_cluster is the previous cluster
@@ -21,11 +20,11 @@ pub struct File<'a, 'b: 'a> {
     // file dir entry editor - None for root dir
     entry: Option<DirEntryEditor>,
     // file-system reference
-    fs: FileSystemRef<'a, 'b>,
+    fs: &'a FileSystem<T>,
 }
 
-impl <'a, 'b> File<'a, 'b> {
-    pub(crate) fn new(first_cluster: Option<u32>, entry: Option<DirEntryEditor>, fs: FileSystemRef<'a, 'b>) -> Self {
+impl <'a, T: ReadWriteSeek> File<'a, T> {
+    pub(crate) fn new(first_cluster: Option<u32>, entry: Option<DirEntryEditor>, fs: &'a FileSystem<T>) -> Self {
         File {
             first_cluster, entry, fs,
             current_cluster: None, // cluster before first one
@@ -132,7 +131,7 @@ impl <'a, 'b> File<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Drop for File<'a, 'b> {
+impl<'a, T: ReadWriteSeek> Drop for File<'a, T> {
     fn drop(&mut self) {
         if let Err(err) = self.flush() {
             error!("flush failed {}", err);
@@ -140,7 +139,20 @@ impl<'a, 'b> Drop for File<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Read for File<'a, 'b> {
+// Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
+impl <'a, T: ReadWriteSeek> Clone for File<'a, T> {
+    fn clone(&self) -> Self {
+        File {
+            first_cluster: self.first_cluster,
+            current_cluster: self.current_cluster,
+            offset: self.offset,
+            entry: self.entry.clone(),
+            fs: self.fs,
+        }
+    }
+}
+
+impl<'a, T: ReadWriteSeek> Read for File<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let current_cluster_opt = if self.offset % cluster_size == 0 {
@@ -191,7 +203,7 @@ impl<'a, 'b> Read for File<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Write for File<'a, 'b> {
+impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let offset_in_cluster = self.offset % cluster_size;
@@ -271,7 +283,7 @@ impl<'a, 'b> Write for File<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Seek for File<'a, 'b> {
+impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

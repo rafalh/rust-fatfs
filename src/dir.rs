@@ -6,7 +6,7 @@ use io::prelude::*;
 use io;
 use io::{ErrorKind, SeekFrom};
 
-use fs::{FileSystemRef, DiskSlice};
+use fs::{FileSystem, DiskSlice, ReadWriteSeek};
 use file::File;
 use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 
@@ -16,13 +16,12 @@ use dir_entry::{LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::Vec;
 
-#[derive(Clone)]
-pub(crate) enum DirRawStream<'a, 'b: 'a> {
-    File(File<'a, 'b>),
-    Root(DiskSlice<'a, 'b>),
+pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
+    File(File<'a, T>),
+    Root(DiskSlice<'a, T>),
 }
 
-impl <'a, 'b> DirRawStream<'a, 'b> {
+impl <'a, T: ReadWriteSeek> DirRawStream<'a, T> {
     fn abs_pos(&self) -> Option<u64> {
         match self {
             &DirRawStream::File(ref file) => file.abs_pos(),
@@ -38,7 +37,17 @@ impl <'a, 'b> DirRawStream<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Read for DirRawStream<'a, 'b> {
+// Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
+impl <'a, T: ReadWriteSeek> Clone for DirRawStream<'a, T> {
+    fn clone(&self) -> Self {
+        match self {
+            &DirRawStream::File(ref file) => DirRawStream::File(file.clone()),
+            &DirRawStream::Root(ref raw) => DirRawStream::Root(raw.clone()),
+        }
+    }
+}
+
+impl <'a, T: ReadWriteSeek> Read for DirRawStream<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.read(buf),
@@ -47,7 +56,7 @@ impl <'a, 'b> Read for DirRawStream<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Write for DirRawStream<'a, 'b> {
+impl <'a, T: ReadWriteSeek> Write for DirRawStream<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.write(buf),
@@ -62,7 +71,7 @@ impl <'a, 'b> Write for DirRawStream<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Seek for DirRawStream<'a, 'b> {
+impl <'a, T: ReadWriteSeek> Seek for DirRawStream<'a, T> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.seek(pos),
@@ -80,19 +89,19 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
 }
 
 /// FAT directory
-#[derive(Clone)]
-pub struct Dir<'a, 'b: 'a> {
-    stream: DirRawStream<'a, 'b>,
-    fs: FileSystemRef<'a, 'b>,
+pub struct Dir<'a, T: ReadWriteSeek + 'a> {
+    stream: DirRawStream<'a, T>,
+    fs: &'a FileSystem<T>,
 }
 
-impl <'a, 'b> Dir<'a, 'b> {
-    pub(crate) fn new(stream: DirRawStream<'a, 'b>, fs: FileSystemRef<'a, 'b>) -> Self {
+impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
+    pub(crate) fn new(stream: DirRawStream<'a, T>, fs: &'a FileSystem<T>) -> Self {
         Dir { stream, fs }
     }
 
     /// Creates directory entries iterator
-    pub fn iter(&self) -> DirIter<'a, 'b> {
+    pub fn iter(&self) -> DirIter<'a, T> {
+        self.stream.clone();
         DirIter {
             stream: self.stream.clone(),
             fs: self.fs.clone(),
@@ -100,7 +109,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         }
     }
 
-    fn find_entry(&self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, 'b>> {
+    fn find_entry(&self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, T>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
@@ -130,7 +139,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Opens existing file.
-    pub fn open_file(&self, path: &str) -> io::Result<File<'a, 'b>> {
+    pub fn open_file(&self, path: &str) -> io::Result<File<'a, T>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -143,7 +152,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     /// Creates new file or opens existing without truncating.
-    pub fn create_file(&self, path: &str) -> io::Result<File<'a, 'b>> {
+    pub fn create_file(&self, path: &str) -> io::Result<File<'a, T>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -255,7 +264,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     /// Destination directory can be cloned source directory in case of rename without moving operation.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
-    pub fn rename(&self, src_path: &str, dst_dir: &Dir, dst_path: &str) -> io::Result<()> {
+    pub fn rename(&self, src_path: &str, dst_dir: &Dir<T>, dst_path: &str) -> io::Result<()> {
         // traverse source path
         let (name, rest_opt) = split_path(src_path);
         if let Some(rest) = rest_opt {
@@ -272,7 +281,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
-    fn rename_internal(&self, src_name: &str, dst_dir: &Dir, dst_name: &str) -> io::Result<()> {
+    fn rename_internal(&self, src_name: &str, dst_dir: &Dir<T>, dst_name: &str) -> io::Result<()> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
@@ -300,7 +309,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok(())
     }
 
-    fn find_free_entries(&self, num_entries: usize) -> io::Result<DirRawStream<'a, 'b>> {
+    fn find_free_entries(&self, num_entries: usize) -> io::Result<DirRawStream<'a, T>> {
         let mut stream = self.stream.clone();
         let mut first_free = 0;
         let mut num_free = 0;
@@ -334,7 +343,7 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 
     #[cfg(feature = "alloc")]
-    fn create_lfn_entries(&self, name: &str, short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+    fn create_lfn_entries(&self, name: &str, short_name: &[u8]) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(&short_name);
         // convert long name to UTF-16
@@ -351,7 +360,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         Ok((stream, start_pos))
     }
     #[cfg(not(feature = "alloc"))]
-    fn create_lfn_entries(&self, _name: &str, _short_name: &[u8]) -> io::Result<(DirRawStream<'a, 'b>, u64)> {
+    fn create_lfn_entries(&self, _name: &str, _short_name: &[u8]) -> io::Result<(DirRawStream<'a, T>, u64)> {
         let mut stream = self.find_free_entries(1)?;
         let start_pos = stream.seek(io::SeekFrom::Current(0))?;
         Ok((stream, start_pos))
@@ -366,7 +375,7 @@ impl <'a, 'b> Dir<'a, 'b> {
         raw_entry
     }
 
-    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, 'b>> {
+    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, T>> {
         trace!("write_entry {}", name);
         // check if name doesn't contain unsupported characters
         validate_long_name(name)?;
@@ -390,16 +399,25 @@ impl <'a, 'b> Dir<'a, 'b> {
     }
 }
 
+// Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
+impl <'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            stream: self.stream.clone(),
+            fs: self.fs,
+        }
+    }
+}
+
 /// Directory entries iterator.
-#[derive(Clone)]
-pub struct DirIter<'a, 'b: 'a> {
-    stream: DirRawStream<'a, 'b>,
-    fs: FileSystemRef<'a, 'b>,
+pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
+    stream: DirRawStream<'a, T>,
+    fs: &'a FileSystem<T>,
     err: bool,
 }
 
-impl <'a, 'b> DirIter<'a, 'b> {
-    fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, 'b>>> {
+impl <'a, T: ReadWriteSeek> DirIter<'a, T> {
+    fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, T>>> {
         #[cfg(feature = "alloc")]
         let mut lfn_buf = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
@@ -454,8 +472,19 @@ impl <'a, 'b> DirIter<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Iterator for DirIter<'a, 'b> {
-    type Item = io::Result<DirEntry<'a, 'b>>;
+// Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
+impl <'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            stream: self.stream.clone(),
+            fs: self.fs,
+            err: self.err,
+        }
+    }
+}
+
+impl <'a, T: ReadWriteSeek> Iterator for DirIter<'a, T> {
+    type Item = io::Result<DirEntry<'a, T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.err {

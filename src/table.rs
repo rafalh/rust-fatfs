@@ -1,8 +1,7 @@
 use io;
-use io::prelude::*;
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
-use fs::{FatType, FsStatusFlags, DiskSlice, ReadSeek};
+use fs::{ReadWriteSeek, ReadSeek, FatType, FsStatusFlags};
 
 struct Fat<T> {
     #[allow(dead_code)]
@@ -24,14 +23,14 @@ enum FatValue {
 }
 
 trait FatTrait {
-    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32>;
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue>;
-    fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()>;
-    fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32>;
-    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32>;
+    fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32>;
+    fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue>;
+    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()>;
+    fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32>;
+    fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32>;
 }
 
-fn read_fat(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<FatValue> {
+fn read_fat<T: ReadSeek>(fat: &mut T, fat_type: FatType, cluster: u32) -> io::Result<FatValue> {
     match fat_type {
         FatType::Fat12 => Fat12::get(fat, cluster),
         FatType::Fat16 => Fat16::get(fat, cluster),
@@ -39,7 +38,7 @@ fn read_fat(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<F
     }
 }
 
-fn write_fat(fat: &mut DiskSlice, fat_type: FatType, cluster: u32, value: FatValue) -> io::Result<()> {
+fn write_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, cluster: u32, value: FatValue) -> io::Result<()> {
     trace!("write FAT - cluster {} value {:?}", cluster, value);
     match fat_type {
         FatType::Fat12 => Fat12::set(fat, cluster, value),
@@ -48,7 +47,7 @@ fn write_fat(fat: &mut DiskSlice, fat_type: FatType, cluster: u32, value: FatVal
     }
 }
 
-fn get_next_cluster(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::Result<Option<u32>> {
+fn get_next_cluster<T: ReadSeek>(fat: &mut T, fat_type: FatType, cluster: u32) -> io::Result<Option<u32>> {
     let val = read_fat(fat, fat_type, cluster)?;
     match val {
         FatValue::Data(n) => Ok(Some(n)),
@@ -56,7 +55,7 @@ fn get_next_cluster(fat: &mut ReadSeek, fat_type: FatType, cluster: u32) -> io::
     }
 }
 
-fn find_free_cluster(fat: &mut ReadSeek, fat_type: FatType, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
+fn find_free_cluster<T: ReadSeek>(fat: &mut T, fat_type: FatType, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
     match fat_type {
         FatType::Fat12 => Fat12::find_free(fat, start_cluster, end_cluster),
         FatType::Fat16 => Fat16::find_free(fat, start_cluster, end_cluster),
@@ -64,7 +63,7 @@ fn find_free_cluster(fat: &mut ReadSeek, fat_type: FatType, start_cluster: u32, 
     }
 }
 
-pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster: Option<u32>, hint: Option<u32>, total_clusters: u32) -> io::Result<u32> {
+pub(crate) fn alloc_cluster<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, prev_cluster: Option<u32>, hint: Option<u32>, total_clusters: u32) -> io::Result<u32> {
     let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     let start_cluster = match hint {
         Some(n) if n < end_cluster => n,
@@ -83,7 +82,7 @@ pub(crate) fn alloc_cluster(fat: &mut DiskSlice, fat_type: FatType, prev_cluster
     Ok(new_cluster)
 }
 
-pub(crate) fn read_fat_flags(fat: &mut DiskSlice, fat_type: FatType) -> io::Result<FsStatusFlags> {
+pub(crate) fn read_fat_flags<T: ReadSeek>(fat: &mut T, fat_type: FatType) -> io::Result<FsStatusFlags> {
     // check MSB (except in FAT12)
     let val = match fat_type {
         FatType::Fat12 => 0xFFF,
@@ -105,7 +104,7 @@ pub(crate) fn read_fat_flags(fat: &mut DiskSlice, fat_type: FatType) -> io::Resu
     })
 }
 
-pub(crate) fn count_free_clusters(fat: &mut ReadSeek, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
+pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
     let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     match fat_type {
         FatType::Fat12 => Fat12::count_free(fat, end_cluster),
@@ -115,7 +114,7 @@ pub(crate) fn count_free_clusters(fat: &mut ReadSeek, fat_type: FatType, total_c
 }
 
 impl FatTrait for Fat12 {
-    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
+    fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
         let packed_val = fat.read_u16::<LittleEndian>()?;
@@ -125,7 +124,7 @@ impl FatTrait for Fat12 {
         } as u32)
     }
 
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
         let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
@@ -135,7 +134,7 @@ impl FatTrait for Fat12 {
         })
     }
 
-    fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
+    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
         let raw_val = match value {
             FatValue::Free => 0,
             FatValue::Bad => 0xFF7,
@@ -154,7 +153,7 @@ impl FatTrait for Fat12 {
         Ok(())
     }
 
-    fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
+    fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
@@ -181,7 +180,7 @@ impl FatTrait for Fat12 {
         }
     }
 
-    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+    fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*3/2) as u64))?;
@@ -211,12 +210,12 @@ impl FatTrait for Fat12 {
 }
 
 impl FatTrait for Fat16 {
-    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
+    fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
         Ok(fat.read_u16::<LittleEndian>()? as u32)
     }
 
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
         let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
@@ -226,7 +225,7 @@ impl FatTrait for Fat16 {
         })
     }
 
-    fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
+    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
         let raw_val = match value {
             FatValue::Free => 0,
@@ -238,7 +237,7 @@ impl FatTrait for Fat16 {
         Ok(())
     }
 
-    fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
+    fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
         while cluster < end_cluster {
@@ -251,7 +250,7 @@ impl FatTrait for Fat16 {
         Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
     }
 
-    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+    fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
@@ -269,12 +268,12 @@ impl FatTrait for Fat16 {
 }
 
 impl FatTrait for Fat32 {
-    fn get_raw(fat: &mut ReadSeek, cluster: u32) -> io::Result<u32> {
+    fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
         Ok(fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF)
     }
 
-    fn get(fat: &mut ReadSeek, cluster: u32) -> io::Result<FatValue> {
+    fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
         let val = Self::get_raw(fat, cluster)?;
         Ok(match val {
             0 => FatValue::Free,
@@ -284,7 +283,7 @@ impl FatTrait for Fat32 {
         })
     }
 
-    fn set(fat: &mut DiskSlice, cluster: u32, value: FatValue) -> io::Result<()> {
+    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
         let raw_val = match value {
             FatValue::Free => 0,
@@ -296,7 +295,7 @@ impl FatTrait for Fat32 {
         Ok(())
     }
 
-    fn find_free(fat: &mut ReadSeek, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
+    fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
         while cluster < end_cluster {
@@ -309,7 +308,7 @@ impl FatTrait for Fat32 {
         Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
     }
 
-    fn count_free(fat: &mut ReadSeek, end_cluster: u32) -> io::Result<u32> {
+    fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
@@ -326,15 +325,15 @@ impl FatTrait for Fat32 {
     }
 }
 
-pub(crate) struct ClusterIterator<'a, 'b: 'a> {
-    fat: DiskSlice<'a, 'b>,
+pub(crate) struct ClusterIterator<T: ReadWriteSeek> {
+    fat: T,
     fat_type: FatType,
     cluster: Option<u32>,
     err: bool,
 }
 
-impl <'a, 'b> ClusterIterator<'a, 'b> {
-    pub(crate) fn new(fat: DiskSlice<'a, 'b>, fat_type: FatType, cluster: u32) -> Self {
+impl <T: ReadWriteSeek> ClusterIterator<T> {
+    pub(crate) fn new(fat: T, fat_type: FatType, cluster: u32) -> Self {
         ClusterIterator {
             fat,
             fat_type,
@@ -368,7 +367,7 @@ impl <'a, 'b> ClusterIterator<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Iterator for ClusterIterator<'a, 'b> {
+impl <T: ReadWriteSeek> Iterator for ClusterIterator<T> {
     type Item = io::Result<u32>;
 
     fn next(&mut self) -> Option<Self::Item> {

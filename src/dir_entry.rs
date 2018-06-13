@@ -13,7 +13,7 @@ use chrono;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{Vec, String, string::ToString};
 
-use fs::{FileSystemRef, FatType};
+use fs::{FileSystem, FatType, ReadWriteSeek};
 use file::File;
 use dir::{Dir, DirRawStream};
 
@@ -589,7 +589,7 @@ impl DirEntryEditor {
         self.dirty = true;
     }
 
-    pub(crate) fn flush(&mut self, fs: FileSystemRef) -> io::Result<()> {
+    pub(crate) fn flush<T: ReadWriteSeek>(&mut self, fs: &FileSystem<T>) -> io::Result<()> {
         if self.dirty {
             self.write(fs)?;
             self.dirty = false;
@@ -597,7 +597,7 @@ impl DirEntryEditor {
         Ok(())
     }
 
-    fn write(&self, fs: FileSystemRef) -> io::Result<()> {
+    fn write<T: ReadWriteSeek>(&self, fs: &FileSystem<T>) -> io::Result<()> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)
@@ -608,17 +608,17 @@ impl DirEntryEditor {
 ///
 /// Returned by DirIter.
 #[derive(Clone)]
-pub struct DirEntry<'a, 'b: 'a> {
+pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "alloc")]
     pub(crate) lfn: Vec<u16>,
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
-    pub(crate) fs: FileSystemRef<'a, 'b>,
+    pub(crate) fs: &'a FileSystem<T>,
 }
 
-impl <'a, 'b> DirEntry<'a, 'b> {
+impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns short file name
     #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
@@ -669,7 +669,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     /// Returns File struct for this entry.
     ///
     /// Panics if this is not a file.
-    pub fn to_file(&self) -> File<'a, 'b> {
+    pub fn to_file(&self) -> File<'a, T> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.editor()), self.fs)
     }
@@ -677,7 +677,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     /// Returns Dir struct for this entry.
     ///
     /// Panics if this is not a directory.
-    pub fn to_dir(&self) -> Dir<'a, 'b> {
+    pub fn to_dir(&self) -> Dir<'a, T> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
             Some(n) => {
@@ -713,7 +713,7 @@ impl <'a, 'b> DirEntry<'a, 'b> {
     }
 }
 
-impl <'a, 'b> fmt::Debug for DirEntry<'a, 'b> {
+impl <'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }

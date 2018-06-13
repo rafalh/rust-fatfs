@@ -6,7 +6,7 @@ use std::io::prelude::*;
 use std::io;
 use std::str;
 
-use fatfs::{FileSystem, FsOptions, BufStream};
+use fatfs::{FsOptions, BufStream};
 
 const FAT12_IMG: &str = "fat12.img";
 const FAT16_IMG: &str = "fat16.img";
@@ -16,6 +16,8 @@ const TMP_DIR: &str = "tmp";
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 const TEST_STR2: &str = "Rust is cool!\n";
 
+type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
+
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     let _ = env_logger::try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
@@ -24,9 +26,9 @@ fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
     fs::copy(&img_path, &tmp_path).unwrap();
     {
         let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
-        let mut buf_file = BufStream::new(file);
-        let options = FsOptions::new().update_accessed_date(true).update_fs_info(true);
-        let fs = FileSystem::new(&mut buf_file, options).unwrap();
+        let buf_file = BufStream::new(file);
+        let options = FsOptions::new().update_accessed_date(true);
+        let fs = FileSystem::new(buf_file, options).unwrap();
         f(fs);
     }
     fs::remove_file(tmp_path).unwrap();
