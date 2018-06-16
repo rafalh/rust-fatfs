@@ -9,7 +9,7 @@ use dir_entry::{DirEntryEditor, DateTime, Date};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
-/// FAT file used for reading and writing.
+/// A FAT filesystem file object used for reading and writing data.
 pub struct File<'a, T: ReadWriteSeek + 'a> {
     // Note first_cluster is None if file is empty
     first_cluster: Option<u32>,
@@ -85,27 +85,27 @@ impl <'a, T: ReadWriteSeek> File<'a, T> {
         Ok(())
     }
 
-    /// Set date and time of creation for this file.
+    /// Sets date and time of creation for this file.
     ///
-    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
+    /// Note: if `chrono` feature is enabled (default) library automatically updates all timestamps
     pub fn set_created(&mut self, date_time: DateTime) {
         if let Some(ref mut e) = self.entry {
             e.set_created(date_time);
         }
     }
 
-    /// Set date of last access for this file.
+    /// Sets date of last access for this file.
     ///
-    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
+    /// Note: if `chrono` feature is enabled (default) library automatically updates all timestamps
     pub fn set_accessed(&mut self, date: Date) {
         if let Some(ref mut e) = self.entry {
             e.set_accessed(date);
         }
     }
 
-    /// Set date and time of last modification for this file.
+    /// Sets date and time of last modification for this file.
     ///
-    /// Note: if chrono feature is enabled (default) library automatically updates all timestamps
+    /// Note: if `chrono` feature is enabled (default) library automatically updates all timestamps
     pub fn set_modified(&mut self, date_time: DateTime) {
         if let Some(ref mut e) = self.entry {
             e.set_modified(date_time);

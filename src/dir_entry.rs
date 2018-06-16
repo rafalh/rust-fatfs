@@ -606,7 +606,7 @@ impl DirEntryEditor {
 
 /// FAT directory entry.
 ///
-/// Returned by DirIter.
+/// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]
 pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
     pub(crate) data: DirFileEntryData,
@@ -619,7 +619,7 @@ pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
 }
 
 impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
-    /// Returns short file name
+    /// Returns short file name.
     #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
         self.short_name.to_str().to_string()
@@ -643,7 +643,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         self.short_file_name()
     }
 
-    /// Returns file attributes
+    /// Returns file attributes.
     pub fn attributes(&self) -> FileAttributes {
         self.data.attrs
     }
@@ -666,7 +666,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
-    /// Returns File struct for this entry.
+    /// Returns `File` struct for this entry.
     ///
     /// Panics if this is not a file.
     pub fn to_file(&self) -> File<'a, T> {
@@ -674,7 +674,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         File::new(self.first_cluster(), Some(self.editor()), self.fs)
     }
 
-    /// Returns Dir struct for this entry.
+    /// Returns `Dir` struct for this entry.
     ///
     /// Panics if this is not a directory.
     pub fn to_dir(&self) -> Dir<'a, T> {

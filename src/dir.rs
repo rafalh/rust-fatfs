@@ -88,7 +88,7 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
     (comp, rest_opt)
 }
 
-/// FAT directory
+/// A FAT filesystem directory.
 pub struct Dir<'a, T: ReadWriteSeek + 'a> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,
@@ -99,7 +99,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         Dir { stream, fs }
     }
 
-    /// Creates directory entries iterator
+    /// Creates directory entries iterator.
     pub fn iter(&self) -> DirIter<'a, T> {
         self.stream.clone();
         DirIter {
@@ -128,7 +128,9 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         Err(io::Error::new(ErrorKind::NotFound, "file not found"))
     }
 
-    /// Opens existing directory
+    /// Opens existing subdirectory.
+    ///
+    /// `path` is a '/' separated directory path relative to self directory.
     pub fn open_dir(&self, path: &str) -> io::Result<Self> {
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, Some(true), None)?;
@@ -139,6 +141,8 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     }
 
     /// Opens existing file.
+    ///
+    /// `path` is a '/' separated file path relative to self directory.
     pub fn open_file(&self, path: &str) -> io::Result<File<'a, T>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
@@ -151,7 +155,10 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         Ok(e.to_file())
     }
 
-    /// Creates new file or opens existing without truncating.
+    /// Creates new or opens existing file=.
+    ///
+    /// `path` is a '/' separated file path relative to self directory.
+    /// File is never truncated when opening. It can be achieved by calling `File::truncate` method after opening.
     pub fn create_file(&self, path: &str) -> io::Result<File<'a, T>> {
         // traverse path
         let (name, rest_opt) = split_path(path);
@@ -176,6 +183,8 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     }
 
     /// Creates new directory or opens existing.
+    ///
+    /// `path` is a '/' separated path relative to self directory.
     pub fn create_dir(&self, path: &str) -> io::Result<Self> {
         // traverse path
         let (name, rest_opt) = split_path(path);
@@ -226,6 +235,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 
     /// Removes existing file or directory.
     ///
+    /// `path` is a '/' separated file path relative to self directory.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn remove(&self, path: &str) -> io::Result<()> {
@@ -261,7 +271,9 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 
     /// Renames or moves existing file or directory.
     ///
-    /// Destination directory can be cloned source directory in case of rename without moving operation.
+    /// `src_path` is a '/' separated source file path relative to self directory.
+    /// `dst_path` is a '/' separated destination file path relative to `dst_dir`.
+    /// `dst_dir` can be set to self directory if rename operation without moving is needed.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn rename(&self, src_path: &str, dst_dir: &Dir<T>, dst_path: &str) -> io::Result<()> {
