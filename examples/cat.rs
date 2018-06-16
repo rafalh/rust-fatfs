@@ -1,10 +1,12 @@
 extern crate fatfs;
+extern crate fscommon;
 
 use std::env;
 use std::fs::File;
 use std::io::{self, prelude::*};
 
-use fatfs::{FileSystem, FsOptions, BufStream};
+use fatfs::{FileSystem, FsOptions};
+use fscommon::BufStream;
 
 fn main() -> io::Result<()> {
     let file = File::open("resources/fat32.img")?;

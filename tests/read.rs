@@ -1,4 +1,5 @@
 extern crate fatfs;
+extern crate fscommon;
 extern crate env_logger;
 
 use std::fs;
@@ -6,7 +7,8 @@ use std::io::SeekFrom;
 use std::io::prelude::*;
 use std::str;
 
-use fatfs::{FsOptions, FatType, BufStream};
+use fatfs::{FsOptions, FatType};
+use fscommon::BufStream;
 
 const TEST_TEXT: &str = "Rust is cool!\n";
 const FAT12_IMG: &str = "resources/fat12.img";

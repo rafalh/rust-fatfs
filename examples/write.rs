@@ -1,9 +1,11 @@
 extern crate fatfs;
+extern crate fscommon;
 
 use std::fs::OpenOptions;
 use std::io::{self, prelude::*};
 
-use fatfs::{FileSystem, FsOptions, BufStream};
+use fatfs::{FileSystem, FsOptions};
+use fscommon::BufStream;
 
 fn main() -> io::Result<()> {
     let img_file = match OpenOptions::new().read(true).write(true).open("fat.img") {

@@ -1,4 +1,5 @@
 extern crate fatfs;
+extern crate fscommon;
 extern crate env_logger;
 
 use std::fs;
@@ -6,7 +7,8 @@ use std::io::prelude::*;
 use std::io;
 use std::str;
 
-use fatfs::{FsOptions, BufStream};
+use fatfs::FsOptions;
+use fscommon::BufStream;
 
 const FAT12_IMG: &str = "fat12.img";
 const FAT16_IMG: &str = "fat16.img";

@@ -1,4 +1,5 @@
 extern crate fatfs;
+extern crate fscommon;
 extern crate chrono;
 
 use std::env;
@@ -6,7 +7,8 @@ use std::fs::File;
 use std::io;
 use chrono::{DateTime, Local};
 
-use fatfs::{FileSystem, FsOptions, BufStream};
+use fatfs::{FileSystem, FsOptions};
+use fscommon::BufStream;
 
 fn format_file_size(size: u64) -> String {
     const KB: u64 = 1024;

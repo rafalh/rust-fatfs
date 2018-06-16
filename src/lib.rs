@@ -30,9 +30,6 @@ mod dir_entry;
 mod file;
 mod table;
 
-#[cfg(all(feature = "alloc"))]
-mod utils;
-
 #[cfg(not(feature = "std"))]
 mod byteorder_core_io;
 
@@ -52,6 +49,3 @@ pub use fs::*;
 pub use dir::*;
 pub use dir_entry::*;
 pub use file::*;
-
-#[cfg(all(feature = "alloc"))]
-pub use utils::*;
