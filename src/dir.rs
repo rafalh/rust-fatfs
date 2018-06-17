@@ -88,6 +88,11 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
     (comp, rest_opt)
 }
 
+enum DirEntryOrShortName<'a, T: ReadWriteSeek + 'a> {
+    DirEntry(DirEntry<'a, T>),
+    ShortName([u8; 11]),
+}
+
 /// A FAT filesystem directory.
 pub struct Dir<'a, T: ReadWriteSeek + 'a> {
     stream: DirRawStream<'a, T>,
@@ -129,6 +134,24 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         Err(io::Error::new(ErrorKind::NotFound, "No such file or directory"))
     }
 
+    fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> io::Result<DirEntryOrShortName<'a, T>> {
+        let mut short_name_gen = ShortNameGenerator::new(name);
+        loop {
+            let r = self.find_entry(name, is_dir, Some(&mut short_name_gen));
+            match r {
+                Err(ref err) if err.kind() == ErrorKind::NotFound => {},
+                // other error
+                Err(err) => return Err(err),
+                // directory already exists - return it
+                Ok(e) => return Ok(DirEntryOrShortName::DirEntry(e)),
+            };
+            if let Ok(name) = short_name_gen.generate() {
+                return Ok(DirEntryOrShortName::ShortName(name));
+            }
+            short_name_gen.next_iteration();
+        }
+    }
+
     /// Opens existing subdirectory.
     ///
     /// `path` is a '/' separated directory path relative to self directory.
@@ -167,19 +190,15 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             return self.find_entry(name, Some(true), None)?.to_dir().create_file(rest);
         }
         // this is final filename in the path
-        let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(false), Some(&mut short_name_gen));
+        let r = self.check_for_existence(name, Some(false))?;
         match r {
             // file does not exist - create it
-            Err(ref err) if err.kind() == ErrorKind::NotFound => {
-                let short_name = short_name_gen.generate()?;
+            DirEntryOrShortName::ShortName(short_name) => {
                 let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::from_bits_truncate(0), None);
                 Ok(self.write_entry(name, sfn_entry)?.to_file())
             },
-            // other error
-            Err(err) => Err(err),
             // file already exists - return it
-            Ok(e) => Ok(e.to_file()),
+            DirEntryOrShortName::DirEntry(e) => Ok(e.to_file()),
         }
     }
 
@@ -193,15 +212,13 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             return self.find_entry(name, Some(true), None)?.to_dir().create_dir(rest);
         }
         // this is final filename in the path
-        let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(true), Some(&mut short_name_gen));
+        let r = self.check_for_existence(name, Some(true))?;
         match r {
             // directory does not exist - create it
-            Err(ref err) if err.kind() == ErrorKind::NotFound => {
+            DirEntryOrShortName::ShortName(short_name) => {
                 // alloc cluster for directory data
                 let cluster = self.fs.alloc_cluster(None)?;
                 // create entry in parent directory
-                let short_name = short_name_gen.generate()?;
                 let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
                 let entry = self.write_entry(name, sfn_entry)?;
                 let mut dir = entry.to_dir();
@@ -214,10 +231,8 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 dir.write_entry("..", sfn_entry)?;
                 Ok(dir)
             },
-            // other error
-            Err(err) => Err(err),
             // directory already exists - return it
-            Ok(e) => Ok(e.to_dir()),
+            DirEntryOrShortName::DirEntry(e) => Ok(e.to_dir()),
         }
     }
 
@@ -294,20 +309,23 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
+
     fn rename_internal(&self, src_name: &str, dst_dir: &Dir<T>, dst_name: &str) -> io::Result<()> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
         // check if destionation filename is unused
-        let mut short_name_gen = ShortNameGenerator::new(dst_name);
-        let r = dst_dir.find_entry(dst_name, None, Some(&mut short_name_gen));
-        if r.is_ok() {
-            // check if source and destination entry is the same
-            if e.is_same_entry(&r.unwrap()) {
-                return Ok(());
-            }
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "Destination file already exists"))
-        }
+        let r = dst_dir.check_for_existence(dst_name, None)?;
+        let short_name = match r {
+            DirEntryOrShortName::DirEntry(ref dst_e) => {
+                // check if source and destination entry is the same
+                if e.is_same_entry(dst_e) {
+                    return Ok(());
+                }
+                return Err(io::Error::new(ErrorKind::AlreadyExists, "Destination file already exists"));
+            },
+            DirEntryOrShortName::ShortName(short_name) => short_name,
+        };
         // free long and short name entries
         let mut stream = self.stream.clone();
         stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
@@ -320,7 +338,6 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             data.serialize(&mut stream)?;
         }
         // save new directory entry
-        let short_name = short_name_gen.generate()?;
         let sfn_entry = e.data.renamed(short_name);
         dst_dir.write_entry(dst_name, sfn_entry)?;
         Ok(())
@@ -829,6 +846,14 @@ impl ShortNameGenerator {
         Err(io::Error::new(ErrorKind::AlreadyExists, "short name already exists"))
     }
 
+    fn next_iteration(&mut self) {
+        // Try different checksum in next iteration
+        self.chksum = (num::Wrapping(self.chksum) + num::Wrapping(1)).0;
+        // Zero bitmaps
+        self.long_prefix_bitmap = 0;
+        self.prefix_chksum_bitmap = 0;
+    }
+
     fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; 11] {
         let mut buf = [0x20u8; 11];
         let prefix_len = if with_chksum {
@@ -908,6 +933,20 @@ mod tests {
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
         assert_eq!(&buf, "TE527D~2TXT".as_bytes());
+        for i in 3..10 {
+            gen.add_existing(&buf);
+            buf = gen.generate().unwrap();
+            assert_eq!(&buf, format!("TE527D~{}TXT", i).as_bytes());
+        }
+        gen.add_existing(&buf);
+        assert!(gen.generate().is_err());
+        gen.next_iteration();
+        for _i in 0..4 {
+            buf = gen.generate().unwrap();
+            gen.add_existing(&buf);
+        }
+        buf = gen.generate().unwrap();
+        assert_eq!(&buf, "TE527E~1TXT".as_bytes());
     }
 
     #[test]
