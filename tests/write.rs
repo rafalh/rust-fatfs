@@ -160,6 +160,15 @@ fn test_create_file(fs: FileSystem) {
     }
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(names.len(), 4 + 512/32);
+    // check creating existing file opens it
+    {
+        let mut file = root_dir.create_file("very/long/path/new-file-with-long-name.txt").unwrap();
+        let mut content = String::new();
+        file.read_to_string(&mut content).unwrap();
+        assert_eq!(&content, &TEST_STR);
+    }
+    // check using create_file with existing directory fails
+    assert!(root_dir.create_file("very").is_err());
 }
 
 #[test]
@@ -208,6 +217,14 @@ fn test_create_dir(fs: FileSystem) {
         names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
         assert_eq!(names, [".", "..", "test.txt", "new-dir-with-long-name"]);
     }
+    // check if creating existing directory returns it
+    {
+        let subdir = root_dir.create_dir("very").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", "..", "long"]);
+    }
+    // check using create_dir with existing file fails
+    assert!(root_dir.create_dir("very/long/path/test.txt").is_err());
 }
 
 #[test]

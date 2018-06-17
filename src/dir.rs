@@ -116,7 +116,8 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             if e.file_name().eq_ignore_ascii_case(name) || e.short_file_name().eq_ignore_ascii_case(name) {
                 // check if file or directory is expected
                 if is_dir.is_some() && Some(e.is_dir()) != is_dir {
-                    return Err(io::Error::new(ErrorKind::NotFound, "unexpected file type in a path"))
+                    let error_msg = if e.is_dir() { "Is a directory" } else { "Not a directory" };
+                    return Err(io::Error::new(ErrorKind::Other, error_msg));
                 }
                 return Ok(e);
             }
@@ -193,7 +194,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         }
         // this is final filename in the path
         let mut short_name_gen = ShortNameGenerator::new(name);
-        let r = self.find_entry(name, Some(false), Some(&mut short_name_gen));
+        let r = self.find_entry(name, Some(true), Some(&mut short_name_gen));
         match r {
             // directory does not exist - create it
             Err(ref err) if err.kind() == ErrorKind::NotFound => {
