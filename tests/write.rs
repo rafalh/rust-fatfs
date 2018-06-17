@@ -276,6 +276,8 @@ fn test_rename_file(fs: FileSystem) {
     let names = entries.iter().map(|r| r.file_name()).collect::<Vec<_>>();
     assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name", "moved-file.txt"]);
 
+    assert!(root_dir.rename("moved-file.txt", &root_dir, "moved-file.txt").is_ok());
+
     let new_stats = fs.stats().unwrap();
     assert_eq!(new_stats.free_clusters(), stats.free_clusters());
 }

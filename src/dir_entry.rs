@@ -666,6 +666,10 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
+    pub(crate) fn is_same_entry(&self, other: &DirEntry<T>) -> bool {
+        self.entry_pos == other.entry_pos
+    }
+
     /// Returns `File` struct for this entry.
     ///
     /// Panics if this is not a file.

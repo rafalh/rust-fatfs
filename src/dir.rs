@@ -302,6 +302,10 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         let mut short_name_gen = ShortNameGenerator::new(dst_name);
         let r = dst_dir.find_entry(dst_name, None, Some(&mut short_name_gen));
         if r.is_ok() {
+            // check if source and destination entry is the same
+            if e.is_same_entry(&r.unwrap()) {
+                return Ok(());
+            }
             return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
         }
         // free long and short name entries
