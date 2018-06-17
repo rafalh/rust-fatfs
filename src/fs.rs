@@ -390,6 +390,10 @@ impl <T: ReadWriteSeek> FileSystem<T> {
             boot.bpb
         };
 
+        if bpb.fs_version != 0 {
+            return Err(Error::new(ErrorKind::Other, "unknown FS version"));
+        }
+
         let total_sectors =
             if bpb.total_sectors_16 == 0 { bpb.total_sectors_32 }
             else { bpb.total_sectors_16 as u32 };
