@@ -61,9 +61,11 @@ impl FsStatusFlags {
     }
 }
 
+/// Sum of `Read` and `Seek` traits.
 pub trait ReadSeek: Read + Seek {}
 impl<T> ReadSeek for T where T: Read + Seek {}
 
+/// Sum of `Read`, `Write` and `Seek` traits.
 pub trait ReadWriteSeek: Read + Write + Seek {}
 impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
 
@@ -306,6 +308,7 @@ pub struct FsOptions {
 }
 
 impl FsOptions {
+    /// Creates `FsOptions` struct with default options.
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
@@ -352,6 +355,8 @@ impl FileSystemStats {
 }
 
 /// FAT filesystem struct.
+///
+/// `FileSystem` struct is representing a state of a mounted FAT volume.
 pub struct FileSystem<T: ReadWriteSeek> {
     pub(crate) disk: RefCell<T>,
     pub(crate) options: FsOptions,
@@ -366,8 +371,9 @@ pub struct FileSystem<T: ReadWriteSeek> {
 impl <T: ReadWriteSeek> FileSystem<T> {
     /// Creates a new filesystem object instance.
     ///
-    /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk image (e.g. partition)
-    /// library user should wrap file handle in struct limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
+    /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
+    /// image (e.g. partition) library user should wrap the file handle in a struct limiting
+    /// access to partition bytes only e.g. `fscommon::StreamSlice`.
     ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause a filesystem corruption.
@@ -424,7 +430,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
         })
     }
 
-    /// Returns a type of used File Allocation Table (FAT).
+    /// Returns a type of File Allocation Table (FAT) used by this filesystem.
     pub fn fat_type(&self) -> FatType {
         self.fat_type
     }
@@ -534,7 +540,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     /// Returns filesystem statistics like number of total and free clusters.
     ///
     /// For FAT32 volumes number of free clusters from FSInfo sector is returned (may be incorrect).
-    /// For other filesystems number is computed on first call to this method.
+    /// For other FAT variants number is computed on the first call to this method and cached for later use.
     pub fn stats(&self) -> io::Result<FileSystemStats> {
         let free_clusters_option = self.fs_info.borrow().free_cluster_count;
         let free_clusters = match free_clusters_option {
@@ -582,7 +588,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     }
 }
 
-/// Tries to unmoun filesystem when dropping.
+/// `Drop` implementation tries to unmount the filesystem when dropping.
 impl<T: ReadWriteSeek> Drop for FileSystem<T> {
     fn drop(&mut self) {
         if let Err(err) = self.unmount_internal() {
