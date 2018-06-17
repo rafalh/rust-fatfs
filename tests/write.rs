@@ -271,6 +271,11 @@ fn test_rename_file(fs: FileSystem) {
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(str::from_utf8(&buf).unwrap(), TEST_STR2);
 
+    assert!(root_dir.rename("moved-file.txt", &root_dir, "short.txt").is_err());
+    let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<_>>();
+    let names = entries.iter().map(|r| r.file_name()).collect::<Vec<_>>();
+    assert_eq!(names, ["long.txt", "short.txt", "very", "very-long-dir-name", "moved-file.txt"]);
+
     let new_stats = fs.stats().unwrap();
     assert_eq!(new_stats.free_clusters(), stats.free_clusters());
 }

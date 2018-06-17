@@ -298,6 +298,12 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
+        // check if destionation filename is unused
+        let mut short_name_gen = ShortNameGenerator::new(dst_name);
+        let r = dst_dir.find_entry(dst_name, None, Some(&mut short_name_gen));
+        if r.is_ok() {
+            return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
+        }
         // free long and short name entries
         let mut stream = self.stream.clone();
         stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
@@ -308,12 +314,6 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             data.set_free();
             stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
             data.serialize(&mut stream)?;
-        }
-        // check if destionation filename is unused
-        let mut short_name_gen = ShortNameGenerator::new(dst_name);
-        let r = dst_dir.find_entry(dst_name, None, Some(&mut short_name_gen));
-        if r.is_ok() {
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
         }
         // save new directory entry
         let short_name = short_name_gen.generate()?;
