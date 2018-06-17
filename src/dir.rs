@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use core::{slice, iter};
-use core::{str, char, cmp};
+use core::{str, char, cmp, num};
 
 use io::prelude::*;
 use io;
@@ -537,11 +537,11 @@ fn validate_long_name(name: &str) -> io::Result<()> {
 
 #[cfg(feature = "alloc")]
 fn lfn_checksum(short_name: &[u8]) -> u8 {
-    let mut chksum = 0u8;
+    let mut chksum = num::Wrapping(0u8);
     for i in 0..11 {
-        chksum = (((chksum & 1) << 7) as u16 + (chksum >> 1) as u16 + short_name[i] as u16) as u8;
+        chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(short_name[i]);
     }
-    chksum
+    chksum.0
 }
 
 #[cfg(feature = "alloc")]
@@ -796,11 +796,11 @@ impl ShortNameGenerator {
 
     fn checksum(name: &str) -> u16 {
         // BSD checksum algorithm
-        let mut chksum = 0u16;
+        let mut chksum = num::Wrapping(0u16);
         for c in name.chars() {
-            chksum = (chksum >> 1) + ((chksum & 1) << 15) + (c as u16);
+            chksum = (chksum >> 1) + (chksum << 15) + num::Wrapping(c as u16);
         }
-        chksum
+        chksum.0
     }
 
     fn generate(&self) -> io::Result<[u8; 11]> {
@@ -871,6 +871,16 @@ mod tests {
         assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), "FOO_1~1 BAR".as_bytes());
         assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), "VER_12~1TEX".as_bytes());
         assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), "BASHRC~1SWP".as_bytes());
+    }
+
+    #[test]
+    fn test_short_name_checksum_overflow() {
+        ShortNameGenerator::checksum("\u{FF5A}\u{FF5A}\u{FF5A}\u{FF5A}");
+    }
+
+    #[test]
+    fn test_lfn_checksum_overflow() {
+        lfn_checksum(&[0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]);
     }
 
     #[test]
