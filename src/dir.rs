@@ -126,7 +126,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 gen.add_existing(e.raw_short_name());
             }
         }
-        Err(io::Error::new(ErrorKind::NotFound, "file not found"))
+        Err(io::Error::new(ErrorKind::NotFound, "No such file or directory"))
     }
 
     /// Opens existing subdirectory.
@@ -250,7 +250,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         // in case of directory check if it is empty
         let e = self.find_entry(name, None, None)?;
         if e.is_dir() && !e.to_dir().is_empty()? {
-            return Err(io::Error::new(ErrorKind::NotFound, "removing non-empty directory is denied"));
+            return Err(io::Error::new(ErrorKind::Other, "Directory not empty"));
         }
         // free data
         if let Some(n) = e.first_cluster() {
@@ -306,7 +306,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             if e.is_same_entry(&r.unwrap()) {
                 return Ok(());
             }
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "destination file already exists"))
+            return Err(io::Error::new(ErrorKind::AlreadyExists, "Destination file already exists"))
         }
         // free long and short name entries
         let mut stream = self.stream.clone();
@@ -522,10 +522,10 @@ impl <'a, T: ReadWriteSeek> Iterator for DirIter<'a, T> {
 fn validate_long_name(name: &str) -> io::Result<()> {
     // check if length is valid
     if name.len() == 0 {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "filename cannot be empty"));
+        return Err(io::Error::new(ErrorKind::Other, "File name is empty"));
     }
     if name.len() > 255 {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "filename is too long"));
+        return Err(io::Error::new(ErrorKind::Other, "File name too long"));
     }
     // check if there are only valid characters
     for c in name.chars() {
@@ -533,7 +533,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
             'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
             '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' |
             '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => {},
-            _ => return Err(io::Error::new(ErrorKind::InvalidInput, "invalid character in filename")),
+            _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
         }
     }
     Ok(())

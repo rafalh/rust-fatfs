@@ -291,7 +291,7 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
             SeekFrom::End(x) => self.entry.iter().next().map_or(None, |e| e.inner().size()).expect("cannot seek from end if size is unknown") as i64 + x,
         };
         if new_pos < 0 {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"));
+            return Err(io::Error::new(ErrorKind::InvalidInput, "Seek to a negative offset"));
         }
         new_pos = match self.entry {
             Some(ref e) => {

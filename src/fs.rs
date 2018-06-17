@@ -385,13 +385,13 @@ impl <T: ReadWriteSeek> FileSystem<T> {
         let bpb = {
             let boot = BootRecord::deserialize(&mut disk)?;
             if boot.boot_sig != [0x55, 0xAA] {
-                return Err(Error::new(ErrorKind::Other, "invalid signature"));
+                return Err(Error::new(ErrorKind::Other, "Invalid boot sector signature"));
             }
             boot.bpb
         };
 
         if bpb.fs_version != 0 {
-            return Err(Error::new(ErrorKind::Other, "unknown FS version"));
+            return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
         }
 
         let total_sectors =
@@ -676,7 +676,7 @@ impl <'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
             SeekFrom::End(x) => self.size as i64 + x,
         };
         if new_offset < 0 || new_offset as u64 > self.size {
-            Err(io::Error::new(ErrorKind::InvalidInput, "invalid seek"))
+            Err(io::Error::new(ErrorKind::InvalidInput, "Seek to a negative offset"))
         } else {
             self.offset = new_offset as u64;
             Ok(self.offset)

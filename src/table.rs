@@ -168,7 +168,7 @@ impl FatTrait for Fat12 {
             }
             cluster += 1;
             if cluster == end_cluster {
-                return Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"));
+                return Err(io::Error::new(io::ErrorKind::Other, "No space left on device"));
             }
             packed_val = match cluster & 1 {
                 0 => fat.read_u16::<LittleEndian>()?,
@@ -191,7 +191,6 @@ impl FatTrait for Fat12 {
                 _ => fat.read_u8().map(|n| n as u16),
             };
             let packed_val = match res {
-                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(err) => return Err(err),
                 Ok(n) => n,
             };
@@ -247,7 +246,7 @@ impl FatTrait for Fat16 {
             }
             cluster += 1;
         }
-        Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
+        Err(io::Error::new(io::ErrorKind::Other, "No space left on device"))
     }
 
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
@@ -255,11 +254,9 @@ impl FatTrait for Fat16 {
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*2) as u64))?;
         while cluster < end_cluster {
-            match fat.read_u16::<LittleEndian>() {
-                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
-                Err(err) => return Err(err),
-                Ok(0) => count += 1,
-                _ => {},
+            let val = fat.read_u16::<LittleEndian>()?;
+            if val == 0 {
+                count += 1;
             }
             cluster += 1;
         }
@@ -305,7 +302,7 @@ impl FatTrait for Fat32 {
             }
             cluster += 1;
         }
-        Err(io::Error::new(io::ErrorKind::Other, "end of FAT reached"))
+        Err(io::Error::new(io::ErrorKind::Other, "No space left on device"))
     }
 
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
@@ -313,11 +310,9 @@ impl FatTrait for Fat32 {
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster*4) as u64))?;
         while cluster < end_cluster {
-            match fat.read_u32::<LittleEndian>() {
-                Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
-                Err(err) => return Err(err),
-                Ok(0) => count += 1,
-                _ => {},
+            let val = fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF;
+            if val == 0 {
+                count += 1;
             }
             cluster += 1;
         }
@@ -410,7 +405,7 @@ mod tests {
         assert_eq!(find_free_cluster(&mut cur, fat_type, 0x13, 0x20).unwrap(), 0x1B);
         assert!(find_free_cluster(&mut cur, fat_type, 0x13, 0x14).is_err());
 
-        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x20).unwrap(), 5);
+        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).unwrap(), 5);
 
         // test allocation
         assert_eq!(alloc_cluster(&mut cur, fat_type, None, Some(0x13), 0x1E).unwrap(), 0x1B);
@@ -418,7 +413,7 @@ mod tests {
         assert_eq!(alloc_cluster(&mut cur, fat_type, Some(0x1B), None, 0x1E).unwrap(), 0x12);
         assert_eq!(read_fat(&mut cur, fat_type, 0x1B).unwrap(), FatValue::Data(0x12));
         assert_eq!(read_fat(&mut cur, fat_type, 0x12).unwrap(), FatValue::EndOfChain);
-        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x20).unwrap(), 3);
+        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).unwrap(), 3);
         // test reading from iterator
         {
             let iter = ClusterIterator::new(&mut cur, fat_type, 0x9);
