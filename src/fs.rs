@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 use core::cmp;
 use core::char;
+use core::iter::FromIterator;
 use io::prelude::*;
 use io::{Error, ErrorKind, SeekFrom};
 use io;
@@ -13,10 +14,7 @@ use dir_entry::DIR_ENTRY_SIZE;
 use table::{ClusterIterator, alloc_cluster, read_fat_flags, count_free_clusters};
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::{String, string::ToString};
-#[cfg(all(not(feature = "std"), not(feature = "alloc")))]
-use core::str;
-use core::iter::FromIterator;
+use alloc::String;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -688,5 +686,5 @@ impl <'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
 }
 
 pub(crate) fn decode_oem_char_lossy(oem_char: u8) -> char {
-    if oem_char < 0x80 { oem_char as char } else { char::REPLACEMENT_CHARACTER }
+    if oem_char < 0x80 { oem_char as char } else { '\u{FFFD}' }
 }
