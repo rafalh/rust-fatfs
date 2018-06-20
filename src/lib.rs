@@ -18,27 +18,37 @@
 //!
 //! # Examples
 //!
-//! Initialize a filesystem object (note: `fscommon` crate is used to speedup IO operations):
 //! ```rust
-//! let img_file = File::open("fat.img")?;
-//! let buf_stream = fscommon::BufStream::new(img_file);
-//! let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
-//! ```
-//! Write a file:
-//! ```rust
-//! let root_dir = fs.root_dir();
-//! root_dir.create_dir("foo/bar")?;
-//! let mut file = root_dir.create_file("foo/bar/hello.txt")?;
-//! file.truncate()?;
-//! file.write_all(b"Hello World!")?;
-//! ```
-//! Read a directory:
-//! ```rust
-//! let root_dir = fs.root_dir();
-//! let dir = root_dir.open_dir("foo/bar")?;
-//! for r in dir.iter()? {
-//!     let entry = r?;
-//!     println!(entry.file_name());
+//! // Declare external crates
+//! // Note: `fscommon` crate is used to speedup IO operations
+//! extern crate fatfs;
+//! extern crate fscommon;
+//!
+//! use std::io::prelude::*;
+//!
+//! fn main() -> std::io::Result<()> {
+//!     # std::fs::copy("resources/fat16.img", "tmp/fat.img")?;
+//!     // Initialize a filesystem object
+//!     let img_file = std::fs::OpenOptions::new().read(true).write(true)
+//!         .open("tmp/fat.img")?;
+//!     let buf_stream = fscommon::BufStream::new(img_file);
+//!     let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
+//!     let root_dir = fs.root_dir();
+//!
+//!     // Write a file
+//!     root_dir.create_dir("foo")?;
+//!     let mut file = root_dir.create_file("foo/hello.txt")?;
+//!     file.truncate()?;
+//!     file.write_all(b"Hello World!")?;
+//!
+//!     // Read a directory
+//!     let dir = root_dir.open_dir("foo")?;
+//!     for r in dir.iter() {
+//!         let entry = r?;
+//!         println!("{}", entry.file_name());
+//!     }
+//!     # std::fs::remove_file("tmp/fat.img")?;
+//!     # Ok(())
 //! }
 //! ```
 
