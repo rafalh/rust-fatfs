@@ -20,7 +20,7 @@ use file::File;
 use dir::{Dir, DirRawStream};
 
 bitflags! {
-    /// FAT file attributes
+    /// A FAT file attributes.
     #[derive(Default)]
     pub struct FileAttributes: u8 {
         const READ_ONLY  = 0x01;
@@ -443,16 +443,20 @@ impl DirEntryData {
     }
 }
 
-/// DOS compatible date
+/// A DOS compatible date.
+///
+/// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Date {
+    /// Full year - [1980, 2107]
     pub year: u16,
+    /// Month of the year - [1, 12]
     pub month: u16,
+    /// Day of the month - [1, 31]
     pub day: u16,
 }
 
 impl Date {
-
     pub(crate) fn from_u16(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
@@ -463,11 +467,18 @@ impl Date {
     }
 }
 
-/// DOS compatible time
+/// A DOS compatible time.
+///
+/// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Time {
+    /// Hours after midnight - [0, 23]
     pub hour: u16,
+    /// Minutes after the hour - [0, 59]
     pub min: u16,
+    /// Seconds after the minute - [0, 59]
+    ///
+    /// Note: FAT filesystem has a resolution of 2 seconds.
     pub sec: u16,
 }
 
@@ -482,10 +493,14 @@ impl Time {
     }
 }
 
-/// DOS compatible date and time
+/// A DOS compatible date and time.
+///
+/// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct DateTime {
+    /// A date part
     pub date: Date,
+    // A time part
     pub time: Time,
 }
 
@@ -619,7 +634,7 @@ impl DirEntryEditor {
     }
 }
 
-/// FAT directory entry.
+/// A FAT directory entry.
 ///
 /// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]

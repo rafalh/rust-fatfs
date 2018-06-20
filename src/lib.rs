@@ -1,3 +1,47 @@
+//! A FAT filesystem library implemented in Rust.
+//!
+//! # Usage
+//!
+//! This crate is [on crates.io](https://crates.io/crates/fatfs) and can be
+//! used by adding `fatfs` to the dependencies in your project's `Cargo.toml`.
+//!
+//! ```toml
+//! [dependencies]
+//! fatfs = "0.3"
+//! ```
+//!
+//! And this in your crate root:
+//!
+//! ```rust
+//! extern crate fatfs;
+//! ```
+//!
+//! # Examples
+//!
+//! Initialize a filesystem object (note: `fscommon` crate is used to speedup IO operations):
+//! ```rust
+//! let img_file = File::open("fat.img")?;
+//! let buf_stream = fscommon::BufStream::new(img_file);
+//! let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
+//! ```
+//! Write a file:
+//! ```rust
+//! let root_dir = fs.root_dir();
+//! root_dir.create_dir("foo/bar")?;
+//! let mut file = root_dir.create_file("foo/bar/hello.txt")?;
+//! file.truncate()?;
+//! file.write_all(b"Hello World!")?;
+//! ```
+//! Read a directory:
+//! ```rust
+//! let root_dir = fs.root_dir();
+//! let dir = root_dir.open_dir("foo/bar")?;
+//! for r in dir.iter()? {
+//!     let entry = r?;
+//!     println!(entry.file_name());
+//! }
+//! ```
+
 #![crate_type = "lib"]
 #![crate_name = "fatfs"]
 

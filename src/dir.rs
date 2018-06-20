@@ -94,6 +94,9 @@ enum DirEntryOrShortName<'a, T: ReadWriteSeek + 'a> {
 }
 
 /// A FAT filesystem directory.
+///
+/// This struct is created by the `open_dir` or `create_dir` methods on `Dir`.
+/// The root directory is returned by the `root_dir` method on `FileSystem`.
 pub struct Dir<'a, T: ReadWriteSeek + 'a> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,
@@ -443,7 +446,9 @@ impl <'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
     }
 }
 
-/// Directory entries iterator.
+/// An iterator over the directory entries.
+///
+/// This struct is created by the `iter` method on `Dir`.
 pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,

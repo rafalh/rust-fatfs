@@ -20,9 +20,9 @@ use alloc::String;
 //   http://wiki.osdev.org/FAT
 //   https://www.win.tue.nl/~aeb/linux/fs/fat/fat-1.html
 
-/// Type of FAT filesystem.
+/// A type of FAT filesystem.
 ///
-/// `FatType` values are based on size of File Allocation Table entry.
+/// `FatType` values are based on the size of File Allocation Table entry.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FatType {
     Fat12, Fat16, Fat32,
@@ -40,7 +40,7 @@ impl FatType {
     }
 }
 
-/// FAT volume status flags retrived from Boot Sector and allocation table.
+/// A FAT volume status flags retrived from the Boot Sector and the allocation table second entry.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct FsStatusFlags {
     pub(crate) dirty: bool,
@@ -48,24 +48,24 @@ pub struct FsStatusFlags {
 }
 
 impl FsStatusFlags {
-    /// Checks if volume is marked as dirty.
+    /// Checks if the volume is marked as dirty.
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
-    /// Checks if volume has IO Error flag active.
+    /// Checks if the volume has the IO Error flag active.
     pub fn io_error(&self) -> bool {
         self.io_error
     }
 }
 
-/// Sum of `Read` and `Seek` traits.
+/// A sum of `Read` and `Seek` traits.
 pub trait ReadSeek: Read + Seek {}
 impl<T> ReadSeek for T where T: Read + Seek {}
 
-/// Sum of `Read`, `Write` and `Seek` traits.
+/// A sum of `Read`, `Write` and `Seek` traits.
 pub trait ReadWriteSeek: Read + Write + Seek {}
 impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
 
@@ -290,28 +290,30 @@ impl FsInfoSector {
     }
 }
 
-/// FAT filesystem mount options.
+/// A FAT filesystem mount options.
+///
+/// Options are specified as an argument for `FileSystem::new` method.
 #[derive(Copy, Clone, Debug)]
 pub struct FsOptions {
     pub(crate) update_accessed_date: bool,
 }
 
 impl FsOptions {
-    /// Creates `FsOptions` struct with default options.
+    /// Creates a `FsOptions` struct with default options.
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
         }
     }
 
-    /// If enabled library updates accessed date field in directory entry when reading a file.
+    /// If enabled accessed date field in directory entry is updated when reading or writing a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
         self.update_accessed_date = enabled;
         self
     }
 }
 
-/// FAT volume statistics.
+/// A FAT volume statistics.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct FileSystemStats {
     cluster_size: u32,
@@ -336,7 +338,7 @@ impl FileSystemStats {
     }
 }
 
-/// FAT filesystem struct.
+/// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
 pub struct FileSystem<T: ReadWriteSeek> {

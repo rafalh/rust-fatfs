@@ -10,6 +10,8 @@ use dir_entry::{DirEntryEditor, DateTime, Date};
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
 /// A FAT filesystem file object used for reading and writing data.
+///
+/// This struct is created by the `open_file` or `create_file` methods on `Dir`.
 pub struct File<'a, T: ReadWriteSeek + 'a> {
     // Note first_cluster is None if file is empty
     first_cluster: Option<u32>,
