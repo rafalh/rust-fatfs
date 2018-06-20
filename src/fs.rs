@@ -25,7 +25,12 @@ use alloc::String;
 /// `FatType` values are based on the size of File Allocation Table entry.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FatType {
-    Fat12, Fat16, Fat32,
+    /// 12 bits per FAT entry
+    Fat12,
+    /// 16 bits per FAT entry
+    Fat16,
+    /// 32 bits per FAT entry
+    Fat32,
 }
 
 impl FatType {
