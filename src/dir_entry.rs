@@ -1,4 +1,6 @@
 use core::{fmt, str};
+use core::iter::FromIterator;
+use core::char;
 use io::prelude::*;
 use io;
 use io::Cursor;
@@ -13,7 +15,7 @@ use chrono;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{Vec, String, string::ToString};
 
-use fs::{FileSystem, FatType, ReadWriteSeek};
+use fs::{FileSystem, FatType, ReadWriteSeek, decode_oem_char_lossy};
 use file::File;
 use dir::{Dir, DirRawStream};
 
@@ -63,16 +65,29 @@ impl ShortName {
         };
         // Short names in FAT filesystem are encoded in OEM code-page. Rust operates on UTF-8 strings
         // and there is no built-in conversion so strip non-ascii characters in the name.
-        use strip_non_ascii;
-        strip_non_ascii(&mut name);
         ShortName {
             name,
             len: total_len as u8,
         }
     }
 
-    fn to_str(&self) -> &str {
-        str::from_utf8(&self.name[..self.len as usize]).unwrap() // SAFE: all characters outside of ASCII table has been removed
+    fn bytes(&self) -> &[u8] {
+        &self.name[..self.len as usize]
+    }
+
+    #[cfg(feature = "alloc")]
+    fn to_string(&self) -> String {
+        // Strip non-ascii characters from short name
+        let char_iter = self.bytes().iter().cloned().map(decode_oem_char_lossy);
+        // Build string from character iterator
+        String::from_iter(char_iter)
+    }
+
+    fn eq_ignore_ascii_case(&self, name: &str) -> bool {
+        // Strip non-ascii characters from short name
+        let char_iter = self.bytes().iter().cloned().map(decode_oem_char_lossy).map(|c| c.to_ascii_uppercase());
+        // Build string from character iterator
+        char_iter.eq(name.chars().map(|c| c.to_ascii_uppercase()))
     }
 }
 
@@ -124,7 +139,7 @@ impl DirFileEntryData {
                 *c = (*c as char).to_ascii_lowercase() as u8;
             }
         }
-        ShortName::new(&name_copy).to_str().to_string()
+        ShortName::new(&name_copy).to_string()
     }
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
@@ -620,13 +635,18 @@ pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
 
 impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns short file name.
+    ///
+    /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
     #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
-        self.short_name.to_str().to_string()
+        self.short_name.to_string()
     }
-    #[cfg(not(feature = "alloc"))]
-    pub fn short_file_name(&self) -> &str {
-        self.short_name.to_str()
+
+    /// Returns short file name as byte array slice.
+    ///
+    /// Characters are encoded in the OEM codepage.
+    pub fn short_file_name_bytes(&self) -> &[u8] {
+        self.short_name.bytes()
     }
 
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
@@ -637,10 +657,6 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         } else {
             self.data.lowercase_name()
         }
-    }
-    #[cfg(not(feature = "alloc"))]
-    pub fn file_name(&self) -> &str {
-        self.short_file_name()
     }
 
     /// Returns file attributes.
@@ -715,6 +731,15 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     pub(crate) fn raw_short_name(&self) -> &[u8; 11] {
         &self.data.name
     }
+
+    #[cfg(feature = "alloc")]
+    pub(crate) fn eq_name(&self, name: &str) -> bool {
+        self.file_name().eq_ignore_ascii_case(name) || self.short_name.eq_ignore_ascii_case(name)
+    }
+    #[cfg(not(feature = "alloc"))]
+    pub(crate) fn eq_name(&self, name: &str) -> bool {
+        self.short_name.eq_ignore_ascii_case(name)
+    }
 }
 
 impl <'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
@@ -731,14 +756,14 @@ mod tests {
     fn short_name_with_ext() {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_str(), "FOO.BAR");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO.BAR");
     }
 
     #[test]
     fn short_name_without_ext() {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO        ".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_str(), "FOO");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO");
     }
 
     #[test]

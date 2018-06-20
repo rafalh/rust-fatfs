@@ -118,7 +118,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
-            if e.file_name().eq_ignore_ascii_case(name) || e.short_file_name().eq_ignore_ascii_case(name) {
+            if e.eq_name(name) {
                 // check if file or directory is expected
                 if is_dir.is_some() && Some(e.is_dir()) != is_dir {
                     let error_msg = if e.is_dir() { "Is a directory" } else { "Not a directory" };

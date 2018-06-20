@@ -1,5 +1,6 @@
 use core::cell::RefCell;
 use core::cmp;
+use core::char;
 use io::prelude::*;
 use io::{Error, ErrorKind, SeekFrom};
 use io;
@@ -15,6 +16,7 @@ use table::{ClusterIterator, alloc_cluster, read_fat_flags, count_free_clusters}
 use alloc::{String, string::ToString};
 #[cfg(all(not(feature = "std"), not(feature = "alloc")))]
 use core::str;
+use core::iter::FromIterator;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -68,14 +70,6 @@ impl<T> ReadSeek for T where T: Read + Seek {}
 /// Sum of `Read`, `Write` and `Seek` traits.
 pub trait ReadWriteSeek: Read + Write + Seek {}
 impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
-
-pub(crate) fn strip_non_ascii(slice: &mut [u8]) {
-    for c in slice {
-        if *c < 0x20 || *c >= 0x80 {
-            *c = '_' as u8;
-        }
-    }
-}
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
@@ -161,8 +155,6 @@ impl BiosParameterBlock {
             rdr.read_exact(&mut bpb.volume_label)?;
             rdr.read_exact(&mut bpb.fs_type_label)?;
         }
-        // Strip non-ascii characters from volume label
-        strip_non_ascii(&mut bpb.volume_label);
         if bpb.ext_sig != 0x29 {
             // fields after ext_sig are not used - clean them
             bpb.volume_id = 0;
@@ -444,17 +436,28 @@ impl <T: ReadWriteSeek> FileSystem<T> {
         self.bpb.volume_id
     }
 
-    /// Returns a volume label from BPB in the Boot Sector.
+    /// Returns a volume label from BPB in the Boot Sector as `String`.
     ///
+    /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
     /// Note: File with `VOLUME_ID` attribute in root directory is ignored by this library.
     /// Only label from BPB is used.
     #[cfg(feature = "alloc")]
     pub fn volume_label(&self) -> String {
-        String::from_utf8_lossy(&self.bpb.volume_label).trim_right().to_string()
+        // Strip non-ascii characters from volume label
+        let char_iter = self.volume_label_bytes().iter().cloned().map(decode_oem_char_lossy);
+        // Build string from character iterator
+        String::from_iter(char_iter)
     }
-    #[cfg(not(feature = "alloc"))]
-    pub fn volume_label(&self) -> &str {
-        str::from_utf8(&self.bpb.volume_label).unwrap_or("").trim_right()
+
+    /// Returns a volume label from BPB in the Boot Sector as byte array slice.
+    ///
+    /// Label is encoded in the OEM codepage.
+    /// Note: File with `VOLUME_ID` attribute in root directory is ignored by this library.
+    /// Only label from BPB is used.
+    pub fn volume_label_bytes(&self) -> &[u8] {
+        let full_label_slice = &self.bpb.volume_label;
+        let len = full_label_slice.iter().rposition(|b| *b != 0x20).map(|p| p + 1).unwrap_or(0);
+        &full_label_slice[..len]
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
@@ -682,4 +685,8 @@ impl <'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
             Ok(self.offset)
         }
     }
+}
+
+pub(crate) fn decode_oem_char_lossy(oem_char: u8) -> char {
+    if oem_char < 0x80 { oem_char as char } else { char::REPLACEMENT_CHARACTER }
 }
