@@ -294,7 +294,6 @@ impl FsInfoSector {
 #[derive(Copy, Clone, Debug)]
 pub struct FsOptions {
     pub(crate) update_accessed_date: bool,
-    pub(crate) update_fs_info: bool,
 }
 
 impl FsOptions {
@@ -302,19 +301,12 @@ impl FsOptions {
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
-            update_fs_info: true,
         }
     }
 
     /// If enabled library updates accessed date field in directory entry when reading a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
         self.update_accessed_date = enabled;
-        self
-    }
-
-    /// If enabled library updates FSInfo sector when unmounting (only if modified).
-    pub fn update_fs_info(mut self, enabled: bool) -> Self {
-        self.update_fs_info = enabled;
         self
     }
 }
@@ -569,15 +561,13 @@ impl <T: ReadWriteSeek> FileSystem<T> {
 
     /// Unmounts the filesystem.
     ///
-    /// Updates FSInfo sector if `update_fs_info` mount option is enabled.
+    /// Updates FSInfo sector if needed.
     pub fn unmount(self) -> io::Result<()> {
         self.unmount_internal()
     }
 
     fn unmount_internal(&self) -> io::Result<()> {
-        if self.options.update_fs_info {
-            self.flush_fs_info()?;
-        }
+        self.flush_fs_info()?;
         Ok(())
     }
 
