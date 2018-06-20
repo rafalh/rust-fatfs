@@ -25,7 +25,7 @@ Usage
 Add this to your `Cargo.toml`:
 
     [dependencies]
-    fatfs = "0.2"
+    fatfs = "0.3"
 
 and this to your crate root:
 
@@ -48,7 +48,7 @@ no_std usage
 Add this to your `Cargo.toml`:
 
     [dependencies]
-    fatfs = { version = "0.2", features = ["core_io"], default-features = false }
+    fatfs = { version = "0.3", features = ["core_io"], default-features = false }
 
 Note: LFN support requires `alloc` and `core_io/collections` features and makes use of `alloc` crate.
 You may have to provide a memory allocator implementation.
