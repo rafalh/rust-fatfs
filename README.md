@@ -7,26 +7,27 @@ Rust FAT FS
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
 [![Minimum rustc version](https://img.shields.io/badge/rustc-1.24+-yellow.svg)](https://blog.rust-lang.org/2018/02/15/Rust-1.24.html)
 
-FAT filesystem library implemented in Rust.
+A FAT filesystem library implemented in Rust.
 
 Features:
-* read/write/create/remove file,
-* enumerate directory children,
-* create/remove directory,
+* read/write file using standard Read/Write traits,
+* read directory contents,
+* create/remove file or directory,
+* rename/move file or directory,
 * read/write file timestamps (updated automatically if `chrono` feature is enabled),
 * FAT12, FAT16, FAT32 compatibility,
-* LFN (Long File Names) extension supported,
+* LFN (Long File Names) extension is supported,
 * Basic no_std environment support.
 
 Usage
 -----
 
-Put this in your `Cargo.toml`:
+Add this to your `Cargo.toml`:
 
     [dependencies]
     fatfs = "0.2"
 
-Put this in your crate root:
+and this to your crate root:
 
     extern crate fatfs;
 
@@ -44,7 +45,7 @@ See more examples in `examples` subdirectory.
 no_std usage
 ------------
 
-Put this in your `Cargo.toml`:
+Add this to your `Cargo.toml`:
 
     [dependencies]
     fatfs = { version = "0.2", features = ["core_io"], default-features = false }
@@ -52,8 +53,8 @@ Put this in your `Cargo.toml`:
 Note: LFN support requires `alloc` and `core_io/collections` features and makes use of `alloc` crate.
 You may have to provide a memory allocator implementation.
 
-For building in `no_std` mode nightly Rust version compatible with current `core_io` crate is required.
-See date string in `core_io` dependency version.
+For building in `no_std` mode a nightly Rust compiler version compatible with the current `core_io` crate is required.
+See a date string in the `core_io` dependency version.
 
 License
 -------
