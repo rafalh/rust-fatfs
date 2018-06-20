@@ -442,7 +442,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     #[cfg(feature = "alloc")]
     pub fn volume_label(&self) -> String {
         // Strip non-ascii characters from volume label
-        let char_iter = self.volume_label_bytes().iter().cloned().map(decode_oem_char_lossy);
+        let char_iter = self.volume_label_as_bytes().iter().cloned().map(decode_oem_char_lossy);
         // Build string from character iterator
         String::from_iter(char_iter)
     }
@@ -452,7 +452,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     /// Label is encoded in the OEM codepage.
     /// Note: File with `VOLUME_ID` attribute in root directory is ignored by this library.
     /// Only label from BPB is used.
-    pub fn volume_label_bytes(&self) -> &[u8] {
+    pub fn volume_label_as_bytes(&self) -> &[u8] {
         let full_label_slice = &self.bpb.volume_label;
         let len = full_label_slice.iter().rposition(|b| *b != 0x20).map(|p| p + 1).unwrap_or(0);
         &full_label_slice[..len]

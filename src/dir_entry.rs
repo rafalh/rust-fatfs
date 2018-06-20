@@ -71,21 +71,21 @@ impl ShortName {
         }
     }
 
-    fn bytes(&self) -> &[u8] {
+    fn as_bytes(&self) -> &[u8] {
         &self.name[..self.len as usize]
     }
 
     #[cfg(feature = "alloc")]
     fn to_string(&self) -> String {
         // Strip non-ascii characters from short name
-        let char_iter = self.bytes().iter().cloned().map(decode_oem_char_lossy);
+        let char_iter = self.as_bytes().iter().cloned().map(decode_oem_char_lossy);
         // Build string from character iterator
         String::from_iter(char_iter)
     }
 
     fn eq_ignore_ascii_case(&self, name: &str) -> bool {
         // Strip non-ascii characters from short name
-        let char_iter = self.bytes().iter().cloned().map(decode_oem_char_lossy).map(|c| c.to_ascii_uppercase());
+        let char_iter = self.as_bytes().iter().cloned().map(decode_oem_char_lossy).map(|c| c.to_ascii_uppercase());
         // Build string from character iterator
         char_iter.eq(name.chars().map(|c| c.to_ascii_uppercase()))
     }
@@ -645,8 +645,8 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns short file name as byte array slice.
     ///
     /// Characters are encoded in the OEM codepage.
-    pub fn short_file_name_bytes(&self) -> &[u8] {
-        self.short_name.bytes()
+    pub fn short_file_name_as_bytes(&self) -> &[u8] {
+        self.short_name.as_bytes()
     }
 
     /// Returns long file name or if it doesn't exist fallbacks to short file name.

@@ -240,7 +240,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         // check if directory contains no files
         for r in self.iter() {
             let e = r?;
-            let name = e.short_file_name_bytes();
+            let name = e.short_file_name_as_bytes();
             // ignore special entries "." and ".."
             if name != ".".as_bytes() && name != "..".as_bytes() {
                 return Ok(false);
