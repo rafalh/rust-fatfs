@@ -31,7 +31,7 @@ and this to your crate root:
 
     extern crate fatfs;
 
-You can start using library now:
+You can start using the `fatfs` library now:
 
     let img_file = File::open("fat.img")?;
     let buf_stream = fatfs::BufStream::new(img_file);
@@ -40,7 +40,7 @@ You can start using library now:
     let mut file = root_dir.create_file("hello.txt")?;
     file.write_all(b"Hello World!")?;
 
-See more examples in `examples` subdirectory.
+See more examples in the `examples` subdirectory.
 
 no_std usage
 ------------
