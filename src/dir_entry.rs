@@ -480,12 +480,14 @@ pub struct Time {
     ///
     /// Note: FAT filesystem has a resolution of 2 seconds.
     pub sec: u16,
+    /// Milliseconds after the second - [0, 999]
+    pub millis: u16,
 }
 
 impl Time {
     pub(crate) fn from_u16(dos_time: u16) -> Self {
         let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-        Time { hour, min, sec }
+        Time { hour, min, sec, millis: 0 }
     }
 
     fn to_u16(&self) -> u16 {
@@ -548,6 +550,7 @@ impl From<chrono::DateTime<Local>> for DateTime {
                 hour: date_time.hour() as u16,
                 min: date_time.minute() as u16,
                 sec: date_time.second() as u16,
+                millis: (date_time.nanosecond() / 1000) as u16,
             },
         }
     }
