@@ -185,29 +185,31 @@ impl DirFileEntryData {
     }
 
     fn created(&self) -> DateTime {
-        DateTime::from_u16(self.create_date, self.create_time_1)
+        DateTime::decode(self.create_date, self.create_time_1, self.create_time_0)
     }
 
     fn accessed(&self) -> Date {
-        Date::from_u16(self.access_date)
+        Date::decode(self.access_date)
     }
 
     fn modified(&self) -> DateTime {
-        DateTime::from_u16(self.modify_date, self.modify_time)
+        DateTime::decode(self.modify_date, self.modify_time, 0)
     }
 
     fn set_created(&mut self, date_time: DateTime) {
-        self.create_date = date_time.date.to_u16();
-        self.create_time_1 = date_time.time.to_u16();
+        self.create_date = date_time.date.encode();
+        let encoded_time = date_time.time.encode();
+        self.create_time_1 = encoded_time.0;
+        self.create_time_0 = encoded_time.1;
     }
 
     fn set_accessed(&mut self, date: Date) {
-        self.access_date = date.to_u16();
+        self.access_date = date.encode();
     }
 
     fn set_modified(&mut self, date_time: DateTime) {
-        self.modify_date = date_time.date.to_u16();
-        self.modify_time = date_time.time.to_u16();
+        self.modify_date = date_time.date.encode();
+        self.modify_time = date_time.time.encode().0;
     }
 
     #[cfg(feature = "chrono")]
@@ -457,12 +459,12 @@ pub struct Date {
 }
 
 impl Date {
-    pub(crate) fn from_u16(dos_date: u16) -> Self {
+    pub(crate) fn decode(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
         Date { year, month, day }
     }
 
-    fn to_u16(&self) -> u16 {
+    fn encode(&self) -> u16 {
         ((self.year - 1980) << 9) | (self.month << 5) | self.day
     }
 }
@@ -477,21 +479,24 @@ pub struct Time {
     /// Minutes after the hour - [0, 59]
     pub min: u16,
     /// Seconds after the minute - [0, 59]
-    ///
-    /// Note: FAT filesystem has a resolution of 2 seconds.
     pub sec: u16,
     /// Milliseconds after the second - [0, 999]
     pub millis: u16,
 }
 
 impl Time {
-    pub(crate) fn from_u16(dos_time: u16) -> Self {
-        let (hour, min, sec) = (dos_time >> 11, (dos_time >> 5) & 0x3F, (dos_time & 0x1F) * 2);
-        Time { hour, min, sec, millis: 0 }
+    pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
+        let hour = dos_time >> 11;
+        let min = (dos_time >> 5) & 0x3F;
+        let sec = (dos_time & 0x1F) * 2 + (dos_time_hi_res as u16) / 2;
+        let millis = (dos_time_hi_res as u16 % 100) * 10;
+        Time { hour, min, sec, millis }
     }
 
-    fn to_u16(&self) -> u16 {
-        (self.hour << 11) | (self.min << 5) | (self.sec / 2)
+    fn encode(&self) -> (u16, u8) {
+        let dos_time = (self.hour << 11) | (self.min << 5) | (self.sec / 2);
+        let dos_time_hi_res = ((self.millis / 100) + (self.sec % 2) * 100) as u8;
+        (dos_time, dos_time_hi_res)
     }
 }
 
@@ -507,10 +512,10 @@ pub struct DateTime {
 }
 
 impl DateTime {
-    pub(crate) fn from_u16(dos_date: u16, dos_time: u16) -> Self {
+    pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
         DateTime {
-            date: Date::from_u16(dos_date),
-            time: Time::from_u16(dos_time),
+            date: Date::decode(dos_date),
+            time: Time::decode(dos_time, dos_time_hi_res),
         }
     }
 }
@@ -526,7 +531,8 @@ impl From<Date> for chrono::Date<Local> {
 impl From<DateTime> for chrono::DateTime<Local> {
     fn from(date_time: DateTime) -> Self {
         chrono::Date::<Local>::from(date_time.date)
-            .and_hms(date_time.time.hour as u32, date_time.time.min as u32, date_time.time.sec as u32)
+            .and_hms_milli(date_time.time.hour as u32, date_time.time.min as u32,
+                date_time.time.sec as u32, date_time.time.millis as u32)
     }
 }
 
@@ -550,7 +556,7 @@ impl From<chrono::DateTime<Local>> for DateTime {
                 hour: date_time.hour() as u16,
                 min: date_time.minute() as u16,
                 sec: date_time.second() as u16,
-                millis: (date_time.nanosecond() / 1000) as u16,
+                millis: (date_time.nanosecond() / 1_000_000) as u16,
             },
         }
     }
@@ -732,6 +738,8 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     }
 
     /// Returns file creation date and time.
+    ///
+    /// Resolution of the time field is 1/100s.
     pub fn created(&self) -> DateTime {
         self.data.created()
     }
@@ -742,6 +750,8 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     }
 
     /// Returns file last modification date and time.
+    ///
+    /// Resolution of the time field is 2s.
     pub fn modified(&self) -> DateTime {
         self.data.modified()
     }
