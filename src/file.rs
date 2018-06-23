@@ -240,7 +240,7 @@ impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
                     if self.first_cluster.is_none() {
                         self.set_first_cluster(new_cluster);
                     }
-                    if self.entry.clone().map_or(true, |e| e.inner().size().is_none()) {
+                    if self.entry.iter().next().map_or(true, |e| e.inner().size().is_none()) {
                         // zero new directory cluster
                         trace!("zeroing directory cluser {}", new_cluster);
                         let abs_pos = self.fs.offset_from_cluster(new_cluster);

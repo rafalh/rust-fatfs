@@ -109,10 +109,9 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 
     /// Creates directory entries iterator.
     pub fn iter(&self) -> DirIter<'a, T> {
-        self.stream.clone();
         DirIter {
             stream: self.stream.clone(),
-            fs: self.fs.clone(),
+            fs: self.fs,
             err: false,
         }
     }
