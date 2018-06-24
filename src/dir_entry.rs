@@ -38,6 +38,7 @@ pub(crate) const LFN_PART_LEN: usize = 13;
 pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
 pub(crate) const DIR_ENTRY_FREE_FLAG: u8 = 0xE5;
 pub(crate) const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
+pub(crate) const LFN_ENTRY_REALLY_E5_FLAG: u8 = 0x05;
 
 /// Decoded file short name
 #[derive(Clone, Debug, Default)]
@@ -64,6 +65,10 @@ impl ShortName {
             // No extension - return length of name part
             name_len
         };
+        // FAT encodes character 0xE5 as 0x05 because 0xE5 marks deleted files
+        if name[0] == LFN_ENTRY_REALLY_E5_FLAG {
+            name[0] = 0xE5;
+        }
         // Short names in FAT filesystem are encoded in OEM code-page
         ShortName {
             name,
@@ -796,6 +801,12 @@ mod tests {
         assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO");
         raw_short_name.copy_from_slice("LOOK AT    ".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(), "LOOK AT");
+    }
+
+    #[test]
+    fn short_name_05_changed_to_e5() {
+        let raw_short_name = [0x05;11];
+        assert_eq!(ShortName::new(&raw_short_name).as_bytes(), [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, '.' as u8, 0x05, 0x05, 0x05]);
     }
 
     #[test]
