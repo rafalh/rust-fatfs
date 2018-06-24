@@ -34,11 +34,18 @@ bitflags! {
     }
 }
 
-pub(crate) const LFN_PART_LEN: usize = 13;
+// Size of single directory entry in bytes
 pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
-pub(crate) const DIR_ENTRY_FREE_FLAG: u8 = 0xE5;
+
+// Directory entry flags available in first byte of the short name
+pub(crate) const DIR_ENTRY_DELETED_FLAG: u8 = 0xE5;
+pub(crate) const DIR_ENTRY_REALLY_E5_FLAG: u8 = 0x05;
+
+// Length in characters of a LFN fragment packed in one directory entry
+pub(crate) const LFN_PART_LEN: usize = 13;
+
+// Bit used in order field to mark last LFN entry
 pub(crate) const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
-pub(crate) const LFN_ENTRY_REALLY_E5_FLAG: u8 = 0x05;
 
 /// Decoded file short name
 #[derive(Clone, Debug, Default)]
@@ -66,7 +73,7 @@ impl ShortName {
             name_len
         };
         // FAT encodes character 0xE5 as 0x05 because 0xE5 marks deleted files
-        if name[0] == LFN_ENTRY_REALLY_E5_FLAG {
+        if name[0] == DIR_ENTRY_REALLY_E5_FLAG {
             name[0] = 0xE5;
         }
         // Short names in FAT filesystem are encoded in OEM code-page
@@ -272,12 +279,12 @@ impl DirFileEntryData {
         Ok(())
     }
 
-    pub(crate) fn is_free(&self) -> bool {
-        self.name[0] == DIR_ENTRY_FREE_FLAG
+    pub(crate) fn is_deleted(&self) -> bool {
+        self.name[0] == DIR_ENTRY_DELETED_FLAG
     }
 
-    pub(crate) fn set_free(&mut self) {
-        self.name[0] = DIR_ENTRY_FREE_FLAG;
+    pub(crate) fn set_deleted(&mut self) {
+        self.name[0] = DIR_ENTRY_DELETED_FLAG;
     }
 
     pub(crate) fn is_end(&self) -> bool {
@@ -352,12 +359,12 @@ impl DirLfnEntryData {
         self.checksum
     }
 
-    pub(crate) fn is_free(&self) -> bool {
-        self.order == DIR_ENTRY_FREE_FLAG
+    pub(crate) fn is_deleted(&self) -> bool {
+        self.order == DIR_ENTRY_DELETED_FLAG
     }
 
-    pub(crate) fn set_free(&mut self) {
-        self.order = DIR_ENTRY_FREE_FLAG;
+    pub(crate) fn set_deleted(&mut self) {
+        self.order = DIR_ENTRY_DELETED_FLAG;
     }
 
     pub(crate) fn is_end(&self) -> bool {
@@ -428,17 +435,17 @@ impl DirEntryData {
         }
     }
 
-    pub(crate) fn is_free(&self) -> bool {
+    pub(crate) fn is_deleted(&self) -> bool {
         match self {
-            &DirEntryData::File(ref file) => file.is_free(),
-            &DirEntryData::Lfn(ref lfn) => lfn.is_free(),
+            &DirEntryData::File(ref file) => file.is_deleted(),
+            &DirEntryData::Lfn(ref lfn) => lfn.is_deleted(),
         }
     }
 
-    pub(crate) fn set_free(&mut self) {
+    pub(crate) fn set_deleted(&mut self) {
         match self {
-            &mut DirEntryData::File(ref mut file) => file.set_free(),
-            &mut DirEntryData::Lfn(ref mut lfn) => lfn.set_free(),
+            &mut DirEntryData::File(ref mut file) => file.set_deleted(),
+            &mut DirEntryData::Lfn(ref mut lfn) => lfn.set_deleted(),
         }
     }
 

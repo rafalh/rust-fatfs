@@ -280,7 +280,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         for _ in 0..num {
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing dir entry {:?}", data);
-            data.set_free();
+            data.set_deleted();
             stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
             data.serialize(&mut stream)?;
         }
@@ -335,7 +335,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         for _ in 0..num {
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing LFN entry {:?}", data);
-            data.set_free();
+            data.set_deleted();
             stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
             data.serialize(&mut stream)?;
         }
@@ -359,7 +359,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 }
                 stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
                 return Ok(stream);
-            } else if raw_entry.is_free() {
+            } else if raw_entry.is_deleted() {
                 // free entry - calculate number of free entries in a row
                 if num_free == 0 {
                     first_free = i;
@@ -470,7 +470,7 @@ impl <'a, T: ReadWriteSeek> DirIter<'a, T> {
                         return Ok(None);
                     }
                     // Check if this is deleted or volume ID entry
-                    if data.is_free() || data.is_volume() {
+                    if data.is_deleted() || data.is_volume() {
                         #[cfg(feature = "alloc")]
                         lfn_buf.clear();
                         begin_offset = offset;
@@ -495,7 +495,7 @@ impl <'a, T: ReadWriteSeek> DirIter<'a, T> {
                 },
                 DirEntryData::Lfn(data) => {
                     // Check if this is deleted entry
-                    if data.is_free() {
+                    if data.is_deleted() {
                         #[cfg(feature = "alloc")]
                         lfn_buf.clear();
                         begin_offset = offset;
