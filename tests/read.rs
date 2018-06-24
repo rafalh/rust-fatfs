@@ -187,6 +187,7 @@ fn test_get_file_by_path_fat32() {
 fn test_volume_metadata(fs: FileSystem, fat_type: FatType) {
     assert_eq!(fs.volume_id(), 0x12345678);
     assert_eq!(fs.volume_label(), "Test!");
+    assert_eq!(&fs.read_volume_label_from_root_dir().unwrap().unwrap(), "Test!");
     assert_eq!(fs.fat_type(), fat_type);
 }
 

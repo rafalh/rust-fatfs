@@ -106,11 +106,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 
     /// Creates directory entries iterator.
     pub fn iter(&self) -> DirIter<'a, T> {
-        DirIter {
-            stream: self.stream.clone(),
-            fs: self.fs,
-            err: false,
-        }
+        DirIter::new(self.stream.clone(), self.fs, true)
     }
 
     fn find_entry(
@@ -136,6 +132,16 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             }
         }
         Err(io::Error::new(ErrorKind::NotFound, "No such file or directory"))
+    }
+
+    pub(crate) fn find_volume_entry(&self) -> io::Result<Option<DirEntry<'a, T>>> {
+        for r in DirIter::new(self.stream.clone(), self.fs, false) {
+            let e = r?;
+            if e.data.is_volume() {
+                return Ok(Some(e));
+            }
+        }
+        Ok(None)
     }
 
     fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> io::Result<DirEntryOrShortName<'a, T>> {
@@ -453,10 +459,28 @@ impl<'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
 pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,
+    skip_volume: bool,
     err: bool,
 }
 
 impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
+    fn new(stream: DirRawStream<'a, T>, fs: &'a FileSystem<T>, skip_volume: bool) -> Self {
+        DirIter {
+            stream, fs, skip_volume,
+            err: false,
+        }
+    }
+
+    fn should_ship_entry(&self, raw_entry: &DirEntryData) -> bool {
+        if raw_entry.is_deleted() {
+            return true;
+        }
+        match raw_entry {
+            DirEntryData::File(sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
+            _ => false,
+        }
+    }
+
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, T>>> {
         #[cfg(feature = "alloc")]
         let mut lfn_buf = LongNameBuilder::new();
@@ -465,19 +489,19 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
         loop {
             let raw_entry = DirEntryData::deserialize(&mut self.stream)?;
             offset += DIR_ENTRY_SIZE;
+            // Check if this is end of dir
+            if raw_entry.is_end() {
+                return Ok(None);
+            }
+            // Check if this is deleted or volume ID entry
+            if self.should_ship_entry(&raw_entry) {
+                #[cfg(feature = "alloc")]
+                lfn_buf.clear();
+                begin_offset = offset;
+                continue;
+            }
             match raw_entry {
                 DirEntryData::File(data) => {
-                    // Check if this is end of dif
-                    if data.is_end() {
-                        return Ok(None);
-                    }
-                    // Check if this is deleted or volume ID entry
-                    if data.is_deleted() || data.is_volume() {
-                        #[cfg(feature = "alloc")]
-                        lfn_buf.clear();
-                        begin_offset = offset;
-                        continue;
-                    }
                     // Get entry position on volume
                     let abs_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
@@ -496,13 +520,6 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                     }));
                 },
                 DirEntryData::Lfn(data) => {
-                    // Check if this is deleted entry
-                    if data.is_deleted() {
-                        #[cfg(feature = "alloc")]
-                        lfn_buf.clear();
-                        begin_offset = offset;
-                        continue;
-                    }
                     // Append to LFN buffer
                     #[cfg(feature = "alloc")]
                     lfn_buf.process(&data);
@@ -519,6 +536,7 @@ impl<'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
             stream: self.stream.clone(),
             fs: self.fs,
             err: self.err,
+            skip_volume: self.skip_volume,
         }
     }
 }
