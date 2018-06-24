@@ -503,7 +503,9 @@ pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "alloc")]
-    pub(crate) lfn: Vec<u16>,
+    pub(crate) lfn_utf16: Vec<u16>,
+    #[cfg(not(feature = "alloc"))]
+    pub(crate) lfn_utf16: (),
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
     pub(crate) fs: &'a FileSystem<T>,
@@ -528,8 +530,8 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
     #[cfg(feature = "alloc")]
     pub fn file_name(&self) -> String {
-        if self.lfn.len() > 0 {
-            String::from_utf16_lossy(&self.lfn)
+        if self.lfn_utf16.len() > 0 {
+            String::from_utf16_lossy(&self.lfn_utf16)
         } else {
             self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
         }
