@@ -47,12 +47,13 @@ pub(crate) struct ShortName {
 }
 
 impl ShortName {
+    const PADDING: u8 = ' ' as u8;
+
     pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
         // get name components length by looking for space character
-        const SPACE: u8 = ' ' as u8;
-        let name_len = raw_name[0..8].iter().position(|x| *x == SPACE).unwrap_or(8);
-        let ext_len = raw_name[8..11].iter().position(|x| *x == SPACE).unwrap_or(3);
-        let mut name = [SPACE; 12];
+        let name_len = raw_name[0..8].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
+        let ext_len = raw_name[8..11].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
+        let mut name = [Self::PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
             name[name_len] = '.' as u8;
@@ -63,8 +64,7 @@ impl ShortName {
             // No extension - return length of name part
             name_len
         };
-        // Short names in FAT filesystem are encoded in OEM code-page. Rust operates on UTF-8 strings
-        // and there is no built-in conversion so strip non-ascii characters in the name.
+        // Short names in FAT filesystem are encoded in OEM code-page
         ShortName {
             name,
             len: total_len as u8,
@@ -785,6 +785,8 @@ mod tests {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO.BAR");
+        raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
+        assert_eq!(ShortName::new(&raw_short_name).to_string(), "LOOK AT.M E");
     }
 
     #[test]
@@ -792,6 +794,8 @@ mod tests {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO        ".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO");
+        raw_short_name.copy_from_slice("LOOK AT    ".as_bytes());
+        assert_eq!(ShortName::new(&raw_short_name).to_string(), "LOOK AT");
     }
 
     #[test]
