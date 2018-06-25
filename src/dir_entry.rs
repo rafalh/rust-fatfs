@@ -15,7 +15,7 @@ use chrono;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{Vec, String, string::ToString};
 
-use fs::{FileSystem, FatType, ReadWriteSeek, decode_oem_char_lossy};
+use fs::{FileSystem, FatType, ReadWriteSeek, OemCpConverter};
 use file::File;
 use dir::{Dir, DirRawStream};
 
@@ -88,18 +88,20 @@ impl ShortName {
     }
 
     #[cfg(feature = "alloc")]
-    fn to_string(&self) -> String {
+    fn to_string(&self, oem_cp_converter: &OemCpConverter) -> String {
         // Strip non-ascii characters from short name
-        let char_iter = self.as_bytes().iter().cloned().map(decode_oem_char_lossy);
+        let char_iter = self.as_bytes().iter().cloned().map(|c| oem_cp_converter.decode(c));
         // Build string from character iterator
         String::from_iter(char_iter)
     }
 
-    fn eq_ignore_ascii_case(&self, name: &str) -> bool {
+    fn eq_ignore_case(&self, name: &str, oem_cp_converter: &OemCpConverter) -> bool {
         // Strip non-ascii characters from short name
-        let char_iter = self.as_bytes().iter().cloned().map(decode_oem_char_lossy).map(|c| c.to_ascii_uppercase());
+        let byte_iter = self.as_bytes().iter().cloned();
+        let char_iter = byte_iter.map(|c| oem_cp_converter.decode(c));
+        let uppercase_char_iter = char_iter.flat_map(|c| c.to_uppercase());
         // Build string from character iterator
-        char_iter.eq(name.chars().map(|c| c.to_ascii_uppercase()))
+        uppercase_char_iter.eq(name.chars().flat_map(|c| c.to_uppercase()))
     }
 }
 
@@ -139,7 +141,7 @@ impl DirFileEntryData {
     }
 
     #[cfg(feature = "alloc")]
-    fn lowercase_name(&self) -> String {
+    fn lowercase_name(&self) -> ShortName {
         let mut name_copy: [u8; 11] = self.name;
         if self.lowercase_basename() {
             for c in &mut name_copy[..8] {
@@ -151,7 +153,7 @@ impl DirFileEntryData {
                 *c = (*c as char).to_ascii_lowercase() as u8;
             }
         }
-        ShortName::new(&name_copy).to_string()
+        ShortName::new(&name_copy)
     }
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
@@ -675,7 +677,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
     #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
-        self.short_name.to_string()
+        self.short_name.to_string(self.fs.options.oem_cp_converter)
     }
 
     /// Returns short file name as byte array slice.
@@ -691,7 +693,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
         if self.lfn.len() > 0 {
             String::from_utf16_lossy(&self.lfn)
         } else {
-            self.data.lowercase_name()
+            self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
         }
     }
 
@@ -774,11 +776,16 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
 
     #[cfg(feature = "alloc")]
     pub(crate) fn eq_name(&self, name: &str) -> bool {
-        self.file_name().eq_ignore_ascii_case(name) || self.short_name.eq_ignore_ascii_case(name)
+        let self_name = self.file_name();
+        let self_name_lowercase_iter = self_name.chars().flat_map(|c| c.to_uppercase());
+        let other_name_lowercase_iter = name.chars().flat_map(|c| c.to_uppercase());
+        let long_name_matches = self_name_lowercase_iter.eq(other_name_lowercase_iter);
+        let short_name_matches = self.short_name.eq_ignore_case(name, self.fs.options.oem_cp_converter);
+        long_name_matches || short_name_matches
     }
     #[cfg(not(feature = "alloc"))]
     pub(crate) fn eq_name(&self, name: &str) -> bool {
-        self.short_name.eq_ignore_ascii_case(name)
+        self.short_name.eq_ignore_case(name)
     }
 }
 
@@ -791,23 +798,38 @@ impl <'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs::LOSSY_OEM_CP_CONVERTER;
 
     #[test]
     fn short_name_with_ext() {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO.BAR");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
         raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_string(), "LOOK AT.M E");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
+        raw_short_name[0] = 0x99;
+        raw_short_name[10] = 0x99;
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "\u{FFFD}OOK AT.M \u{FFFD}");
+        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
     }
 
     #[test]
     fn short_name_without_ext() {
         let mut raw_short_name = [0u8;11];
         raw_short_name.copy_from_slice("FOO        ".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_string(), "FOO");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
         raw_short_name.copy_from_slice("LOOK AT    ".as_bytes());
-        assert_eq!(ShortName::new(&raw_short_name).to_string(), "LOOK AT");
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT");
+    }
+
+    #[test]
+    fn short_name_eq_ignore_case() {
+        let mut raw_short_name = [0u8;11];
+        raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
+        raw_short_name[0] = 0x99;
+        raw_short_name[10] = 0x99;
+        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
+        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
     }
 
     #[test]
@@ -825,12 +847,12 @@ mod tests {
             reserved_0: (1 << 3) | (1 << 4),
             ..Default::default()
         };
-        assert_eq!(raw_entry.lowercase_name(), "foo.rs");
+        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.rs");
         raw_entry.reserved_0 = 1 << 3;
-        assert_eq!(raw_entry.lowercase_name(), "foo.RS");
+        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.RS");
         raw_entry.reserved_0 = 1 << 4;
-        assert_eq!(raw_entry.lowercase_name(), "FOO.rs");
+        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.rs");
         raw_entry.reserved_0 = 0;
-        assert_eq!(raw_entry.lowercase_name(), "FOO.RS");
+        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.RS");
     }
 }

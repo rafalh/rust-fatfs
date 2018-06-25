@@ -298,9 +298,10 @@ impl FsInfoSector {
 /// A FAT filesystem mount options.
 ///
 /// Options are specified as an argument for `FileSystem::new` method.
-#[derive(Copy, Clone, Debug)]
+//#[derive(Copy, Clone, Debug)]
 pub struct FsOptions {
     pub(crate) update_accessed_date: bool,
+    pub(crate) oem_cp_converter: &'static OemCpConverter,
 }
 
 impl FsOptions {
@@ -308,12 +309,19 @@ impl FsOptions {
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
+            oem_cp_converter: &LOSSY_OEM_CP_CONVERTER,
         }
     }
 
     /// If enabled accessed date field in directory entry is updated when reading or writing a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
         self.update_accessed_date = enabled;
+        self
+    }
+
+    /// Changes default OEM code page encoder-decoder.
+    pub fn oem_cp_converter(mut self, oem_cp_converter: &'static OemCpConverter) -> Self {
+        self.oem_cp_converter = oem_cp_converter;
         self
     }
 }
@@ -440,8 +448,9 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     /// Only label from BPB is used.
     #[cfg(feature = "alloc")]
     pub fn volume_label(&self) -> String {
-        // Strip non-ascii characters from volume label
-        let char_iter = self.volume_label_as_bytes().iter().cloned().map(decode_oem_char_lossy);
+        // Decode volume label from OEM codepage
+        let volume_label_iter = self.volume_label_as_bytes().iter().cloned();
+        let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
         // Build string from character iterator
         String::from_iter(char_iter)
     }
@@ -682,6 +691,35 @@ impl <'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
     }
 }
 
-pub(crate) fn decode_oem_char_lossy(oem_char: u8) -> char {
-    if oem_char < 0x80 { oem_char as char } else { '\u{FFFD}' }
+/// An OEM code page encoder/decoder.
+///
+/// Provides a custom implementation for a short name encoding/decoding.
+/// Default implementation changes all non-ASCII characters to the replacement character (U+FFFD).
+pub trait OemCpConverter {
+    fn decode(&self, oem_char: u8) -> char;
+    fn encode(&self, uni_char: char) -> Option<u8>;
 }
+
+#[derive(Clone)]
+pub(crate) struct LossyOemCpConverter {
+    _dummy: (),
+}
+
+impl OemCpConverter for LossyOemCpConverter {
+    fn decode(&self, oem_char: u8) -> char {
+        if oem_char <= 0x7F {
+            oem_char as char
+        } else {
+            '\u{FFFD}'
+        }
+    }
+    fn encode(&self, uni_char: char) -> Option<u8> {
+        if uni_char <= '\x7F' {
+            Some(uni_char as u8)
+        } else {
+            None
+        }
+    }
+}
+
+pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
