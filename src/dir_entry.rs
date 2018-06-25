@@ -13,7 +13,7 @@ use chrono::{TimeZone, Local, Datelike, Timelike};
 use chrono;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::{Vec, String, string::ToString};
+use alloc::{Vec, String};
 
 use fs::{FileSystem, FatType, ReadWriteSeek, OemCpConverter};
 use file::File;
@@ -785,7 +785,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     }
     #[cfg(not(feature = "alloc"))]
     pub(crate) fn eq_name(&self, name: &str) -> bool {
-        self.short_name.eq_ignore_case(name)
+        self.short_name.eq_ignore_case(name, self.fs.options.oem_cp_converter)
     }
 }
 
