@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 #[cfg(feature = "chrono")]
 use chrono;
 #[cfg(feature = "chrono")]
@@ -129,12 +131,12 @@ impl From<chrono::DateTime<Local>> for DateTime {
 /// Default implementation gets time from `chrono` crate if `chrono` feature is enabled.
 /// Otherwise default implementation returns DOS minimal date-time (1980/1/1 0:00:00).
 /// `TimeProvider` is specified by the `time_provider` property in `FsOptions` struct.
-pub trait TimeProvider {
+pub trait TimeProvider: Debug {
     fn get_current_date(&self) -> Date;
     fn get_current_date_time(&self) -> DateTime;
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub(crate) struct DefaultTimeProvider {
     _dummy: (),
 }
