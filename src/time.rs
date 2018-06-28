@@ -128,6 +128,7 @@ impl From<chrono::DateTime<Local>> for DateTime {
 /// Provides a custom implementation for a time resolution used when updating directory entry time fields.
 /// Default implementation gets time from `chrono` crate if `chrono` feature is enabled.
 /// Otherwise default implementation returns DOS minimal date-time (1980/1/1 0:00:00).
+/// `TimeProvider` is specified by the `time_provider` property in `FsOptions` struct.
 pub trait TimeProvider {
     fn get_current_date(&self) -> Date;
     fn get_current_date_time(&self) -> DateTime;

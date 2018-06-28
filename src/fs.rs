@@ -300,7 +300,7 @@ impl FsInfoSector {
 /// A FAT filesystem mount options.
 ///
 /// Options are specified as an argument for `FileSystem::new` method.
-//#[derive(Copy, Clone, Debug)]
+//FIXME: #[derive(Copy, Clone, Debug)]
 pub struct FsOptions {
     pub(crate) update_accessed_date: bool,
     pub(crate) oem_cp_converter: &'static OemCpConverter,
@@ -726,6 +726,7 @@ impl<'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
 ///
 /// Provides a custom implementation for a short name encoding/decoding.
 /// Default implementation changes all non-ASCII characters to the replacement character (U+FFFD).
+/// `OemCpConverter` is specified by the `oem_cp_converter` property in `FsOptions` struct.
 pub trait OemCpConverter {
     fn decode(&self, oem_char: u8) -> char;
     fn encode(&self, uni_char: char) -> Option<u8>;
