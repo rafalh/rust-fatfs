@@ -81,6 +81,7 @@ mod dir_entry;
 mod file;
 mod fs;
 mod table;
+mod time;
 
 #[cfg(not(feature = "std"))]
 mod byteorder_core_io;
@@ -101,3 +102,4 @@ pub use dir::*;
 pub use dir_entry::*;
 pub use file::*;
 pub use fs::*;
+pub use time::*;

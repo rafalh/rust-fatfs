@@ -12,9 +12,10 @@ use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 use dir::{Dir, DirRawStream};
-use dir_entry::{self, DIR_ENTRY_SIZE};
+use dir_entry::DIR_ENTRY_SIZE;
 use file::File;
 use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator};
+use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -753,37 +754,3 @@ impl OemCpConverter for LossyOemCpConverter {
 }
 
 pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
-
-pub trait TimeProvider {
-    fn get_current_date(&self) -> dir_entry::Date;
-    fn get_current_date_time(&self) -> dir_entry::DateTime;
-}
-
-#[derive(Clone)]
-pub(crate) struct DefaultTimeProvider {
-    _dummy: (),
-}
-
-impl TimeProvider for DefaultTimeProvider {
-    #[cfg(feature = "chrono")]
-    fn get_current_date(&self) -> dir_entry::Date {
-        use chrono;
-        dir_entry::Date::from(chrono::Local::now().date())
-    }
-    #[cfg(not(feature = "chrono"))]
-    fn get_current_date(&self) -> dir_entry::Date {
-        dir_entry::Date::decode(0)
-    }
-
-    #[cfg(feature = "chrono")]
-    fn get_current_date_time(&self) -> dir_entry::DateTime {
-        use chrono;
-        dir_entry::DateTime::from(chrono::Local::now())
-    }
-    #[cfg(not(feature = "chrono"))]
-    fn get_current_date_time(&self) -> dir_entry::DateTime {
-        dir_entry::DateTime::decode(0, 0, 0)
-    }
-}
-
-pub(crate) static DEFAULT_TIME_PROVIDER: DefaultTimeProvider = DefaultTimeProvider { _dummy: () };

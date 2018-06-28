@@ -4,8 +4,9 @@ use io;
 use io::prelude::*;
 use io::{ErrorKind, SeekFrom};
 
-use dir_entry::{Date, DateTime, DirEntryEditor};
+use dir_entry::DirEntryEditor;
 use fs::{FileSystem, ReadWriteSeek};
+use time::{Date, DateTime};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
