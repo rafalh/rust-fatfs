@@ -406,9 +406,10 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     fn create_sfn_entry(&self, short_name: [u8; 11], attrs: FileAttributes, first_cluster: Option<u32>) -> DirFileEntryData {
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type());
-        raw_entry.reset_created();
-        raw_entry.reset_accessed();
-        raw_entry.reset_modified();
+        let now = self.fs.options.time_provider.get_current_date_time();
+        raw_entry.set_created(now);
+        raw_entry.set_accessed(now.date);
+        raw_entry.set_modified(now);
         raw_entry
     }
 

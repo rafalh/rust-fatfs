@@ -36,10 +36,11 @@ impl<'a, T: ReadWriteSeek> File<'a, T> {
         }
     }
 
-    fn update_size(&mut self) {
+    fn update_dir_entry_after_write(&mut self) {
         let offset = self.offset;
         if let Some(ref mut e) = self.entry {
-            e.reset_modified();
+            let now = self.fs.options.time_provider.get_current_date_time();
+            e.set_modified(now);
             if e.inner().size().map_or(false, |s| offset > s) {
                 e.set_size(offset);
             }
@@ -199,9 +200,11 @@ impl<'a, T: ReadWriteSeek> Read for File<'a, T> {
         self.offset += read_bytes as u32;
         self.current_cluster = Some(current_cluster);
 
-        match self.entry {
-            Some(ref mut e) if self.fs.options.update_accessed_date => e.reset_accessed(),
-            _ => {},
+        if let Some(ref mut e) = self.entry {
+            if self.fs.options.update_accessed_date {
+                let now = self.fs.options.time_provider.get_current_date();
+                e.set_accessed(now);
+            }
         }
         Ok(read_bytes)
     }
@@ -276,7 +279,7 @@ impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
         // some bytes were writter - update position and optionally size
         self.offset += written_bytes as u32;
         self.current_cluster = Some(current_cluster);
-        self.update_size();
+        self.update_dir_entry_after_write();
         Ok(written_bytes)
     }
 

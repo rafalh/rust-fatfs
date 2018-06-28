@@ -219,59 +219,20 @@ impl DirFileEntryData {
         DateTime::decode(self.modify_date, self.modify_time, 0)
     }
 
-    fn set_created(&mut self, date_time: DateTime) {
+    pub(crate) fn set_created(&mut self, date_time: DateTime) {
         self.create_date = date_time.date.encode();
         let encoded_time = date_time.time.encode();
         self.create_time_1 = encoded_time.0;
         self.create_time_0 = encoded_time.1;
     }
 
-    fn set_accessed(&mut self, date: Date) {
+    pub(crate) fn set_accessed(&mut self, date: Date) {
         self.access_date = date.encode();
     }
 
-    fn set_modified(&mut self, date_time: DateTime) {
+    pub(crate) fn set_modified(&mut self, date_time: DateTime) {
         self.modify_date = date_time.date.encode();
         self.modify_time = date_time.time.encode().0;
-    }
-
-    #[cfg(feature = "chrono")]
-    pub(crate) fn reset_created(&mut self) {
-        let now = DateTime::from(chrono::Local::now());
-        self.set_created(now);
-    }
-
-    #[cfg(feature = "chrono")]
-    pub(crate) fn reset_accessed(&mut self) -> bool {
-        let now = Date::from(chrono::Local::now().date());
-        if now == self.accessed() {
-            false
-        } else {
-            self.set_accessed(now);
-            true
-        }
-    }
-
-    #[cfg(feature = "chrono")]
-    pub(crate) fn reset_modified(&mut self) {
-        let now = DateTime::from(chrono::Local::now());
-        self.set_modified(now);
-    }
-
-    #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_created(&mut self) {
-        // nop - user controls timestamps manually
-    }
-
-    #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_accessed(&mut self) -> bool {
-        // nop - user controls timestamps manually
-        false
-    }
-
-    #[cfg(not(feature = "chrono"))]
-    pub(crate) fn reset_modified(&mut self) {
-        // nop - user controls timestamps manually
     }
 
     pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
@@ -640,15 +601,6 @@ impl DirEntryEditor {
             self.data.set_modified(date_time);
             self.dirty = true;
         }
-    }
-
-    pub(crate) fn reset_accessed(&mut self) {
-        self.dirty |= self.data.reset_accessed();
-    }
-
-    pub(crate) fn reset_modified(&mut self) {
-        self.data.reset_modified();
-        self.dirty = true;
     }
 
     pub(crate) fn flush<T: ReadWriteSeek>(&mut self, fs: &FileSystem<T>) -> io::Result<()> {
