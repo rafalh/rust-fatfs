@@ -1,11 +1,11 @@
-use core::cmp;
 use core;
-use io::prelude::*;
-use io::{SeekFrom, ErrorKind};
+use core::cmp;
 use io;
+use io::prelude::*;
+use io::{ErrorKind, SeekFrom};
 
+use dir_entry::{Date, DateTime, DirEntryEditor};
 use fs::{FileSystem, ReadWriteSeek};
-use dir_entry::{DirEntryEditor, DateTime, Date};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 
@@ -25,10 +25,12 @@ pub struct File<'a, T: ReadWriteSeek + 'a> {
     fs: &'a FileSystem<T>,
 }
 
-impl <'a, T: ReadWriteSeek> File<'a, T> {
+impl<'a, T: ReadWriteSeek> File<'a, T> {
     pub(crate) fn new(first_cluster: Option<u32>, entry: Option<DirEntryEditor>, fs: &'a FileSystem<T>) -> Self {
         File {
-            first_cluster, entry, fs,
+            first_cluster,
+            entry,
+            fs,
             current_cluster: None, // cluster before first one
             offset: 0,
         }
@@ -142,7 +144,7 @@ impl<'a, T: ReadWriteSeek> Drop for File<'a, T> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl <'a, T: ReadWriteSeek> Clone for File<'a, T> {
+impl<'a, T: ReadWriteSeek> Clone for File<'a, T> {
     fn clone(&self) -> Self {
         File {
             first_cluster: self.first_cluster,
@@ -246,7 +248,7 @@ impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
                         let abs_pos = self.fs.offset_from_cluster(new_cluster);
                         let mut disk = self.fs.disk.borrow_mut();
                         disk.seek(SeekFrom::Start(abs_pos))?;
-                        for _ in 0..cluster_size/32 {
+                        for _ in 0..cluster_size / 32 {
                             let zero = [0u8; 32];
                             disk.write(&zero)?;
                         }
@@ -290,7 +292,13 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.entry.iter().next().map_or(None, |e| e.inner().size()).expect("cannot seek from end if size is unknown") as i64 + x,
+            SeekFrom::End(x) => {
+                self.entry
+                    .iter()
+                    .next()
+                    .map_or(None, |e| e.inner().size())
+                    .expect("cannot seek from end if size is unknown") as i64 + x
+            },
         };
         if new_pos < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "Seek to a negative offset"));

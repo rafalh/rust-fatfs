@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
         Err(err) => {
             println!("Failed to open image!");
             return Err(err);
-        }
+        },
     };
     let buf_stream = BufStream::new(img_file);
     let options = FsOptions::new().update_accessed_date(true);

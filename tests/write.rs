@@ -1,10 +1,10 @@
+extern crate env_logger;
 extern crate fatfs;
 extern crate fscommon;
-extern crate env_logger;
 
 use std::fs;
-use std::io::prelude::*;
 use std::io;
+use std::io::prelude::*;
 use std::str;
 
 use fatfs::FsOptions;
@@ -154,12 +154,12 @@ fn test_create_file(fs: FileSystem) {
         assert_eq!(&content, &TEST_STR);
     }
     // Create enough entries to allocate next cluster
-    for i in 0..512/32 {
+    for i in 0..512 / 32 {
         let name = format!("test{}", i);
         dir.create_file(&name).unwrap();
     }
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
-    assert_eq!(names.len(), 4 + 512/32);
+    assert_eq!(names.len(), 4 + 512 / 32);
     // check creating existing file opens it
     {
         let mut file = root_dir.create_file("very/long/path/new-file-with-long-name.txt").unwrap();

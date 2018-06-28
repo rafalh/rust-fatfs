@@ -1,0 +1,7 @@
+max_width = 140
+match_block_trailing_comma = true
+use_field_init_shorthand = true
+ignore = [
+    "src/byteorder_core_io.rs",
+]
+unstable_features = true

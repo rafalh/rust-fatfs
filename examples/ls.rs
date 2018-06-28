@@ -1,19 +1,19 @@
+extern crate chrono;
 extern crate fatfs;
 extern crate fscommon;
-extern crate chrono;
 
 use std::env;
 use std::fs::File;
 use std::io;
-use chrono::{DateTime, Local};
 
+use chrono::{DateTime, Local};
 use fatfs::{FileSystem, FsOptions};
 use fscommon::BufStream;
 
 fn format_file_size(size: u64) -> String {
     const KB: u64 = 1024;
-    const MB: u64 = 1024*KB;
-    const GB: u64 = 1024*MB;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
     if size < 1024 {
         format!("{}B", size)
     } else if size < MB {

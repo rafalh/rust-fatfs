@@ -1,13 +1,13 @@
+extern crate env_logger;
 extern crate fatfs;
 extern crate fscommon;
-extern crate env_logger;
 
 use std::fs;
-use std::io::SeekFrom;
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use std::str;
 
-use fatfs::{FsOptions, FatType};
+use fatfs::{FatType, FsOptions};
 use fscommon::BufStream;
 
 const TEST_TEXT: &str = "Rust is cool!\n";
@@ -228,30 +228,39 @@ fn test_status_flags_fat32() {
 
 #[test]
 fn test_stats_fat12() {
-    call_with_fs(&|fs| {
-        let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size(), 512);
-        assert_eq!(stats.total_clusters(), 1955); // 1000 * 1024 / 512 = 2000
-        assert_eq!(stats.free_clusters(), 1920);
-    }, FAT12_IMG)
+    call_with_fs(
+        &|fs| {
+            let stats = fs.stats().unwrap();
+            assert_eq!(stats.cluster_size(), 512);
+            assert_eq!(stats.total_clusters(), 1955); // 1000 * 1024 / 512 = 2000
+            assert_eq!(stats.free_clusters(), 1920);
+        },
+        FAT12_IMG,
+    )
 }
 
 #[test]
 fn test_stats_fat16() {
-    call_with_fs(&|fs| {
-        let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size(), 512);
-        assert_eq!(stats.total_clusters(), 4927); // 2500 * 1024 / 512 = 5000
-        assert_eq!(stats.free_clusters(), 4892);
-    }, FAT16_IMG)
+    call_with_fs(
+        &|fs| {
+            let stats = fs.stats().unwrap();
+            assert_eq!(stats.cluster_size(), 512);
+            assert_eq!(stats.total_clusters(), 4927); // 2500 * 1024 / 512 = 5000
+            assert_eq!(stats.free_clusters(), 4892);
+        },
+        FAT16_IMG,
+    )
 }
 
 #[test]
 fn test_stats_fat32() {
-    call_with_fs(&|fs| {
-        let stats = fs.stats().unwrap();
-        assert_eq!(stats.cluster_size(), 512);
-        assert_eq!(stats.total_clusters(), 66922); // 34000 * 1024 / 512 = 68000
-        assert_eq!(stats.free_clusters(), 66886);
-    }, FAT32_IMG)
+    call_with_fs(
+        &|fs| {
+            let stats = fs.stats().unwrap();
+            assert_eq!(stats.cluster_size(), 512);
+            assert_eq!(stats.total_clusters(), 66922); // 34000 * 1024 / 512 = 68000
+            assert_eq!(stats.free_clusters(), 66886);
+        },
+        FAT32_IMG,
+    )
 }

@@ -1,23 +1,22 @@
-use core::{fmt, str};
-use core::iter::FromIterator;
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::{String, Vec};
 use core::char;
-use io::prelude::*;
+use core::iter::FromIterator;
+use core::{fmt, str};
 use io;
+use io::prelude::*;
 use io::Cursor;
-use byteorder::{LittleEndian};
-use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-#[cfg(feature = "chrono")]
-use chrono::{TimeZone, Local, Datelike, Timelike};
+use byteorder::LittleEndian;
+use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 #[cfg(feature = "chrono")]
 use chrono;
+#[cfg(feature = "chrono")]
+use chrono::{Datelike, Local, TimeZone, Timelike};
 
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::{Vec, String};
-
-use fs::{FileSystem, FatType, ReadWriteSeek, OemCpConverter};
-use file::File;
 use dir::{Dir, DirRawStream};
+use file::File;
+use fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
 
 bitflags! {
     /// A FAT file attributes.
@@ -60,14 +59,18 @@ impl ShortName {
     pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
         // get name components length by looking for space character
         let name_len = raw_name[0..8].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
-        let ext_len = raw_name[8..11].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
+        let ext_len = raw_name[8..11]
+            .iter()
+            .rposition(|x| *x != Self::PADDING)
+            .map(|p| p + 1)
+            .unwrap_or(0);
         let mut name = [Self::PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
             name[name_len] = '.' as u8;
-            name[name_len+1..name_len+1+ext_len].copy_from_slice(&raw_name[8..8+ext_len]);
+            name[name_len + 1..name_len + 1 + ext_len].copy_from_slice(&raw_name[8..8 + ext_len]);
             // Return total name length
-            name_len+1+ext_len
+            name_len + 1 + ext_len
         } else {
             // No extension - return length of name part
             name_len
@@ -125,7 +128,8 @@ pub(crate) struct DirFileEntryData {
 impl DirFileEntryData {
     pub(crate) fn new(name: [u8; 11], attrs: FileAttributes) -> Self {
         DirFileEntryData {
-            name, attrs,
+            name,
+            attrs,
             ..Default::default()
         }
     }
@@ -157,9 +161,14 @@ impl DirFileEntryData {
     }
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
-        let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
+        let first_cluster_hi =
+            if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
         let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
-        if n == 0 { None } else { Some(n) }
+        if n == 0 {
+            None
+        } else {
+            Some(n)
+        }
     }
 
     pub(crate) fn set_first_cluster(&mut self, cluster: Option<u32>, fat_type: FatType) {
@@ -314,7 +323,8 @@ pub(crate) struct DirLfnEntryData {
 impl DirLfnEntryData {
     pub(crate) fn new(order: u8, checksum: u8) -> Self {
         DirLfnEntryData {
-            order, checksum,
+            order,
+            checksum,
             attrs: FileAttributes::LFN,
             ..Default::default()
         }
@@ -322,8 +332,8 @@ impl DirLfnEntryData {
 
     pub(crate) fn copy_name_from_slice(&mut self, lfn_part: &[u16; LFN_PART_LEN]) {
         self.name_0.copy_from_slice(&lfn_part[0..5]);
-        self.name_1.copy_from_slice(&lfn_part[5..5+6]);
-        self.name_2.copy_from_slice(&lfn_part[11..11+2]);
+        self.name_1.copy_from_slice(&lfn_part[5..5 + 6]);
+        self.name_2.copy_from_slice(&lfn_part[11..11 + 2]);
     }
 
     pub(crate) fn copy_name_to_slice(&self, lfn_part: &mut [u16]) {
@@ -394,10 +404,8 @@ impl DirEntryData {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
                 // entries can occupy all clusters of directory so there is no zero entry at the end
                 // handle it here by returning non-existing empty entry
-                return Ok(DirEntryData::File(DirFileEntryData {
-                    ..Default::default()
-                }));
-            }
+                return Ok(DirEntryData::File(DirFileEntryData { ..Default::default() }));
+            },
             Err(err) => return Err(err),
             _ => {},
         }
@@ -405,7 +413,8 @@ impl DirEntryData {
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             // read long name entry
             let mut data = DirLfnEntryData {
-                attrs, ..Default::default()
+                attrs,
+                ..Default::default()
             };
             // use cursor to divide name into order and LFN name_0
             let mut cur = Cursor::new(&name);
@@ -422,16 +431,16 @@ impl DirEntryData {
             let data = DirFileEntryData {
                 name,
                 attrs,
-                reserved_0:       rdr.read_u8()?,
-                create_time_0:    rdr.read_u8()?,
-                create_time_1:    rdr.read_u16::<LittleEndian>()?,
-                create_date:      rdr.read_u16::<LittleEndian>()?,
-                access_date:      rdr.read_u16::<LittleEndian>()?,
+                reserved_0: rdr.read_u8()?,
+                create_time_0: rdr.read_u8()?,
+                create_time_1: rdr.read_u16::<LittleEndian>()?,
+                create_date: rdr.read_u16::<LittleEndian>()?,
+                access_date: rdr.read_u16::<LittleEndian>()?,
                 first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
-                modify_time:      rdr.read_u16::<LittleEndian>()?,
-                modify_date:      rdr.read_u16::<LittleEndian>()?,
+                modify_time: rdr.read_u16::<LittleEndian>()?,
+                modify_date: rdr.read_u16::<LittleEndian>()?,
                 first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
-                size:             rdr.read_u32::<LittleEndian>()?,
+                size: rdr.read_u32::<LittleEndian>()?,
             };
             Ok(DirEntryData::File(data))
         }
@@ -544,9 +553,12 @@ impl From<Date> for chrono::Date<Local> {
 #[cfg(feature = "chrono")]
 impl From<DateTime> for chrono::DateTime<Local> {
     fn from(date_time: DateTime) -> Self {
-        chrono::Date::<Local>::from(date_time.date)
-            .and_hms_milli(date_time.time.hour as u32, date_time.time.min as u32,
-                date_time.time.sec as u32, date_time.time.millis as u32)
+        chrono::Date::<Local>::from(date_time.date).and_hms_milli(
+            date_time.time.hour as u32,
+            date_time.time.min as u32,
+            date_time.time.sec as u32,
+            date_time.time.millis as u32,
+        )
     }
 }
 
@@ -585,10 +597,7 @@ pub(crate) struct DirEntryEditor {
 
 impl DirEntryEditor {
     fn new(data: DirFileEntryData, pos: u64) -> Self {
-        DirEntryEditor {
-            data, pos,
-            dirty: false,
-        }
+        DirEntryEditor { data, pos, dirty: false }
     }
 
     pub(crate) fn inner(&self) -> &DirFileEntryData {
@@ -671,7 +680,7 @@ pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
     pub(crate) fs: &'a FileSystem<T>,
 }
 
-impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
+impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns short file name.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
@@ -789,7 +798,7 @@ impl <'a, T: ReadWriteSeek> DirEntry<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
+impl<'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }
@@ -802,20 +811,26 @@ mod tests {
 
     #[test]
     fn short_name_with_ext() {
-        let mut raw_short_name = [0u8;11];
+        let mut raw_short_name = [0u8; 11];
         raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
         raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
         raw_short_name[0] = 0x99;
         raw_short_name[10] = 0x99;
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "\u{FFFD}OOK AT.M \u{FFFD}");
-        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
+        assert_eq!(
+            ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER),
+            "\u{FFFD}OOK AT.M \u{FFFD}"
+        );
+        assert_eq!(
+            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            true
+        );
     }
 
     #[test]
     fn short_name_without_ext() {
-        let mut raw_short_name = [0u8;11];
+        let mut raw_short_name = [0u8; 11];
         raw_short_name.copy_from_slice("FOO        ".as_bytes());
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
         raw_short_name.copy_from_slice("LOOK AT    ".as_bytes());
@@ -824,23 +839,32 @@ mod tests {
 
     #[test]
     fn short_name_eq_ignore_case() {
-        let mut raw_short_name = [0u8;11];
+        let mut raw_short_name = [0u8; 11];
         raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
         raw_short_name[0] = 0x99;
         raw_short_name[10] = 0x99;
-        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
-        assert_eq!(ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER), true);
+        assert_eq!(
+            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            true
+        );
+        assert_eq!(
+            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            true
+        );
     }
 
     #[test]
     fn short_name_05_changed_to_e5() {
-        let raw_short_name = [0x05;11];
-        assert_eq!(ShortName::new(&raw_short_name).as_bytes(), [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, '.' as u8, 0x05, 0x05, 0x05]);
+        let raw_short_name = [0x05; 11];
+        assert_eq!(
+            ShortName::new(&raw_short_name).as_bytes(),
+            [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, '.' as u8, 0x05, 0x05, 0x05]
+        );
     }
 
     #[test]
     fn lowercase_short_name() {
-        let mut raw_short_name = [0u8;11];
+        let mut raw_short_name = [0u8; 11];
         raw_short_name.copy_from_slice("FOO     RS ".as_bytes());
         let mut raw_entry = DirFileEntryData {
             name: raw_short_name,

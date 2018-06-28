@@ -1,27 +1,24 @@
-#[cfg(feature = "alloc")]
-use core::{slice, iter};
-use core::{str, char, cmp, num};
-
-use io::prelude::*;
-use io;
-use io::{ErrorKind, SeekFrom};
-
-use fs::{FileSystem, DiskSlice, ReadWriteSeek};
-use file::File;
-use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
-
-#[cfg(feature = "alloc")]
-use dir_entry::{LFN_PART_LEN, LFN_ENTRY_LAST_FLAG};
-
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::Vec;
+use core::{char, cmp, num, str};
+#[cfg(feature = "alloc")]
+use core::{iter, slice};
+use io;
+use io::prelude::*;
+use io::{ErrorKind, SeekFrom};
+
+use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
+#[cfg(feature = "alloc")]
+use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
+use file::File;
+use fs::{DiskSlice, FileSystem, ReadWriteSeek};
 
 pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
     File(File<'a, T>),
     Root(DiskSlice<'a, T>),
 }
 
-impl <'a, T: ReadWriteSeek> DirRawStream<'a, T> {
+impl<'a, T: ReadWriteSeek> DirRawStream<'a, T> {
     fn abs_pos(&self) -> Option<u64> {
         match self {
             &DirRawStream::File(ref file) => file.abs_pos(),
@@ -38,7 +35,7 @@ impl <'a, T: ReadWriteSeek> DirRawStream<'a, T> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl <'a, T: ReadWriteSeek> Clone for DirRawStream<'a, T> {
+impl<'a, T: ReadWriteSeek> Clone for DirRawStream<'a, T> {
     fn clone(&self) -> Self {
         match self {
             &DirRawStream::File(ref file) => DirRawStream::File(file.clone()),
@@ -47,7 +44,7 @@ impl <'a, T: ReadWriteSeek> Clone for DirRawStream<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Read for DirRawStream<'a, T> {
+impl<'a, T: ReadWriteSeek> Read for DirRawStream<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.read(buf),
@@ -56,7 +53,7 @@ impl <'a, T: ReadWriteSeek> Read for DirRawStream<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Write for DirRawStream<'a, T> {
+impl<'a, T: ReadWriteSeek> Write for DirRawStream<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.write(buf),
@@ -71,7 +68,7 @@ impl <'a, T: ReadWriteSeek> Write for DirRawStream<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Seek for DirRawStream<'a, T> {
+impl<'a, T: ReadWriteSeek> Seek for DirRawStream<'a, T> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.seek(pos),
@@ -102,7 +99,7 @@ pub struct Dir<'a, T: ReadWriteSeek + 'a> {
     fs: &'a FileSystem<T>,
 }
 
-impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
+impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     pub(crate) fn new(stream: DirRawStream<'a, T>, fs: &'a FileSystem<T>) -> Self {
         Dir { stream, fs }
     }
@@ -116,7 +113,12 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         }
     }
 
-    fn find_entry(&self, name: &str, is_dir: Option<bool>, mut short_name_gen: Option<&mut ShortNameGenerator>) -> io::Result<DirEntry<'a, T>> {
+    fn find_entry(
+        &self,
+        name: &str,
+        is_dir: Option<bool>,
+        mut short_name_gen: Option<&mut ShortNameGenerator>,
+    ) -> io::Result<DirEntry<'a, T>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
@@ -311,7 +313,6 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
-
     fn rename_internal(&self, src_name: &str, dst_dir: &Dir<T>, dst_name: &str) -> io::Result<()> {
         trace!("moving {} to {}", src_name, dst_name);
         // find existing file
@@ -436,7 +437,7 @@ impl <'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl <'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
+impl<'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
     fn clone(&self) -> Self {
         Self {
             stream: self.stream.clone(),
@@ -454,7 +455,7 @@ pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
     err: bool,
 }
 
-impl <'a, T: ReadWriteSeek> DirIter<'a, T> {
+impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, T>>> {
         #[cfg(feature = "alloc")]
         let mut lfn_buf = LongNameBuilder::new();
@@ -504,14 +505,14 @@ impl <'a, T: ReadWriteSeek> DirIter<'a, T> {
                     // Append to LFN buffer
                     #[cfg(feature = "alloc")]
                     lfn_buf.process(&data);
-                }
+                },
             }
         }
     }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl <'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
+impl<'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
     fn clone(&self) -> Self {
         Self {
             stream: self.stream.clone(),
@@ -521,7 +522,7 @@ impl <'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Iterator for DirIter<'a, T> {
+impl<'a, T: ReadWriteSeek> Iterator for DirIter<'a, T> {
     type Item = io::Result<DirEntry<'a, T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -551,9 +552,10 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     // check if there are only valid characters
     for c in name.chars() {
         match c {
-            'a'...'z' | 'A'...'Z' | '0'...'9' | '\u{80}'...'\u{FFFF}' |
-            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' |
-            '.' | ' ' | '+' | ',' | ';' | '=' | '[' | ']' => {},
+            'a'...'z' | 'A'...'Z' | '0'...'9' => {},
+            '\u{80}'...'\u{FFFF}' => {},
+            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ',' | ';' | '=' | '['
+            | ']' => {},
             _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
         }
     }
@@ -605,7 +607,7 @@ impl LongNameBuilder {
         // Truncate 0 and 0xFFFF characters from LFN buffer
         let mut lfn_len = self.buf.len();
         while lfn_len > 0 {
-            match self.buf[lfn_len-1] {
+            match self.buf[lfn_len - 1] {
                 0xFFFF | 0 => lfn_len -= 1,
                 _ => break,
             }
@@ -629,7 +631,13 @@ impl LongNameBuilder {
             self.buf.resize(index as usize * LFN_PART_LEN, 0);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
-            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order(), self.index, data.checksum(), self.chksum);
+            warn!(
+                "currupted lfn entry! {:x} {:x} {:x} {:x}",
+                data.order(),
+                self.index,
+                data.checksum(),
+                self.chksum
+            );
             self.clear();
             return;
         } else {
@@ -638,7 +646,7 @@ impl LongNameBuilder {
         }
         let pos = LFN_PART_LEN * (index - 1) as usize;
         // copy name parts into LFN buffer
-        data.copy_name_to_slice(&mut self.buf[pos..pos+13]);
+        data.copy_name_to_slice(&mut self.buf[pos..pos + 13]);
     }
 
     fn validate_chksum(&mut self, short_name: &[u8]) {
@@ -710,7 +718,7 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
                 // end of name
                 self.ended = true;
                 None
-            }
+            },
         }
     }
 
@@ -744,18 +752,21 @@ impl ShortNameGenerator {
             Some(index) => {
                 // extension found - copy parts before and after dot
                 let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name[..index]);
-                let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[index+1..]);
+                let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[index + 1..]);
                 (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
             },
             None => {
                 // no extension - copy name and leave extension empty
                 let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name);
                 (basename_len, basename_fits, basename_lossy)
-            }
+            },
         };
         let chksum = Self::checksum(name);
         Self {
-            short_name, chksum, name_fits, lossy_conv,
+            short_name,
+            chksum,
+            name_fits,
+            lossy_conv,
             basename_len: basename_len as u8,
             ..Default::default()
         }
@@ -777,9 +788,8 @@ impl ShortNameGenerator {
                     continue;
                 },
                 // copy allowed characters
-                'A'...'Z' | 'a'...'z' | '0'...'9' |
-                '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' |
-                '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
+                'A'...'Z' | 'a'...'z' | '0'...'9' => c,
+                '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
                 // replace disallowed characters by underscore
                 _ => '_',
             };
@@ -800,7 +810,11 @@ impl ShortNameGenerator {
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
         let prefix_len = cmp::min(self.basename_len, 6) as usize;
-        let num_suffix = if short_name[prefix_len] as char == '~' { (short_name[prefix_len+1] as char).to_digit(10) } else { None };
+        let num_suffix = if short_name[prefix_len] as char == '~' {
+            (short_name[prefix_len + 1] as char).to_digit(10)
+        } else {
+            None
+        };
         let ext_matches = short_name[8..] == self.short_name[8..];
         if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
             let num = num_suffix.unwrap(); // SAFE
@@ -809,9 +823,13 @@ impl ShortNameGenerator {
 
         // check for short prefix + checksum form collision (TE021F~1.TXT)
         let prefix_len = cmp::min(self.basename_len, 2) as usize;
-        let num_suffix = if short_name[prefix_len+4] as char == '~' { (short_name[prefix_len+4+1] as char).to_digit(10) } else { None };
+        let num_suffix = if short_name[prefix_len + 4] as char == '~' {
+            (short_name[prefix_len + 4 + 1] as char).to_digit(10)
+        } else {
+            None
+        };
         if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
-            let chksum_res = str::from_utf8(&short_name[prefix_len..prefix_len+4]).map(|s| u16::from_str_radix(s, 16));
+            let chksum_res = str::from_utf8(&short_name[prefix_len..prefix_len + 4]).map(|s| u16::from_str_radix(s, 16));
             if chksum_res == Ok(Ok(self.chksum)) {
                 let num = num_suffix.unwrap(); // SAFE
                 self.prefix_chksum_bitmap |= 1 << num;
@@ -876,12 +894,12 @@ impl ShortNameGenerator {
         buf
     }
 
-    fn u16_to_u8_array(x: u16) -> [u8;4] {
+    fn u16_to_u8_array(x: u16) -> [u8; 4] {
         let c1 = char::from_digit((x as u32 >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c2 = char::from_digit((x as u32 >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c3 = char::from_digit((x as u32 >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c4 = char::from_digit((x as u32 >> 0) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        return [c1, c2, c3, c4]
+        return [c1, c2, c3, c4];
     }
 }
 
@@ -902,8 +920,14 @@ mod tests {
         assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), "FOO     B  ".as_bytes());
         assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), "FOO     BAR".as_bytes());
         assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), "FOO_1~1 BAR".as_bytes());
-        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), "VER_12~1TEX".as_bytes());
-        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), "BASHRC~1SWP".as_bytes());
+        assert_eq!(
+            &ShortNameGenerator::new("ver +1.2.text").generate().unwrap(),
+            "VER_12~1TEX".as_bytes()
+        );
+        assert_eq!(
+            &ShortNameGenerator::new(".bashrc.swp").generate().unwrap(),
+            "BASHRC~1SWP".as_bytes()
+        );
     }
 
     #[test]
@@ -913,7 +937,9 @@ mod tests {
 
     #[test]
     fn test_lfn_checksum_overflow() {
-        lfn_checksum(&[0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]);
+        lfn_checksum(&[
+            0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8,
+        ]);
     }
 
     #[test]

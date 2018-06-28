@@ -1,20 +1,20 @@
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::String;
 use core::cell::RefCell;
-use core::cmp;
 use core::char;
+use core::cmp;
 use core::iter::FromIterator;
+use io;
 use io::prelude::*;
 use io::{Error, ErrorKind, SeekFrom};
-use io;
+
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use file::File;
-use dir::{DirRawStream, Dir};
+use dir::{Dir, DirRawStream};
 use dir_entry::DIR_ENTRY_SIZE;
-use table::{ClusterIterator, alloc_cluster, read_fat_flags, count_free_clusters};
-
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::String;
+use file::File;
+use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -68,11 +68,11 @@ impl FsStatusFlags {
 
 /// A sum of `Read` and `Seek` traits.
 pub trait ReadSeek: Read + Seek {}
-impl<T> ReadSeek for T where T: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
 
 /// A sum of `Read`, `Write` and `Seek` traits.
 pub trait ReadWriteSeek: Read + Write + Seek {}
-impl<T> ReadWriteSeek for T where T: Read + Write + Seek {}
+impl<T: Read + Write + Seek> ReadWriteSeek for T {}
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone)]
@@ -113,7 +113,7 @@ impl BiosParameterBlock {
         bpb.sectors_per_cluster = rdr.read_u8()?;
         bpb.reserved_sectors = rdr.read_u16::<LittleEndian>()?;
         bpb.fats = rdr.read_u8()?;
-        bpb.root_entries = rdr.read_u16::<LittleEndian>()? ;
+        bpb.root_entries = rdr.read_u16::<LittleEndian>()?;
         bpb.total_sectors_16 = rdr.read_u16::<LittleEndian>()?;
         bpb.media = rdr.read_u8()?;
         bpb.sectors_per_fat_16 = rdr.read_u16::<LittleEndian>()?;
@@ -259,7 +259,8 @@ impl FsInfoSector {
             return Err(Error::new(ErrorKind::Other, "invalid trail_sig in FsInfo sector"));
         }
         Ok(FsInfoSector {
-            free_cluster_count, next_free_cluster,
+            free_cluster_count,
+            next_free_cluster,
             dirty: false,
         })
     }
@@ -365,7 +366,7 @@ pub struct FileSystem<T: ReadWriteSeek> {
     fs_info: RefCell<FsInfoSector>,
 }
 
-impl <T: ReadWriteSeek> FileSystem<T> {
+impl<T: ReadWriteSeek> FileSystem<T> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
@@ -391,12 +392,16 @@ impl <T: ReadWriteSeek> FileSystem<T> {
             return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
         }
 
-        let total_sectors =
-            if bpb.total_sectors_16 == 0 { bpb.total_sectors_32 }
-            else { bpb.total_sectors_16 as u32 };
-        let sectors_per_fat =
-            if bpb.sectors_per_fat_16 == 0 { bpb.sectors_per_fat_32 }
-            else { bpb.sectors_per_fat_16 as u32 };
+        let total_sectors = if bpb.total_sectors_16 == 0 {
+            bpb.total_sectors_32
+        } else {
+            bpb.total_sectors_16 as u32
+        };
+        let sectors_per_fat = if bpb.sectors_per_fat_16 == 0 {
+            bpb.sectors_per_fat_32
+        } else {
+            bpb.sectors_per_fat_16 as u32
+        };
         let root_dir_bytes = bpb.root_entries as u32 * DIR_ENTRY_SIZE as u32;
         let root_dir_sectors = (root_dir_bytes + (bpb.bytes_per_sector as u32 - 1)) / bpb.bytes_per_sector as u32;
         let first_data_sector = bpb.reserved_sectors as u32 + (bpb.fats as u32 * sectors_per_fat) + root_dir_sectors;
@@ -423,7 +428,7 @@ impl <T: ReadWriteSeek> FileSystem<T> {
             disk: RefCell::new(disk),
             options,
             fat_type,
-            bpb: bpb,
+            bpb,
             first_data_sector,
             root_dir_sectors,
             total_clusters,
@@ -471,7 +476,11 @@ impl <T: ReadWriteSeek> FileSystem<T> {
         let root_rdr = {
             match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
-                   self.first_data_sector - self.root_dir_sectors, self.root_dir_sectors, 1, self)),
+                    self.first_data_sector - self.root_dir_sectors,
+                    self.root_dir_sectors,
+                    1,
+                    self,
+                )),
                 _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
             }
         };
@@ -495,9 +504,11 @@ impl <T: ReadWriteSeek> FileSystem<T> {
     }
 
     fn fat_slice<'b>(&'b self) -> DiskSlice<'b, T> {
-        let sectors_per_fat =
-            if self.bpb.sectors_per_fat_16 == 0 { self.bpb.sectors_per_fat_32 }
-            else { self.bpb.sectors_per_fat_16 as u32 };
+        let sectors_per_fat = if self.bpb.sectors_per_fat_16 == 0 {
+            self.bpb.sectors_per_fat_32
+        } else {
+            self.bpb.sectors_per_fat_16 as u32
+        };
         let mirroring_enabled = self.bpb.mirroring_enabled();
         let (fat_first_sector, mirrors) = if mirroring_enabled {
             (self.bpb.reserved_sectors as u32, self.bpb.fats)
@@ -616,14 +627,25 @@ pub(crate) struct DiskSlice<'a, T: ReadWriteSeek + 'a> {
     fs: &'a FileSystem<T>,
 }
 
-impl <'a, T: ReadWriteSeek> DiskSlice<'a, T> {
+impl<'a, T: ReadWriteSeek> DiskSlice<'a, T> {
     pub(crate) fn new(begin: u64, size: u64, mirrors: u8, fs: &'a FileSystem<T>) -> Self {
-        DiskSlice { begin, size, mirrors, fs, offset: 0 }
+        DiskSlice {
+            begin,
+            size,
+            mirrors,
+            fs,
+            offset: 0,
+        }
     }
 
     pub(crate) fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, fs: &'a FileSystem<T>) -> Self {
         let bytes_per_sector = fs.bpb.bytes_per_sector as u64;
-        Self::new(first_sector as u64 * bytes_per_sector, sector_count as u64 * bytes_per_sector, mirrors, fs)
+        Self::new(
+            first_sector as u64 * bytes_per_sector,
+            sector_count as u64 * bytes_per_sector,
+            mirrors,
+            fs,
+        )
     }
 
     pub(crate) fn abs_pos(&self) -> u64 {
@@ -632,7 +654,7 @@ impl <'a, T: ReadWriteSeek> DiskSlice<'a, T> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl <'a, T: ReadWriteSeek> Clone for DiskSlice<'a, T> {
+impl<'a, T: ReadWriteSeek> Clone for DiskSlice<'a, T> {
     fn clone(&self) -> Self {
         DiskSlice {
             begin: self.begin,
@@ -644,7 +666,7 @@ impl <'a, T: ReadWriteSeek> Clone for DiskSlice<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Read for DiskSlice<'a, T> {
+impl<'a, T: ReadWriteSeek> Read for DiskSlice<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -656,7 +678,7 @@ impl <'a, T: ReadWriteSeek> Read for DiskSlice<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Write for DiskSlice<'a, T> {
+impl<'a, T: ReadWriteSeek> Write for DiskSlice<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -675,7 +697,7 @@ impl <'a, T: ReadWriteSeek> Write for DiskSlice<'a, T> {
     }
 }
 
-impl <'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
+impl<'a, T: ReadWriteSeek> Seek for DiskSlice<'a, T> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

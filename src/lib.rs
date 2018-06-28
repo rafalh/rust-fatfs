@@ -54,12 +54,10 @@
 
 #![crate_type = "lib"]
 #![crate_name = "fatfs"]
-
-#![cfg_attr(not(feature="std"), no_std)]
-#![cfg_attr(not(feature="std"), feature(alloc))]
-
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(alloc))]
 // Disable warnings to not clutter code with cfg too much
-#![cfg_attr(not(feature="alloc"), allow(dead_code, unused_imports))]
+#![cfg_attr(not(feature = "alloc"), allow(dead_code, unused_imports))]
 
 extern crate byteorder;
 
@@ -78,28 +76,28 @@ extern crate core_io;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
 
-mod fs;
 mod dir;
 mod dir_entry;
 mod file;
+mod fs;
 mod table;
 
 #[cfg(not(feature = "std"))]
 mod byteorder_core_io;
 
-#[cfg(not(feature = "std"))]
-use byteorder_core_io as byteorder_ext;
 #[cfg(feature = "std")]
 use byteorder as byteorder_ext;
-#[cfg(feature = "std")]
-use std as core;
+#[cfg(not(feature = "std"))]
+use byteorder_core_io as byteorder_ext;
 #[cfg(not(feature = "std"))]
 use core_io as io;
+#[cfg(feature = "std")]
+use std as core;
 
 #[cfg(feature = "std")]
-use std::io as io;
+use std::io;
 
-pub use fs::*;
 pub use dir::*;
 pub use dir_entry::*;
 pub use file::*;
+pub use fs::*;
