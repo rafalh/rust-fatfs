@@ -306,26 +306,38 @@ fn test_rename_file_fat32() {
     call_with_fs(&test_rename_file, FAT32_IMG, 6)
 }
 
+fn test_dirty_flag(tmp_path: &str) {
+    // Open filesystem, make change, and forget it - should become dirty
+    let fs = open_filesystem_rw(tmp_path);
+    let status_flags = fs.read_status_flags().unwrap();
+    assert_eq!(status_flags.dirty(), false);
+    assert_eq!(status_flags.io_error(), false);
+    fs.root_dir().create_file("abc.txt").unwrap();
+    mem::forget(fs);
+    // Check if volume is dirty now
+    let fs = open_filesystem_rw(tmp_path);
+    let status_flags = fs.read_status_flags().unwrap();
+    assert_eq!(status_flags.dirty(), true);
+    assert_eq!(status_flags.io_error(), false);
+    fs.unmount().unwrap();
+    // Make sure remounting does not clear the dirty flag
+    let fs = open_filesystem_rw(tmp_path);
+    let status_flags = fs.read_status_flags().unwrap();
+    assert_eq!(status_flags.dirty(), true);
+    assert_eq!(status_flags.io_error(), false);
+}
+
 #[test]
-fn test_dirty_flag() {
-    call_with_tmp_img(&|tmp_path| {
-        // Open filesystem, make change, and forget it - should become dirty
-        let fs = open_filesystem_rw(tmp_path);
-        let status_flags = fs.read_status_flags().unwrap();
-        assert_eq!(status_flags.dirty(), false);
-        assert_eq!(status_flags.io_error(), false);
-        fs.root_dir().create_file("abc.txt").unwrap();
-        mem::forget(fs);
-        // Check if volume is dirty now
-        let fs = open_filesystem_rw(tmp_path);
-        let status_flags = fs.read_status_flags().unwrap();
-        assert_eq!(status_flags.dirty(), true);
-        assert_eq!(status_flags.io_error(), false);
-        fs.unmount().unwrap();
-        // Make sure remounting does not clear the dirty flag
-        let fs = open_filesystem_rw(tmp_path);
-        let status_flags = fs.read_status_flags().unwrap();
-        assert_eq!(status_flags.dirty(), true);
-        assert_eq!(status_flags.io_error(), false);
-    }, FAT32_IMG, 7);
+fn test_dirty_flag_fat12() {
+    call_with_tmp_img(&test_dirty_flag, FAT12_IMG, 7)
+}
+
+#[test]
+fn test_dirty_flag_fat16() {
+    call_with_tmp_img(&test_dirty_flag, FAT16_IMG, 7)
+}
+
+#[test]
+fn test_dirty_flag_fat32() {
+    call_with_tmp_img(&test_dirty_flag, FAT32_IMG, 7)
 }
