@@ -1,6 +1,5 @@
 TODO
 ====
-* marking volume dirty on first write and not-dirty on unmount
 * support for a volume label file in the root directory
 * format volume API
 * add method for getting `DirEntry` from a path (possible names: metadata, lookup)

@@ -1,6 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::String;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
 use core::fmt::Debug;
@@ -65,6 +65,24 @@ impl FsStatusFlags {
     /// Checks if the volume has the IO Error flag active.
     pub fn io_error(&self) -> bool {
         self.io_error
+    }
+
+    fn encode(&self) -> u8 {
+        let mut res = 0u8;
+        if self.dirty {
+            res |= 1;
+        }
+        if self.io_error {
+            res |= 2;
+        }
+        res
+    }
+
+    fn decode(flags: u8) -> Self {
+        FsStatusFlags {
+            dirty: flags & 1 != 0,
+            io_error: flags & 2 != 0,
+        }
     }
 }
 
@@ -178,10 +196,7 @@ impl BiosParameterBlock {
     }
 
     fn status_flags(&self) -> FsStatusFlags {
-        FsStatusFlags {
-            dirty: self.reserved_1 & 1 != 0,
-            io_error: self.reserved_1 & 2 != 0,
-        }
+        FsStatusFlags::decode(self.reserved_1)
     }
 }
 
@@ -374,6 +389,7 @@ pub struct FileSystem<T: ReadWriteSeek> {
     root_dir_sectors: u32,
     total_clusters: u32,
     fs_info: RefCell<FsInfoSector>,
+    current_status_flags: Cell<FsStatusFlags>,
 }
 
 impl<T: ReadWriteSeek> FileSystem<T> {
@@ -434,6 +450,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         }
 
         // return FileSystem struct
+        let status_flags = bpb.status_flags();
         Ok(FileSystem {
             disk: RefCell::new(disk),
             options,
@@ -443,6 +460,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
             root_dir_sectors,
             total_clusters,
             fs_info: RefCell::new(fs_info),
+            current_status_flags: Cell::new(status_flags),
         })
     }
 
@@ -605,6 +623,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
     fn unmount_internal(&self) -> io::Result<()> {
         self.flush_fs_info()?;
+        self.set_dirty_flag(false)?;
         Ok(())
     }
 
@@ -616,6 +635,27 @@ impl<T: ReadWriteSeek> FileSystem<T> {
             fs_info.serialize(&mut *disk)?;
             fs_info.dirty = false;
         }
+        Ok(())
+    }
+
+    pub(crate) fn set_dirty_flag(&self, dirty: bool) -> io::Result<()> {
+        // Do not overwrite flags read from BPB on mount
+        let mut flags = self.bpb.status_flags();
+        flags.dirty |= dirty;
+        // Check if flags has changed
+        let current_flags = self.current_status_flags.get();
+        if flags == current_flags {
+            // Nothing to do
+            return Ok(());
+        }
+        let encoded = flags.encode();
+        // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
+        // Compute reserver_1 field offset and write new flags
+        let offset = if self.fat_type() == FatType::Fat32 { 0x041 } else { 0x025 };
+        let mut disk = self.disk.borrow_mut();
+        disk.seek(io::SeekFrom::Start(offset))?;
+        disk.write_u8(encoded)?;
+        self.current_status_flags.set(flags);
         Ok(())
     }
 }
@@ -692,8 +732,14 @@ impl<'a, T: ReadWriteSeek> Write for DiskSlice<'a, T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
+        if write_size == 0 {
+            return Ok(0);
+        }
+        // Mark the volume 'dirty'
+        self.fs.set_dirty_flag(true)?;
+        // Write data
+        let mut disk = self.fs.disk.borrow_mut();
         for i in 0..self.mirrors {
-            let mut disk = self.fs.disk.borrow_mut();
             disk.seek(SeekFrom::Start(offset + i as u64 * self.size))?;
             disk.write_all(&buf[..write_size])?;
         }

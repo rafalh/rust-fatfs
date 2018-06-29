@@ -5,6 +5,7 @@ extern crate fscommon;
 use std::fs;
 use std::io;
 use std::io::prelude::*;
+use std::mem;
 use std::str;
 
 use fatfs::FsOptions;
@@ -20,20 +21,28 @@ const TEST_STR2: &str = "Rust is cool!\n";
 
 type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
 
-fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
+fn call_with_tmp_img(f: &Fn(&str) -> (), filename: &str, test_seq: u32) {
     let _ = env_logger::try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
     fs::create_dir(TMP_DIR).ok();
     fs::copy(&img_path, &tmp_path).unwrap();
-    {
-        let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
-        let buf_file = BufStream::new(file);
-        let options = FsOptions::new().update_accessed_date(true);
-        let fs = FileSystem::new(buf_file, options).unwrap();
-        f(fs);
-    }
+    f(tmp_path.as_str());
     fs::remove_file(tmp_path).unwrap();
+}
+
+fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
+    let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
+    let buf_file = BufStream::new(file);
+    let options = FsOptions::new().update_accessed_date(true);
+    FileSystem::new(buf_file, options).unwrap()
+}
+
+fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
+    call_with_tmp_img(&|tmp_path| {
+        let fs = open_filesystem_rw(tmp_path);
+        f(fs);
+    }, filename, test_seq);
 }
 
 fn test_write_short_file(fs: FileSystem) {
@@ -295,4 +304,28 @@ fn test_rename_file_fat16() {
 #[test]
 fn test_rename_file_fat32() {
     call_with_fs(&test_rename_file, FAT32_IMG, 6)
+}
+
+#[test]
+fn test_dirty_flag() {
+    call_with_tmp_img(&|tmp_path| {
+        // Open filesystem, make change, and forget it - should become dirty
+        let fs = open_filesystem_rw(tmp_path);
+        let status_flags = fs.read_status_flags().unwrap();
+        assert_eq!(status_flags.dirty(), false);
+        assert_eq!(status_flags.io_error(), false);
+        fs.root_dir().create_file("abc.txt").unwrap();
+        mem::forget(fs);
+        // Check if volume is dirty now
+        let fs = open_filesystem_rw(tmp_path);
+        let status_flags = fs.read_status_flags().unwrap();
+        assert_eq!(status_flags.dirty(), true);
+        assert_eq!(status_flags.io_error(), false);
+        fs.unmount().unwrap();
+        // Make sure remounting does not clear the dirty flag
+        let fs = open_filesystem_rw(tmp_path);
+        let status_flags = fs.read_status_flags().unwrap();
+        assert_eq!(status_flags.dirty(), true);
+        assert_eq!(status_flags.io_error(), false);
+    }, FAT32_IMG, 7);
 }

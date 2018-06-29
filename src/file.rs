@@ -229,6 +229,8 @@ impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
         if write_size == 0 {
             return Ok(0);
         }
+        // Mark the volume 'dirty'
+        self.fs.set_dirty_flag(true)?;
         // Get cluster for write possibly allocating new one
         let current_cluster = if self.offset % cluster_size == 0 {
             // next cluster
