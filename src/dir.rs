@@ -409,22 +409,11 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         ()
     }
 
-    fn create_lfn_entries_generator(name: &str, short_name: &[u8]) -> io::Result<(LfnEntriesGenerator, LfnUtf16)> {
-        // check if name doesn't contain unsupported characters
-        validate_long_name(name)?;
-        // convert long name to UTF-16
-        let lfn_utf16 = Self::encode_lfn_utf16(name);
+    fn alloc_and_write_lfn_entries(&self, lfn_utf16: &LfnUtf16, short_name: &[u8]) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
-        let lfn_chsum = lfn_checksum(&short_name);
+        let lfn_chsum = lfn_checksum(short_name);
         // create LFN entries generator
         let lfn_iter = LfnEntriesGenerator::new(&lfn_utf16, lfn_chsum);
-        Ok((lfn_iter, lfn_utf16))
-    }
-
-    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, T>> {
-        trace!("write_entry {}", name);
-        // create LFN entries generator
-        let (lfn_iter, lfn_utf16) = Self::create_lfn_entries_generator(name, raw_entry.name())?;
         // find space for new entries (multiple LFN entries and 1 SFN entry)
         let num_entries = lfn_iter.len() + 1;
         let mut stream = self.find_free_entries(num_entries)?;
@@ -433,6 +422,16 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         for lfn_entry in lfn_iter {
             lfn_entry.serialize(&mut stream)?;
         }
+        Ok((stream, start_pos))
+    }
+
+    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, T>> {
+        trace!("write_entry {}", name);
+        // check if name doesn't contain unsupported characters
+        validate_long_name(name)?;
+        // convert long name to UTF-16
+        let lfn_utf16 = Self::encode_lfn_utf16(name);
+        let (mut stream, start_pos) = self.alloc_and_write_lfn_entries(&lfn_utf16, raw_entry.name())?;
         // write short name entry
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
