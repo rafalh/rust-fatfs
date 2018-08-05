@@ -476,7 +476,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
             return true;
         }
         match raw_entry {
-            DirEntryData::File(sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
+            &DirEntryData::File(ref sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
             _ => false,
         }
     }
