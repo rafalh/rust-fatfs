@@ -14,14 +14,14 @@ fn format_file_size(size: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
     const GB: u64 = 1024 * MB;
-    if size < 1024 {
+    if size < KB {
         format!("{}B", size)
     } else if size < MB {
         format!("{}KB", size / KB)
     } else if size < GB {
-        format!("{}KB", size / MB)
+        format!("{}MB", size / MB)
     } else {
-        format!("{}KB", size / GB)
+        format!("{}GB", size / GB)
     }
 }
 
