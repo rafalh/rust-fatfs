@@ -144,45 +144,51 @@ impl BiosParameterBlock {
 
         // sanity checks
         if bpb.bytes_per_sector.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
         } else if bpb.bytes_per_sector < 512 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
         } else if bpb.bytes_per_sector > 4096 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value > 4096)"));
         } 
 
         if bpb.sectors_per_cluster.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
         } else if bpb.sectors_per_cluster < 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
         } else if bpb.sectors_per_cluster > 128 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB"));
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
         }
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
-        let bytes_per_cluster : u32 = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32; 
-        let maximum_bytes_per_cluster : u32 = u32::max_value();
-        ////Microsoft documents indicate 32k is maximum for compatibility; 64k ***might*** work on some platforms
-        //let maximum_bytes_per_cluster : u32 = 64 * 1024;
-        //let maximum_bytes_per_cluster : u32 = 32 * 1024;
-        if bytes_per_cluster > maximum_bytes_per_cluster {
-            return Err(Error::new(ErrorKind::Other, "bytes_per_cluster (bytes_per_sector * sectors_per_cluster) too large in BPB"));
-        } else
+        let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
+        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
 
-        // warning: fat12 and fat16 code exists that presume value == 1
+        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
+            // 32k is the largest value to maintain greatest compatibility
+            // Many implementations appear to support 64k per cluster, and some may support 128k or larger
+            // However, >32k is not as thoroughly tested...
+            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds 32k, and thus may be incompatible with some implementations", bytes_per_cluster);
+        }
+
         if bpb.reserved_sectors < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
+        } else if bpb.reserved_sectors != 1 {
+            // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
+            warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
         }
-        // warning: code exists that only supports values 1 or 2, other values may cause compatibility problems
+
         if bpb.fats == 0 {
             return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
+        } else if bpb.fats > 2 {
+            // Microsoft document indicates that few implementations support any values other than 1 or 2
+            warn!("fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations", bpb.fats);
         }
 
         if bpb.is_fat32() {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
-            // should validate fs_version
             bpb.fs_version = rdr.read_u16::<LittleEndian>()?;
+            // TODO: Validate the only valid fs_version value is still zero, then check that here
             bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
             bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
             bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
