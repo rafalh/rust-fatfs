@@ -143,23 +143,52 @@ impl BiosParameterBlock {
         bpb.total_sectors_32 = rdr.read_u32::<LittleEndian>()?;
 
         // sanity checks
-        if bpb.bytes_per_sector < 512 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB"));
-        }
-        if bpb.sectors_per_cluster < 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB"));
-        }
-        if bpb.reserved_sectors < 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        }
-        if bpb.fats == 0 {
-            return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
+        if bpb.bytes_per_sector.count_ones() != 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
+        } else if bpb.bytes_per_sector < 512 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
+        } else if bpb.bytes_per_sector > 4096 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value > 4096)"));
+        } 
+
+        if bpb.sectors_per_cluster.count_ones() != 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
+        } else if bpb.sectors_per_cluster < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
+        } else if bpb.sectors_per_cluster > 128 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
         }
 
-        if bpb.sectors_per_fat_16 == 0 {
+        // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
+        let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
+        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
+
+        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
+            // 32k is the largest value to maintain greatest compatibility
+            // Many implementations appear to support 64k per cluster, and some may support 128k or larger
+            // However, >32k is not as thoroughly tested...
+            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds 32k, and thus may be incompatible with some implementations", bytes_per_cluster);
+        }
+
+        if bpb.reserved_sectors < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
+        } else if bpb.reserved_sectors != 1 {
+            // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
+            warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
+        }
+
+        if bpb.fats == 0 {
+            return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
+        } else if bpb.fats > 2 {
+            // Microsoft document indicates that few implementations support any values other than 1 or 2
+            warn!("fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations", bpb.fats);
+        }
+
+        if bpb.is_fat32() {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
             bpb.fs_version = rdr.read_u16::<LittleEndian>()?;
+            // TODO: Validate the only valid fs_version value is still zero, then check that here
             bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
             bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
             bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
@@ -178,12 +207,15 @@ impl BiosParameterBlock {
             rdr.read_exact(&mut bpb.volume_label)?;
             rdr.read_exact(&mut bpb.fs_type_label)?;
         }
+
+        // when the extended boot signature is anything other than 0x29, the fields are invalid
         if bpb.ext_sig != 0x29 {
             // fields after ext_sig are not used - clean them
             bpb.volume_id = 0;
             bpb.volume_label = [0; 11];
             bpb.fs_type_label = [0; 8];
         }
+
         Ok(bpb)
     }
 
@@ -192,11 +224,39 @@ impl BiosParameterBlock {
     }
 
     fn active_fat(&self) -> u16 {
-        self.extended_flags & 0x0F
+        // The zero-based number of the active FAT is only valid if mirroring is disabled.
+        if self.mirroring_enabled() {
+            0
+        } else {
+            self.extended_flags & 0x0F
+        }
     }
 
     fn status_flags(&self) -> FsStatusFlags {
         FsStatusFlags::decode(self.reserved_1)
+    }
+
+    fn is_fat32(&self) -> bool {
+        // because this field must be zero on FAT32, and
+        // because it must be non-zero on FAT12/FAT16,
+        // this provides a simple way to detect FAT32
+        self.sectors_per_fat_16 == 0
+    }
+
+    fn sectors_per_fat(&self) -> u32 {
+        if self.is_fat32() {
+            self.sectors_per_fat_32
+        } else {
+            self.sectors_per_fat_16 as u32
+        }
+    }
+
+    fn total_sectors(&self) -> u32 {
+        if self.total_sectors_16 == 0 {
+            self.total_sectors_32
+        } else {
+            self.total_sectors_16 as u32
+        }
     }
 }
 
@@ -216,7 +276,7 @@ impl BootRecord {
         rdr.read_exact(&mut boot.oem_name)?;
         boot.bpb = BiosParameterBlock::deserialize(rdr)?;
 
-        if boot.bpb.sectors_per_fat_16 == 0 {
+        if boot.bpb.is_fat32() {
             rdr.read_exact(&mut boot.boot_code[0..420])?;
         } else {
             rdr.read_exact(&mut boot.boot_code[0..448])?;
@@ -418,16 +478,8 @@ impl<T: ReadWriteSeek> FileSystem<T> {
             return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
         }
 
-        let total_sectors = if bpb.total_sectors_16 == 0 {
-            bpb.total_sectors_32
-        } else {
-            bpb.total_sectors_16 as u32
-        };
-        let sectors_per_fat = if bpb.sectors_per_fat_16 == 0 {
-            bpb.sectors_per_fat_32
-        } else {
-            bpb.sectors_per_fat_16 as u32
-        };
+        let total_sectors = bpb.total_sectors();
+        let sectors_per_fat = bpb.sectors_per_fat();
         let root_dir_bytes = bpb.root_entries as u32 * DIR_ENTRY_SIZE as u32;
         let root_dir_sectors = (root_dir_bytes + (bpb.bytes_per_sector as u32 - 1)) / bpb.bytes_per_sector as u32;
         let first_data_sector = bpb.reserved_sectors as u32 + (bpb.fats as u32 * sectors_per_fat) + root_dir_sectors;
@@ -565,11 +617,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     }
 
     fn fat_slice<'b>(&'b self) -> DiskSlice<'b, T> {
-        let sectors_per_fat = if self.bpb.sectors_per_fat_16 == 0 {
-            self.bpb.sectors_per_fat_32
-        } else {
-            self.bpb.sectors_per_fat_16 as u32
-        };
+        let sectors_per_fat = self.bpb.sectors_per_fat();
         let mirroring_enabled = self.bpb.mirroring_enabled();
         let (fat_first_sector, mirrors) = if mirroring_enabled {
             (self.bpb.reserved_sectors as u32, self.bpb.fats)
