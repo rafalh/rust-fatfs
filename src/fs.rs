@@ -15,7 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use dir::{Dir, DirRawStream};
 use dir_entry::DIR_ENTRY_SIZE;
 use file::File;
-use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator};
+use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
 use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
 
 // FAT implementation based on:
@@ -161,7 +161,6 @@ impl BiosParameterBlock {
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
         let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
-        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
         let maximum_compatibility_bytes_per_cluster : u32 = match bpb.bytes_per_sector {
             // Per Windows 10 format.exe output, bytes_per_sector larger than 512 allow greater bytes_per_cluster
             512 => 64 * 1024,
@@ -194,7 +193,6 @@ impl BiosParameterBlock {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
             bpb.fs_version = rdr.read_u16::<LittleEndian>()?;
-            // TODO: Validate the only valid fs_version value is still zero, then check that here
             bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
             bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
             bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
@@ -329,10 +327,16 @@ impl FsInfoSector {
         }
         let free_cluster_count = match rdr.read_u32::<LittleEndian>()? {
             0xFFFFFFFF => None,
+            // Note: BPB is required to determine if value is valid
             n => Some(n),
         };
         let next_free_cluster = match rdr.read_u32::<LittleEndian>()? {
             0xFFFFFFFF => None,
+            0 | 1 => {
+                warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
+                None            
+            },
+            // Note: BPB is required to determine if value is valid
             n => Some(n),
         };
         let mut reserved2 = [0u8; 12];
@@ -492,6 +496,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         let fat_sectors = bpb.fats as u32 * sectors_per_fat;
         let data_sectors = total_sectors - (bpb.reserved_sectors as u32 + fat_sectors + root_dir_sectors as u32);
         let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
+        let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
@@ -506,6 +511,22 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         if bpb.status_flags().dirty {
             fs_info.free_cluster_count = None;
         }
+
+        // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
+        match fs_info.free_cluster_count {
+            Some(n) if n > total_clusters => {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
+                fs_info.free_cluster_count = None;
+            },
+            _ => {},
+        };
+        match fs_info.next_free_cluster {
+            Some(n) if n > max_valid_cluster_number => {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})", n, max_valid_cluster_number);
+                fs_info.next_free_cluster = None;
+            },
+            _ => {},
+        };
 
         // return FileSystem struct
         let status_flags = bpb.status_flags();

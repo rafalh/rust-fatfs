@@ -14,7 +14,7 @@ type Fat12 = Fat<u8>;
 type Fat16 = Fat<u16>;
 type Fat32 = Fat<u32>;
 
-const RESERVED_FAT_ENTRIES: u32 = 2;
+pub const RESERVED_FAT_ENTRIES: u32 = 2;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum FatValue {
