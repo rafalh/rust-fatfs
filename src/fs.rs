@@ -171,13 +171,12 @@ impl BiosParameterBlock {
             // 32k is the largest value to maintain greatest compatibility
             // Many implementations appear to support 64k per cluster, and some may support 128k or larger
             // However, >32k is not as thoroughly tested...
-            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds 32k, and thus may be incompatible with some implementations", bytes_per_cluster);
             warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations", bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
         }
 
         if bpb.reserved_sectors < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        } else if bpb.reserved_sectors != 1 {
+        } else if (!bpb.is_fat32()) && (bpb.reserved_sectors != 1) {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
             warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
         }
