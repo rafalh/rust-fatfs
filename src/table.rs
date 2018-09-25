@@ -273,11 +273,11 @@ impl FatTrait for Fat16 {
 impl FatTrait for Fat32 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
-        Ok(fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF)
+        Ok(fat.read_u32::<LittleEndian>()?)
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
-        let val = Self::get_raw(fat, cluster)?;
+        let val = Self::get_raw(fat, cluster)? & 0x0FFFFFFF;
         Ok(match val {
             0 if cluster == 0x0FFFFFF7 => {
                 warn!("cluster number 0x0FFFFFF7 is a special value in FAT to indicate a BAD_CLUSTER; it should never be seen as free");
@@ -303,7 +303,9 @@ impl FatTrait for Fat32 {
     }
 
     fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
+        let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF0000000;
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+
         let value = match value {
             FatValue::Free if cluster == 0x0FFFFFF7 => {
                 warn!("cluster number 0x0FFFFFF7 is a special value in FAT to indicate a BAD_CLUSTER; it should never be marked as free");
@@ -329,6 +331,7 @@ impl FatTrait for Fat32 {
             FatValue::EndOfChain => 0x0FFFFFFF,
             FatValue::Data(n) => n,
         };
+        let raw_val = raw_val | old_reserved_bits; // must preserve original reserved values
         fat.write_u32::<LittleEndian>(raw_val)?;
         Ok(())
     }
