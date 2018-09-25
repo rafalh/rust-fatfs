@@ -162,12 +162,18 @@ impl BiosParameterBlock {
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
         let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
         let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
+        let maximum_compatibility_bytes_per_cluster : u32 = match bpb.bytes_per_sector {
+            // Per Windows 10 format.exe output, bytes_per_sector larger than 512 allow greater bytes_per_cluster
+            512 => 64 * 1024,
+            _ => 256 * 1024,
+        };
 
         if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
             // 32k is the largest value to maintain greatest compatibility
             // Many implementations appear to support 64k per cluster, and some may support 128k or larger
             // However, >32k is not as thoroughly tested...
             warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds 32k, and thus may be incompatible with some implementations", bytes_per_cluster);
+            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations", bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
         }
 
         if bpb.reserved_sectors < 1 {
