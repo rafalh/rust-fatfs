@@ -431,6 +431,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         validate_long_name(name)?;
         // convert long name to UTF-16
         let lfn_utf16 = Self::encode_lfn_utf16(name);
+        // write LFN entries
         let (mut stream, start_pos) = self.alloc_and_write_lfn_entries(&lfn_utf16, raw_entry.name())?;
         // write short name entry
         raw_entry.serialize(&mut stream)?;
@@ -613,13 +614,14 @@ impl LongNameBuilder {
     }
 
     fn to_vec(mut self) -> Vec<u16> {
+        // Check if last processed entry had index 1
         if self.index == 1 {
             self.truncate();
-            self.buf
-        } else {
+        } else if !self.is_empty() {
             warn!("unfinished LFN sequence {}", self.index);
-            Vec::<u16>::new()
+            self.clear();
         }
+        self.buf
     }
 
     fn truncate(&mut self) {
@@ -632,6 +634,12 @@ impl LongNameBuilder {
             }
         }
         self.buf.truncate(lfn_len);
+    }
+
+    fn is_empty(&self) -> bool {
+        // Check if any LFN entry has been processed
+        // Note: index 0 is not a valid index in LFN and can be seen only after struct initialization
+        return self.index == 0;
     }
 
     fn process(&mut self, data: &DirLfnEntryData) {
@@ -669,6 +677,10 @@ impl LongNameBuilder {
     }
 
     fn validate_chksum(&mut self, short_name: &[u8]) {
+        if self.is_empty() {
+            // Nothing to validate - no LFN entries has been processed
+            return;
+        }
         let chksum = lfn_checksum(short_name);
         if chksum != self.chksum {
             warn!("checksum mismatch {:x} {:x} {:?}", chksum, self.chksum, short_name);
