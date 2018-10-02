@@ -326,7 +326,7 @@ impl FsInfoSector {
         }
         let free_cluster_count = match rdr.read_u32::<LittleEndian>()? {
             0xFFFFFFFF => None,
-            // Note: BPB is required to determine if value is valid
+            // Note: value is validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
         let next_free_cluster = match rdr.read_u32::<LittleEndian>()? {
@@ -335,7 +335,7 @@ impl FsInfoSector {
                 warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
                 None            
             },
-            // Note: BPB is required to determine if value is valid
+            // Note: other values are validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
         let mut reserved2 = [0u8; 12];
