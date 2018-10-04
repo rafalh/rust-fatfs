@@ -161,11 +161,7 @@ impl BiosParameterBlock {
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
         let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
-        let maximum_compatibility_bytes_per_cluster : u32 = match bpb.bytes_per_sector {
-            // Per Windows 10 format.exe output, bytes_per_sector larger than 512 allow greater bytes_per_cluster
-            512 => 64 * 1024,
-            _ => 256 * 1024,
-        };
+        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
 
         if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
             // 32k is the largest value to maintain greatest compatibility
@@ -176,7 +172,7 @@ impl BiosParameterBlock {
 
         if bpb.reserved_sectors < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        } else if (!bpb.is_fat32()) && (bpb.reserved_sectors != 1) {
+        } else if !bpb.is_fat32() && bpb.reserved_sectors != 1 {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
             warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
         }
