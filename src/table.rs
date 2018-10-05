@@ -1,5 +1,5 @@
 use io;
-use std::io::{Error,ErrorKind};
+use io::{Error, ErrorKind};
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
@@ -279,23 +279,17 @@ impl FatTrait for Fat32 {
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
         let val = Self::get_raw(fat, cluster)? & 0x0FFFFFFF;
         Ok(match val {
-            0 if cluster == 0x0FFFFFF7 => {
-                warn!("cluster number 0x0FFFFFF7 is a special value in FAT to indicate a BAD_CLUSTER; it should never be seen as free");
-                FatValue::Bad // avoid accidental use or allocation into a FAT chain
-            },
-            0 if cluster >= 0x0FFFFFF8 && cluster <= 0x0FFFFFFF => {
-                warn!("cluster number {} is a special value in FAT to indicate end-of-chain; it should never be seen as free", cluster);
+            0 if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
+                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                warn!("cluster number {} is a special value in FAT to indicate {}; it should never be seen as free", cluster, tmp);
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             },
             0 => FatValue::Free,
             0x0FFFFFF7 => FatValue::Bad,
             0x0FFFFFF8...0x0FFFFFFF => FatValue::EndOfChain,
-            n if cluster == 0x0FFFFFF7 => {
-                warn!("cluster number 0x0FFFFFF7 is special value in FAT to indicate a BAD_CLUSTER and thus should never be part of a FAT chain, but indicates next cluster is {}", n);
-                FatValue::Bad // avoid accidental use or allocation into a FAT chain
-            },
-            n if cluster >= 0x0FFFFFF8 && cluster <= 0x0FFFFFFF => {
-                warn!("cluster number {} is a special value in FAT to indicate end-of-chain and thus should never be part of a FAT chain, but indicates next cluster is {}", cluster, n);
+            n if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
+                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                warn!("cluster number {} is a special value in FAT to indicate {}; hiding potential FAT chain value {} and instead reporting as a bad sector", cluster, tmp, n);
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             },
             n => FatValue::Data(n as u32),
@@ -306,28 +300,14 @@ impl FatTrait for Fat32 {
         let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF0000000;
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
 
-        match value {
-            FatValue::Free if cluster == 0x0FFFFFF7 => {
-                let msg = "cluster number 0x0FFFFFF7 is a special value in FAT to indicate a BAD_CLUSTER; it should never be marked as free";
-                let custom_error = Error::new(ErrorKind::Other, msg);
-                return Err(custom_error);
-            },
-            FatValue::Free if cluster >= 0x0FFFFFF8 && cluster <= 0x0FFFFFFF => {
-                let msg = format!("cluster number {} is a special value in FAT to indicate end-of-chain; it should never be marked as free", cluster);
-                let custom_error = Error::new(ErrorKind::Other, msg);
-                return Err(custom_error);
-            },
-            FatValue::Data(n) if cluster == 0x0FFFFFF7 => {
-                let msg = format!("cluster number 0x0FFFFFF7 is special value in FAT to indicate a BAD_CLUSTER and thus should never be part of a FAT chain; it should never store a valid next cluster {}", n);
-                let custom_error = Error::new(ErrorKind::Other, msg);
-                return Err(custom_error);
-            },
-            FatValue::Data(n) if cluster >= 0x0FFFFFF8 && cluster <= 0x0FFFFFFF => {
-                let msg = format!("cluster number {} is a special value in FAT to indicate end-of-chain and thus should never be part of a FAT chain; it should never store a valid next cluster {}", cluster, n);
-                let custom_error = Error::new(ErrorKind::Other, msg);
-                return Err(custom_error);
-            },
-            _ => value
+        if value == FatValue::Free && cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF {
+            // NOTE: it is technically allowed for them to store FAT chain loops,
+            //       or even have them all store value '4' as their next cluster.
+            //       Some believe only FatValue::Bad should be allowed for this edge case.
+            let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            let msg = format!("cluster number {} is a special value in FAT to indicate {}; it should never be set as free", cluster, tmp);
+            let custom_error = Error::new(ErrorKind::Other, msg);
+            return Err(custom_error);
         };
         let raw_val = match value {
             FatValue::Free => 0,
