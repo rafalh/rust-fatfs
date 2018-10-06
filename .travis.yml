@@ -1,4 +1,6 @@
 language: rust
+env:
+  - RUST_LOG=warn RUST_BACKTRACE=1
 matrix:
   include:
     # Minimal supported rustc version
