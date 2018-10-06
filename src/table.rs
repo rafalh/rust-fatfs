@@ -1,5 +1,5 @@
 use io;
-
+use io::{Error, ErrorKind};
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
@@ -14,7 +14,7 @@ type Fat12 = Fat<u8>;
 type Fat16 = Fat<u16>;
 type Fat32 = Fat<u32>;
 
-const RESERVED_FAT_ENTRIES: u32 = 2;
+pub const RESERVED_FAT_ENTRIES: u32 = 2;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum FatValue {
@@ -273,27 +273,49 @@ impl FatTrait for Fat16 {
 impl FatTrait for Fat32 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
-        Ok(fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF)
+        Ok(fat.read_u32::<LittleEndian>()?)
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
-        let val = Self::get_raw(fat, cluster)?;
+        let val = Self::get_raw(fat, cluster)? & 0x0FFFFFFF;
         Ok(match val {
+            0 if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
+                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                warn!("cluster number {} is a special value in FAT to indicate {}; it should never be seen as free", cluster, tmp);
+                FatValue::Bad // avoid accidental use or allocation into a FAT chain
+            },
             0 => FatValue::Free,
             0x0FFFFFF7 => FatValue::Bad,
             0x0FFFFFF8...0x0FFFFFFF => FatValue::EndOfChain,
+            n if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
+                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                warn!("cluster number {} is a special value in FAT to indicate {}; hiding potential FAT chain value {} and instead reporting as a bad sector", cluster, tmp, n);
+                FatValue::Bad // avoid accidental use or allocation into a FAT chain
+            },
             n => FatValue::Data(n as u32),
         })
     }
 
     fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
+        let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF0000000;
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+
+        if value == FatValue::Free && cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF {
+            // NOTE: it is technically allowed for them to store FAT chain loops,
+            //       or even have them all store value '4' as their next cluster.
+            //       Some believe only FatValue::Bad should be allowed for this edge case.
+            let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            let msg = format!("cluster number {} is a special value in FAT to indicate {}; it should never be set as free", cluster, tmp);
+            let custom_error = Error::new(ErrorKind::Other, msg);
+            return Err(custom_error);
+        };
         let raw_val = match value {
             FatValue::Free => 0,
             FatValue::Bad => 0x0FFFFFF7,
             FatValue::EndOfChain => 0x0FFFFFFF,
             FatValue::Data(n) => n,
         };
+        let raw_val = raw_val | old_reserved_bits; // must preserve original reserved values
         fat.write_u32::<LittleEndian>(raw_val)?;
         Ok(())
     }

@@ -15,7 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use dir::{Dir, DirRawStream};
 use dir_entry::DIR_ENTRY_SIZE;
 use file::File;
-use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator};
+use table::{alloc_cluster, count_free_clusters, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
 use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
 
 // FAT implementation based on:
@@ -167,12 +167,12 @@ impl BiosParameterBlock {
             // 32k is the largest value to maintain greatest compatibility
             // Many implementations appear to support 64k per cluster, and some may support 128k or larger
             // However, >32k is not as thoroughly tested...
-            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds 32k, and thus may be incompatible with some implementations", bytes_per_cluster);
+            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations", bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
         }
 
         if bpb.reserved_sectors < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        } else if bpb.reserved_sectors != 1 {
+        } else if !bpb.is_fat32() && bpb.reserved_sectors != 1 {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
             warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
         }
@@ -188,7 +188,6 @@ impl BiosParameterBlock {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
             bpb.fs_version = rdr.read_u16::<LittleEndian>()?;
-            // TODO: Validate the only valid fs_version value is still zero, then check that here
             bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
             bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
             bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
@@ -323,10 +322,16 @@ impl FsInfoSector {
         }
         let free_cluster_count = match rdr.read_u32::<LittleEndian>()? {
             0xFFFFFFFF => None,
+            // Note: value is validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
         let next_free_cluster = match rdr.read_u32::<LittleEndian>()? {
             0xFFFFFFFF => None,
+            0 | 1 => {
+                warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
+                None            
+            },
+            // Note: other values are validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
         let mut reserved2 = [0u8; 12];
@@ -486,6 +491,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         let fat_sectors = bpb.fats as u32 * sectors_per_fat;
         let data_sectors = total_sectors - (bpb.reserved_sectors as u32 + fat_sectors + root_dir_sectors as u32);
         let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
+        let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
@@ -500,6 +506,22 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         if bpb.status_flags().dirty {
             fs_info.free_cluster_count = None;
         }
+
+        // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
+        match fs_info.free_cluster_count {
+            Some(n) if n > total_clusters => {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
+                fs_info.free_cluster_count = None;
+            },
+            _ => {},
+        };
+        match fs_info.next_free_cluster {
+            Some(n) if n > max_valid_cluster_number => {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})", n, max_valid_cluster_number);
+                fs_info.next_free_cluster = None;
+            },
+            _ => {},
+        };
 
         // return FileSystem struct
         let status_flags = bpb.status_flags();
