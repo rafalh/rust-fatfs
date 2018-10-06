@@ -1,5 +1,4 @@
 use io;
-use io::{Error, ErrorKind};
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
@@ -305,9 +304,7 @@ impl FatTrait for Fat32 {
             //       or even have them all store value '4' as their next cluster.
             //       Some believe only FatValue::Bad should be allowed for this edge case.
             let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
-            let msg = format!("cluster number {} is a special value in FAT to indicate {}; it should never be set as free", cluster, tmp);
-            let custom_error = Error::new(ErrorKind::Other, msg);
-            return Err(custom_error);
+            panic!("cluster number {} is a special value in FAT to indicate {}; it should never be set as free", cluster, tmp);
         };
         let raw_val = match value {
             FatValue::Free => 0,
