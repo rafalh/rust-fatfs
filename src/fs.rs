@@ -142,48 +142,6 @@ impl BiosParameterBlock {
         bpb.hidden_sectors = rdr.read_u32::<LittleEndian>()?;
         bpb.total_sectors_32 = rdr.read_u32::<LittleEndian>()?;
 
-        // sanity checks
-        if bpb.bytes_per_sector.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
-        } else if bpb.bytes_per_sector < 512 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
-        } else if bpb.bytes_per_sector > 4096 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value > 4096)"));
-        } 
-
-        if bpb.sectors_per_cluster.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
-        } else if bpb.sectors_per_cluster < 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
-        } else if bpb.sectors_per_cluster > 128 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
-        }
-
-        // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
-        let bytes_per_cluster = bpb.bytes_per_sector as u32 * bpb.sectors_per_cluster as u32;
-        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
-
-        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
-            // 32k is the largest value to maintain greatest compatibility
-            // Many implementations appear to support 64k per cluster, and some may support 128k or larger
-            // However, >32k is not as thoroughly tested...
-            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations", bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
-        }
-
-        if bpb.reserved_sectors < 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        } else if !bpb.is_fat32() && bpb.reserved_sectors != 1 {
-            // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
-            warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations", bpb.reserved_sectors);
-        }
-
-        if bpb.fats == 0 {
-            return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
-        } else if bpb.fats > 2 {
-            // Microsoft document indicates that few implementations support any values other than 1 or 2
-            warn!("fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations", bpb.fats);
-        }
-
         if bpb.is_fat32() {
             bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
             bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
@@ -216,6 +174,60 @@ impl BiosParameterBlock {
         }
 
         Ok(bpb)
+    }
+
+
+    fn validate(&self) -> io::Result<()> {
+        // sanity checks
+        if self.bytes_per_sector.count_ones() != 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
+        } else if self.bytes_per_sector < 512 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
+        } else if self.bytes_per_sector > 4096 {
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value > 4096)"));
+        }
+
+        if self.sectors_per_cluster.count_ones() != 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
+        } else if self.sectors_per_cluster < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
+        } else if self.sectors_per_cluster > 128 {
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
+        }
+
+        // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
+        let bytes_per_cluster = self.bytes_per_sector as u32 * self.sectors_per_cluster as u32;
+        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
+
+        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
+            // 32k is the largest value to maintain greatest compatibility
+            // Many implementations appear to support 64k per cluster, and some may support 128k or larger
+            // However, >32k is not as thoroughly tested...
+            warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations",
+                bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
+        }
+
+        if self.reserved_sectors < 1 {
+            return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
+        } else if !self.is_fat32() && self.reserved_sectors != 1 {
+            // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
+            warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations",
+                self.reserved_sectors);
+        }
+
+        if self.fats == 0 {
+            return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
+        } else if self.fats > 2 {
+            // Microsoft document indicates that few implementations support any values other than 1 or 2
+            warn!("fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations",
+                self.fats);
+        }
+
+        if self.fs_version != 0 {
+            return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
+        }
+
+        Ok(())
     }
 
     fn mirroring_enabled(&self) -> bool {
@@ -283,6 +295,17 @@ impl BootRecord {
         rdr.read_exact(&mut boot.boot_sig)?;
         Ok(boot)
     }
+
+    fn validate(&self) -> io::Result<()> {
+        if self.boot_sig != [0x55, 0xAA] {
+            return Err(Error::new(ErrorKind::Other, "Invalid boot sector signature"));
+        }
+        if self.bootjmp[0] != 0xEB && self.bootjmp[0] != 0xE9 {
+            warn!("Unknown opcode {} in bootjmp boot sector field", self.bootjmp[0]);
+        }
+        self.bpb.validate()?;
+        Ok(())
+    }
 }
 
 impl Default for BootRecord {
@@ -329,7 +352,7 @@ impl FsInfoSector {
             0xFFFFFFFF => None,
             0 | 1 => {
                 warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
-                None            
+                None
             },
             // Note: other values are validated in FileSystem::new function using values from BPB
             n => Some(n),
@@ -358,6 +381,22 @@ impl FsInfoSector {
         wrt.write(&reserved2)?;
         wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
         Ok(())
+    }
+
+    fn validate_and_fix(&mut self, total_clusters: u32) {
+        let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
+        if let Some(n) = self.free_cluster_count {
+            if n > total_clusters {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
+                self.free_cluster_count = None;
+            }
+        }
+        if let Some(n) = self.next_free_cluster {
+            if n > max_valid_cluster_number {
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})", n, max_valid_cluster_number);
+                self.next_free_cluster = None;
+            }
+        }
     }
 
     fn add_free_clusters(&mut self, free_clusters: i32) {
@@ -473,15 +512,9 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         // read boot sector
         let bpb = {
             let boot = BootRecord::deserialize(&mut disk)?;
-            if boot.boot_sig != [0x55, 0xAA] {
-                return Err(Error::new(ErrorKind::Other, "Invalid boot sector signature"));
-            }
+            boot.validate()?;
             boot.bpb
         };
-
-        if bpb.fs_version != 0 {
-            return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
-        }
 
         let total_sectors = bpb.total_sectors();
         let sectors_per_fat = bpb.sectors_per_fat();
@@ -491,7 +524,6 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         let fat_sectors = bpb.fats as u32 * sectors_per_fat;
         let data_sectors = total_sectors - (bpb.reserved_sectors as u32 + fat_sectors + root_dir_sectors as u32);
         let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
-        let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
@@ -508,20 +540,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         }
 
         // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
-        match fs_info.free_cluster_count {
-            Some(n) if n > total_clusters => {
-                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
-                fs_info.free_cluster_count = None;
-            },
-            _ => {},
-        };
-        match fs_info.next_free_cluster {
-            Some(n) if n > max_valid_cluster_number => {
-                warn!("invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})", n, max_valid_cluster_number);
-                fs_info.next_free_cluster = None;
-            },
-            _ => {},
-        };
+        fs_info.validate_and_fix(total_clusters);
 
         // return FileSystem struct
         let status_flags = bpb.status_flags();
