@@ -39,10 +39,11 @@ fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
 }
 
 fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
-    call_with_tmp_img(&|tmp_path| {
+    let callback = |tmp_path: &str| {
         let fs = open_filesystem_rw(tmp_path);
         f(fs);
-    }, filename, test_seq);
+    };
+    call_with_tmp_img(&callback, filename, test_seq);
 }
 
 fn test_write_short_file(fs: FileSystem) {

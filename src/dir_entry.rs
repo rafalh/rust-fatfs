@@ -158,8 +158,7 @@ impl DirFileEntryData {
     }
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
-        let first_cluster_hi =
-            if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
+        let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
         let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
         if n == 0 {
             None

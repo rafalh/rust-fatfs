@@ -1,6 +1,6 @@
-use io;
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use io;
 
 use fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
 
@@ -280,7 +280,10 @@ impl FatTrait for Fat32 {
         Ok(match val {
             0 if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
                 let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
-                warn!("cluster number {} is a special value in FAT to indicate {}; it should never be seen as free", cluster, tmp);
+                warn!(
+                    "cluster number {} is a special value in FAT to indicate {}; it should never be seen as free",
+                    cluster, tmp
+                );
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             },
             0 => FatValue::Free,
@@ -304,7 +307,10 @@ impl FatTrait for Fat32 {
             //       or even have them all store value '4' as their next cluster.
             //       Some believe only FatValue::Bad should be allowed for this edge case.
             let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
-            panic!("cluster number {} is a special value in FAT to indicate {}; it should never be set as free", cluster, tmp);
+            panic!(
+                "cluster number {} is a special value in FAT to indicate {}; it should never be set as free",
+                cluster, tmp
+            );
         };
         let raw_val = match value {
             FatValue::Free => 0,

@@ -305,11 +305,13 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
             SeekFrom::End(x) => {
-                self.entry
+                let size = self
+                    .entry
                     .iter()
                     .next()
                     .map_or(None, |e| e.inner().size())
-                    .expect("cannot seek from end if size is unknown") as i64 + x
+                    .expect("cannot seek from end if size is unknown") as i64;
+                size + x
             },
         };
         if new_pos < 0 {

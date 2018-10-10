@@ -473,7 +473,9 @@ pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
 impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
     fn new(stream: DirRawStream<'a, T>, fs: &'a FileSystem<T>, skip_volume: bool) -> Self {
         DirIter {
-            stream, fs, skip_volume,
+            stream,
+            fs,
+            skip_volume,
             err: false,
         }
     }

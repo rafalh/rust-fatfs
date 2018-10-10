@@ -176,11 +176,13 @@ impl BiosParameterBlock {
         Ok(bpb)
     }
 
-
     fn validate(&self) -> io::Result<()> {
         // sanity checks
         if self.bytes_per_sector.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "invalid bytes_per_sector value in BPB (not power of two)",
+            ));
         } else if self.bytes_per_sector < 512 {
             return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
         } else if self.bytes_per_sector > 4096 {
@@ -188,18 +190,24 @@ impl BiosParameterBlock {
         }
 
         if self.sectors_per_cluster.count_ones() != 1 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "invalid sectors_per_cluster value in BPB (not power of two)",
+            ));
         } else if self.sectors_per_cluster < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
         } else if self.sectors_per_cluster > 128 {
-            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "invalid sectors_per_cluster value in BPB (value > 128)",
+            ));
         }
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
         let bytes_per_cluster = self.bytes_per_sector as u32 * self.sectors_per_cluster as u32;
-        let maximum_compatibility_bytes_per_cluster : u32 = 32 * 1024;
+        let maximum_compatibility_bytes_per_cluster: u32 = 32 * 1024;
 
-        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster  {
+        if bytes_per_cluster > maximum_compatibility_bytes_per_cluster {
             // 32k is the largest value to maintain greatest compatibility
             // Many implementations appear to support 64k per cluster, and some may support 128k or larger
             // However, >32k is not as thoroughly tested...
@@ -211,16 +219,20 @@ impl BiosParameterBlock {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
         } else if !self.is_fat32() && self.reserved_sectors != 1 {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
-            warn!("fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations",
-                self.reserved_sectors);
+            warn!(
+                "fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations",
+                self.reserved_sectors
+            );
         }
 
         if self.fats == 0 {
             return Err(Error::new(ErrorKind::Other, "invalid fats value in BPB"));
         } else if self.fats > 2 {
             // Microsoft document indicates that few implementations support any values other than 1 or 2
-            warn!("fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations",
-                self.fats);
+            warn!(
+                "fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations",
+                self.fats
+            );
         }
 
         if self.fs_version != 0 {
@@ -387,13 +399,19 @@ impl FsInfoSector {
         let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
         if let Some(n) = self.free_cluster_count {
             if n > total_clusters {
-                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
+                warn!(
+                    "invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})",
+                    n, total_clusters
+                );
                 self.free_cluster_count = None;
             }
         }
         if let Some(n) = self.next_free_cluster {
             if n > max_valid_cluster_number {
-                warn!("invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})", n, max_valid_cluster_number);
+                warn!(
+                    "invalid free_cluster_count ({}) in fs_info exceeds maximum cluster number ({})",
+                    n, max_valid_cluster_number
+                );
                 self.next_free_cluster = None;
             }
         }
