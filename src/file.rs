@@ -124,11 +124,23 @@ impl<'a, T: ReadWriteSeek> File<'a, T> {
         }
     }
 
-    fn bytes_left_in_file(&self) -> Option<usize> {
+    fn size(&self) -> Option<u32> {
         match self.entry {
-            Some(ref e) => e.inner().size().map(|s| (s - self.offset) as usize),
+            Some(ref e) => e.inner().size(),
             None => None,
         }
+    }
+
+    fn is_dir(&self) -> bool {
+        match self.entry {
+            Some(ref e) => e.inner().is_dir(),
+            None => false,
+        }
+    }
+
+    fn bytes_left_in_file(&self) -> Option<usize> {
+        // Note: seeking beyond end of file is not allowed so overflow is impossible
+        self.size().map(|s| (s - self.offset) as usize)
     }
 
     fn set_first_cluster(&mut self, cluster: u32) {
@@ -254,9 +266,9 @@ impl<'a, T: ReadWriteSeek> Write for File<'a, T> {
                     if self.first_cluster.is_none() {
                         self.set_first_cluster(new_cluster);
                     }
-                    if self.entry.iter().next().map_or(true, |e| e.inner().size().is_none()) {
+                    if self.is_dir() {
                         // zero new directory cluster
-                        trace!("zeroing directory cluser {}", new_cluster);
+                        trace!("zeroing directory cluster {}", new_cluster);
                         let abs_pos = self.fs.offset_from_cluster(new_cluster);
                         let mut disk = self.fs.disk.borrow_mut();
                         disk.seek(SeekFrom::Start(abs_pos))?;
@@ -305,31 +317,22 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
             SeekFrom::Current(x) => self.offset as i64 + x,
             SeekFrom::Start(x) => x as i64,
             SeekFrom::End(x) => {
-                let size = self
-                    .entry
-                    .iter()
-                    .next()
-                    .map_or(None, |e| e.inner().size())
-                    .expect("cannot seek from end if size is unknown") as i64;
+                let size = self.size().expect("cannot seek from end if size is unknown") as i64;
                 size + x
             },
         };
         if new_pos < 0 {
             return Err(io::Error::new(ErrorKind::InvalidInput, "Seek to a negative offset"));
         }
-        new_pos = match self.entry {
-            Some(ref e) => {
-                if e.inner().size().map_or(false, |s| new_pos > s as i64) {
-                    info!("seek beyond end of file");
-                    e.inner().size().unwrap() as i64 // SAFE: map_or returns false if size is empty
-                } else {
-                    new_pos
-                }
-            },
-            _ => new_pos,
-        };
+        if let Some(s) = self.size() {
+            if new_pos > s as i64 {
+                info!("seek beyond end of file");
+                new_pos = s as i64;
+            }
+        }
         trace!("file seek {} -> {} - entry {:?}", self.offset, new_pos, self.entry);
         if new_pos == self.offset as i64 {
+            // position is the same - nothing to do
             return Ok(self.offset as u64);
         }
         let cluster_size = self.fs.cluster_size();

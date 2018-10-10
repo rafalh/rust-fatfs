@@ -187,7 +187,7 @@ impl DirFileEntryData {
         self.size = size;
     }
 
-    fn is_dir(&self) -> bool {
+    pub(crate) fn is_dir(&self) -> bool {
         self.attrs.contains(FileAttributes::DIRECTORY)
     }
 
