@@ -332,6 +332,36 @@ impl BiosParameterBlock {
             self.total_sectors_16 as u32
         }
     }
+
+    fn root_dir_sectors(&self) -> u32 {
+        let root_dir_bytes = self.root_entries as u32 * DIR_ENTRY_SIZE as u32;
+        (root_dir_bytes + self.bytes_per_sector as u32 - 1) / self.bytes_per_sector as u32
+    }
+
+    fn sectors_per_all_fats(&self) -> u32 {
+        self.fats as u32 * self.sectors_per_fat()
+    }
+
+    fn first_data_sector(&self) -> u32 {
+        let root_dir_sectors = self.root_dir_sectors();
+        let fat_sectors = self.sectors_per_all_fats();
+        self.reserved_sectors as u32 + fat_sectors + root_dir_sectors
+    }
+
+    fn total_clusters(&self) -> u32 {
+        let total_sectors = self.total_sectors();
+        let first_data_sector = self.first_data_sector();
+        let data_sectors = total_sectors - first_data_sector;
+        data_sectors / self.sectors_per_cluster as u32
+    }
+
+    fn fat_entries_per_sector(&self, fat_type: FatType) -> u16 {
+        match fat_type {
+            FatType::Fat12 => self.bytes_per_sector * 8 / 12,
+            FatType::Fat16 => self.bytes_per_sector * 8 / 16,
+            FatType::Fat32 => self.bytes_per_sector * 8 / 32,
+        }
+    }
 }
 
 #[allow(dead_code)]
