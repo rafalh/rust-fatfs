@@ -215,9 +215,10 @@ impl BiosParameterBlock {
                 bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
         }
 
+        let is_fat32 = self.is_fat32();
         if self.reserved_sectors < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid reserved_sectors value in BPB"));
-        } else if !self.is_fat32() && self.reserved_sectors != 1 {
+        } else if !is_fat32 && self.reserved_sectors != 1 {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
             warn!(
                 "fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations",
@@ -235,8 +236,58 @@ impl BiosParameterBlock {
             );
         }
 
+        if is_fat32 && self.root_entries != 0 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid root_entries value in BPB (should be zero for FAT32)",
+            ));
+        }
+
+        if is_fat32 && self.total_sectors_16 != 0 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid total_sectors_16 value in BPB (should be zero for FAT32)",
+            ));
+        }
+
+        if (self.total_sectors_16 == 0) == (self.total_sectors_32 == 0) {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid BPB (total_sectors_16 or total_sectors_32 should be non-zero)",
+            ));
+        }
+
+        if is_fat32 && self.sectors_per_fat_32 == 0 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid sectors_per_fat_32 value in BPB (should be non-zero for FAT32)",
+            ));
+        }
+
         if self.fs_version != 0 {
             return Err(Error::new(ErrorKind::Other, "Unknown FS version"));
+        }
+
+        if self.total_sectors() <= self.first_data_sector() {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid BPB (total_sectors field value is too small)",
+            ));
+        }
+
+        let total_clusters = self.total_clusters();
+        let fat_type = FatType::from_clusters(total_clusters);
+        if is_fat32 != (fat_type == FatType::Fat32) {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Invalid BPB (result of FAT32 determination from total number of clusters and sectors_per_fat_16 field differs)",
+            ));
+        }
+
+        let fat_entries_per_sector = self.fat_entries_per_sector(fat_type);
+        let total_fat_entries = self.sectors_per_fat() * fat_entries_per_sector as u32;
+        if total_fat_entries - RESERVED_FAT_ENTRIES < total_clusters {
+            warn!("FAT is too small to compared to total number of clusters");
         }
 
         Ok(())
@@ -313,7 +364,7 @@ impl BootRecord {
             return Err(Error::new(ErrorKind::Other, "Invalid boot sector signature"));
         }
         if self.bootjmp[0] != 0xEB && self.bootjmp[0] != 0xE9 {
-            warn!("Unknown opcode {} in bootjmp boot sector field", self.bootjmp[0]);
+            warn!("Unknown opcode {:x} in bootjmp boot sector field", self.bootjmp[0]);
         }
         self.bpb.validate()?;
         Ok(())
@@ -534,14 +585,9 @@ impl<T: ReadWriteSeek> FileSystem<T> {
             boot.bpb
         };
 
-        let total_sectors = bpb.total_sectors();
-        let sectors_per_fat = bpb.sectors_per_fat();
-        let root_dir_bytes = bpb.root_entries as u32 * DIR_ENTRY_SIZE as u32;
-        let root_dir_sectors = (root_dir_bytes + (bpb.bytes_per_sector as u32 - 1)) / bpb.bytes_per_sector as u32;
-        let first_data_sector = bpb.reserved_sectors as u32 + (bpb.fats as u32 * sectors_per_fat) + root_dir_sectors;
-        let fat_sectors = bpb.fats as u32 * sectors_per_fat;
-        let data_sectors = total_sectors - (bpb.reserved_sectors as u32 + fat_sectors + root_dir_sectors as u32);
-        let total_clusters = data_sectors / bpb.sectors_per_cluster as u32;
+        let root_dir_sectors = bpb.root_dir_sectors();
+        let first_data_sector = bpb.first_data_sector();
+        let total_clusters = bpb.total_clusters();
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
