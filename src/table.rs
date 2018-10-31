@@ -109,6 +109,25 @@ pub(crate) fn read_fat_flags<T: ReadSeek>(fat: &mut T, fat_type: FatType) -> io:
     Ok(FsStatusFlags { dirty, io_error })
 }
 
+pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8) -> io::Result<()> {
+    // Note: cannot use any seeking function here because fat parameter is not a disk slice
+    match fat_type {
+        FatType::Fat12 => {
+            fat.write_u8(media)?;
+            fat.write_u16::<LittleEndian>(0xFFFF)?;
+        },
+        FatType::Fat16 => {
+            fat.write_u16::<LittleEndian>(media as u16 | 0xFF00)?;
+            fat.write_u16::<LittleEndian>(0xFFFF)?;
+        },
+        FatType::Fat32 => {
+            fat.write_u32::<LittleEndian>(media as u32 | 0xFFFFF00)?;
+            fat.write_u32::<LittleEndian>(0xFFFFFFFF)?;
+        },
+    };
+    Ok(())
+}
+
 pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
     let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     match fat_type {
