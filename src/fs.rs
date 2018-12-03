@@ -48,9 +48,9 @@ impl FatType {
 
     pub(crate) fn bits_per_fat_entry(&self) -> u32 {
         match self {
-            FatType::Fat12 => 12,
-            FatType::Fat16 => 16,
-            FatType::Fat32 => 32,
+            &FatType::Fat12 => 12,
+            &FatType::Fat16 => 16,
+            &FatType::Fat32 => 32,
         }
     }
 }
@@ -331,8 +331,8 @@ impl BiosParameterBlock {
             ));
         }
 
-        let fat_entries_per_sector = self.fat_entries_per_sector(fat_type);
-        let total_fat_entries = self.sectors_per_fat() * fat_entries_per_sector as u32;
+        let bits_per_fat_entry = fat_type.bits_per_fat_entry();
+        let total_fat_entries = self.sectors_per_fat() * self.bytes_per_sector as u32 * 8 / bits_per_fat_entry as u32;
         if total_fat_entries - RESERVED_FAT_ENTRIES < total_clusters {
             warn!("FAT is too small to compared to total number of clusters");
         }
@@ -400,14 +400,6 @@ impl BiosParameterBlock {
         let first_data_sector = self.first_data_sector();
         let data_sectors = total_sectors - first_data_sector;
         data_sectors / self.sectors_per_cluster as u32
-    }
-
-    fn fat_entries_per_sector(&self, fat_type: FatType) -> u16 {
-        match fat_type {
-            FatType::Fat12 => self.bytes_per_sector * 8 / 12,
-            FatType::Fat16 => self.bytes_per_sector * 8 / 16,
-            FatType::Fat32 => self.bytes_per_sector * 8 / 32,
-        }
     }
 }
 
