@@ -1,5 +1,6 @@
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use core::cmp;
 use io;
 
 use fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
@@ -26,6 +27,7 @@ enum FatValue {
 trait FatTrait {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32>;
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue>;
+    fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()>;
     fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()>;
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32>;
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32>;
@@ -109,8 +111,17 @@ pub(crate) fn read_fat_flags<T: ReadSeek>(fat: &mut T, fat_type: FatType) -> io:
     Ok(FsStatusFlags { dirty, io_error })
 }
 
-pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8) -> io::Result<()> {
-    // Note: cannot use any seeking function here because fat parameter is not a disk slice
+pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
+    let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
+    match fat_type {
+        FatType::Fat12 => Fat12::count_free(fat, end_cluster),
+        FatType::Fat16 => Fat16::count_free(fat, end_cluster),
+        FatType::Fat32 => Fat32::count_free(fat, end_cluster),
+    }
+}
+
+pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8, bytes_per_fat: u32, total_clusters: u32) -> io::Result<()> {
+    // init first two reserved entries to FAT ID
     match fat_type {
         FatType::Fat12 => {
             fat.write_u8(media)?;
@@ -125,16 +136,21 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media
             fat.write_u32::<LittleEndian>(0xFFFFFFFF)?;
         },
     };
-    Ok(())
-}
-
-pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, total_clusters: u32) -> io::Result<u32> {
-    let end_cluster = total_clusters + RESERVED_FAT_ENTRIES;
-    match fat_type {
-        FatType::Fat12 => Fat12::count_free(fat, end_cluster),
-        FatType::Fat16 => Fat16::count_free(fat, end_cluster),
-        FatType::Fat32 => Fat32::count_free(fat, end_cluster),
+    // mark entries at the end of FAT as used (after FAT but before sector end)
+    const BITS_PER_BYTE: u32 = 8;
+    let start_cluster = total_clusters + RESERVED_FAT_ENTRIES;
+    let end_cluster = bytes_per_fat * BITS_PER_BYTE / fat_type.bits_per_fat_entry();
+    for cluster in start_cluster..end_cluster {
+        write_fat(fat, fat_type, cluster, FatValue::EndOfChain)?;
     }
+    // mark special entries 0x0FFFFFF0 - 0x0FFFFFFF as BAD if they exists on FAT32 volume
+    if end_cluster > 0x0FFFFFF0 {
+        let end_bad_cluster = cmp::min(0x0FFFFFFF + 1, end_cluster);
+        for cluster in 0x0FFFFFF0..end_bad_cluster {
+            write_fat(fat, fat_type, cluster, FatValue::Bad)?;
+        }
+    }
+    Ok(())
 }
 
 impl FatTrait for Fat12 {
@@ -165,13 +181,17 @@ impl FatTrait for Fat12 {
             FatValue::EndOfChain => 0xFFF,
             FatValue::Data(n) => n as u16,
         };
+        Self::set_raw(fat, cluster, raw_val as u32)
+    }
+
+    fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_val: u32) -> io::Result<()> {
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
         let old_packed = fat.read_u16::<LittleEndian>()?;
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
         let new_packed = match cluster & 1 {
-            0 => (old_packed & 0xF000) | raw_val,
-            _ => (old_packed & 0x000F) | (raw_val << 4),
+            0 => (old_packed & 0xF000) | raw_val as u16,
+            _ => (old_packed & 0x000F) | ((raw_val as u16) << 4),
         };
         fat.write_u16::<LittleEndian>(new_packed)?;
         Ok(())
@@ -248,16 +268,20 @@ impl FatTrait for Fat16 {
         })
     }
 
-    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
+    fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
-        let raw_val = match value {
+        fat.write_u16::<LittleEndian>(raw_value as u16)?;
+        Ok(())
+    }
+
+    fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
+        let raw_value = match value {
             FatValue::Free => 0,
             FatValue::Bad => 0xFFF7,
             FatValue::EndOfChain => 0xFFFF,
             FatValue::Data(n) => n as u16,
         };
-        fat.write_u16::<LittleEndian>(raw_val)?;
-        Ok(())
+        Self::set_raw(fat, cluster, raw_value as u32)
     }
 
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
@@ -317,9 +341,14 @@ impl FatTrait for Fat32 {
         })
     }
 
+    fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
+        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+        fat.write_u32::<LittleEndian>(raw_value)?;
+        Ok(())
+    }
+
     fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
         let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF0000000;
-        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
 
         if value == FatValue::Free && cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF {
             // NOTE: it is technically allowed for them to store FAT chain loops,
@@ -338,8 +367,7 @@ impl FatTrait for Fat32 {
             FatValue::Data(n) => n,
         };
         let raw_val = raw_val | old_reserved_bits; // must preserve original reserved values
-        fat.write_u32::<LittleEndian>(raw_val)?;
-        Ok(())
+        Self::set_raw(fat, cluster, raw_val)
     }
 
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {

@@ -11,7 +11,7 @@ use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileA
 #[cfg(feature = "alloc")]
 use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
 use file::File;
-use fs::{DiskSlice, FileSystem, ReadWriteSeek};
+use fs::{DiskSlice, FsIoAdapter, FileSystem, ReadWriteSeek};
 
 #[cfg(feature = "alloc")]
 type LfnUtf16 = Vec<u16>;
@@ -20,7 +20,7 @@ type LfnUtf16 = ();
 
 pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
     File(File<'a, T>),
-    Root(DiskSlice<'a, T>),
+    Root(DiskSlice<FsIoAdapter<'a, T>>),
 }
 
 impl<'a, T: ReadWriteSeek> DirRawStream<'a, T> {
