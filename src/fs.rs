@@ -1226,7 +1226,7 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
     let root_dir_sectors = (root_dir_bytes + bytes_per_sector as u32 - 1) / bytes_per_sector as u32;
 
     if total_sectors <= reserved_sectors as u32 + root_dir_sectors as u32 + 16 {
-        return Err(Error::new(ErrorKind::Other, "volume is too small",));
+        return Err(Error::new(ErrorKind::Other, "Volume is too small",));
     }
 
     //let fat_entries_per_sector = bytes_per_sector * 8 / fat_type.bits_per_fat_entry() as u16;
@@ -1278,10 +1278,15 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
         drive_num,
         reserved_1: 0,
         ext_sig: 0x29,
-        volume_id: options.volume_id.unwrap_or(0x12345678), // TODO: random?
+        volume_id: options.volume_id.unwrap_or(0x12345678),
         volume_label,
         fs_type_label,
     };
+
+    if FatType::from_clusters(bpb.total_clusters()) != fat_type {
+        return Err(Error::new(ErrorKind::Other, "Total number of clusters and FAT type does not match. Try other volume size"));
+    }
+
     Ok((bpb, fat_type))
 }
 
