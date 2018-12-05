@@ -1114,22 +1114,74 @@ impl OemCpConverter for LossyOemCpConverter {
 
 pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
 
-
 #[derive(Default, Debug, Clone)]
-pub struct FormatOptions {
-    pub bytes_per_sector: Option<u16>,
-    pub total_sectors: u32,
-    pub bytes_per_cluster: Option<u32>,
-    pub fat_type: Option<FatType>,
-    pub root_entries: Option<u16>,
-    pub media: Option<u8>,
-    pub sectors_per_track: Option<u16>,
-    pub heads: Option<u16>,
-    pub drive_num: Option<u8>,
-    pub volume_id: Option<u32>,
-    pub volume_label: Option<[u8; 11]>,
-    // force usage of Default trait by struct users
-    _end: [u8;0],
+pub struct FormatVolumeOptions {
+    bytes_per_sector: u16,
+    total_sectors: u32,
+    bytes_per_cluster: Option<u32>,
+    fat_type: Option<FatType>,
+    root_entries: Option<u16>,
+    media: Option<u8>,
+    sectors_per_track: Option<u16>,
+    heads: Option<u16>,
+    drive_num: Option<u8>,
+    volume_id: Option<u32>,
+    volume_label: Option<[u8; 11]>,
+}
+
+impl FormatVolumeOptions {
+    pub fn new(total_sectors: u32, bytes_per_sector: u16) -> Self {
+        FormatVolumeOptions {
+            total_sectors,
+            bytes_per_sector,
+            ..Default::default()
+        }
+    }
+
+    pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
+        self.bytes_per_cluster = Some(bytes_per_cluster);
+        self
+    }
+
+    pub fn fat_type(mut self, fat_type: FatType) -> Self {
+        self.fat_type = Some(fat_type);
+        self
+    }
+
+    pub fn root_entries(mut self, root_entries: u16) -> Self {
+        self.root_entries = Some(root_entries);
+        self
+    }
+
+    pub fn media(mut self, media: u8) -> Self {
+        self.media = Some(media);
+        self
+    }
+
+    pub fn sectors_per_track(mut self, sectors_per_track: u16) -> Self {
+        self.sectors_per_track = Some(sectors_per_track);
+        self
+    }
+
+    pub fn heads(mut self, heads: u16) -> Self {
+        self.heads = Some(heads);
+        self
+    }
+
+    pub fn drive_num(mut self, drive_num: u8) -> Self {
+        self.drive_num = Some(drive_num);
+        self
+    }
+
+    pub fn volume_id(mut self, volume_id: u32) -> Self {
+        self.volume_id = Some(volume_id);
+        self
+    }
+
+    pub fn volume_label(mut self, volume_label: [u8; 11]) -> Self {
+        self.volume_label = Some(volume_label);
+        self
+    }
 }
 
 const KB: u64 = 1024;
@@ -1176,8 +1228,7 @@ fn determine_bytes_per_cluster(total_bytes: u64, fat_type: FatType, bytes_per_se
 fn determine_sectors_per_fat(total_sectors: u32, reserved_sectors: u16, fats: u8, root_dir_sectors: u32,
         sectors_per_cluster: u8, fat_type: FatType) -> u32 {
 
-    // TODO: use _fat_entries_per_sector
-    // FIXME: this is for FAT16/32
+    // TODO: check if this calculation is always correct (especially for FAT12)
     let tmp_val1 = total_sectors - (reserved_sectors as u32 + root_dir_sectors as u32);
     let mut tmp_val2 = (256 * sectors_per_cluster as u32) + fats as u32;
     if fat_type == FatType::Fat32 {
@@ -1185,22 +1236,12 @@ fn determine_sectors_per_fat(total_sectors: u32, reserved_sectors: u16, fats: u8
     } else if fat_type == FatType::Fat12 {
         tmp_val2 = tmp_val2 / 3 * 4
     }
-    let sectors_per_fat = (tmp_val1 + (tmp_val2 - 1)) / tmp_val2;
-
-    // total_sectors = reserved_sectors + sectors_per_fat * fats + data_sectors
-    // sectors_per_fat >= data_sectors / sectors_per_cluster / fat_entries_per_sector
-    //
-    // sectors_per_fat >= (total_sectors - reserved_sectors - sectors_per_fat * fats) / sectors_per_cluster / fat_entries_per_sector
-    // sectors_per_fat + sectors_per_fat * fats / sectors_per_cluster / fat_entries_per_sector >= (total_sectors - reserved_sectors) / sectors_per_cluster / fat_entries_per_sector
-    // sectors_per_fat * (1 + fats / sectors_per_cluster / fat_entries_per_sector) >= (total_sectors - reserved_sectors) / sectors_per_cluster / fat_entries_per_sector
-    // sectors_per_fat >= (total_sectors - reserved_sectors) / sectors_per_cluster / fat_entries_per_sector / (1 + fats / sectors_per_cluster / fat_entries_per_sector)
-    // fat_entries_per_sector = bytes_per_sector / bytes_per_fat_entry = fat16: 512/2
-    sectors_per_fat
+    (tmp_val1 + (tmp_val2 - 1)) / tmp_val2
 }
 
-fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatType)> {
+fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, FatType)> {
     // TODO: maybe total_sectors could be optional?
-    let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
+    let bytes_per_sector = options.bytes_per_sector;
     let total_sectors = options.total_sectors;
     let total_bytes = total_sectors as u64 * bytes_per_sector as u64;
     let fat_type = options.fat_type.unwrap_or_else(|| determine_fat_type(total_bytes));
@@ -1209,6 +1250,7 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
     let sectors_per_cluster = (bytes_per_cluster / bytes_per_sector as u32) as u8;
 
     // Note: most of implementations use 32 reserved sectors for FAT32 but it's wasting of space
+    // We use 4 because there are two boot sectors and one FS Info sector (1 sector remains unused)
     let reserved_sectors: u16 = if fat_type == FatType::Fat32 { 4 } else { 1 };
 
     let fats = 2u8;
@@ -1217,19 +1259,23 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
     let root_dir_bytes = root_entries as u32 * DIR_ENTRY_SIZE as u32;
     let root_dir_sectors = (root_dir_bytes + bytes_per_sector as u32 - 1) / bytes_per_sector as u32;
 
-    if total_sectors <= reserved_sectors as u32 + root_dir_sectors as u32 + 16 {
+    // Check if volume has enough space to accomodate reserved sectors, FAT, root directory and some data space
+    // Having less than 8 sectors for FAT and data would make a little sense
+    if total_sectors <= reserved_sectors as u32 + root_dir_sectors as u32 + 8 {
         return Err(Error::new(ErrorKind::Other, "Volume is too small",));
     }
 
-    //let fat_entries_per_sector = bytes_per_sector * 8 / fat_type.bits_per_fat_entry() as u16;
+    // calculate File Allocation Table size
     let sectors_per_fat = determine_sectors_per_fat(total_sectors, reserved_sectors, fats, root_dir_sectors,
         sectors_per_cluster, fat_type);
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
     let drive_num = options.drive_num.unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
+    // reserved_0 is always zero
     let reserved_0 = [0u8; 12];
 
+    // setup volume label
     let mut volume_label = [0u8; 11];
     if let Some(volume_label_from_opts) = options.volume_label {
         volume_label.copy_from_slice(&volume_label_from_opts);
@@ -1237,6 +1283,7 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
         volume_label.copy_from_slice("NO NAME    ".as_bytes());
     }
 
+    // setup fs_type_label field
     let mut fs_type_label = [0u8; 8];
     let fs_type_label_str = match fat_type {
         FatType::Fat12 => "FAT12   ",
@@ -1245,6 +1292,7 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
     };
     fs_type_label.copy_from_slice(fs_type_label_str.as_bytes());
 
+    // create Bios Parameter Block struct
     let bpb = BiosParameterBlock {
         bytes_per_sector,
         sectors_per_cluster,
@@ -1275,6 +1323,7 @@ fn format_bpb(options: &FormatOptions) -> io::Result<(BiosParameterBlock, FatTyp
         fs_type_label,
     };
 
+    // Check if number of clusters is proper for used FAT type
     if FatType::from_clusters(bpb.total_clusters()) != fat_type {
         return Err(Error::new(ErrorKind::Other, "Total number of clusters and FAT type does not match. Try other volume size"));
     }
@@ -1301,7 +1350,7 @@ fn write_zeros_until_end_of_sector<T: ReadWriteSeek>(mut disk: T, bytes_per_sect
     Ok(())
 }
 
-fn format_boot_sector(options: &FormatOptions) -> io::Result<(BootRecord, FatType)> {
+fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(BootRecord, FatType)> {
     let mut boot: BootRecord = Default::default();
     let (bpb, fat_type) = format_bpb(options)?;
     boot.bpb = bpb;
@@ -1336,10 +1385,13 @@ fn format_boot_sector(options: &FormatOptions) -> io::Result<(BootRecord, FatTyp
     Ok((boot, fat_type))
 }
 
-// alternative names: create_filesystem, init_filesystem, prepare_fs
-pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatOptions) -> io::Result<()> {
+pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
+    disk.seek(SeekFrom::Start(0))?;
+    // Create boot sector, validate and write to storage device
     let (boot, fat_type) = format_boot_sector(&options)?;
+    boot.validate()?;
     boot.serialize(&mut disk)?;
+    // Make sure entire logical sector is updated (serialize method always writes 512 bytes)
     let bytes_per_sector = boot.bpb.bytes_per_sector;
     write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
 
@@ -1360,7 +1412,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatOptions) -> i
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
     }
 
-    // FATs
+    // format File Allocation Table
     let sectors_per_fat: u32 = boot.bpb.sectors_per_fat();
     let bytes_per_fat: u32 = sectors_per_fat * bytes_per_sector as u32;
     let reserved_sectors = boot.bpb.reserved_sectors;
@@ -1372,7 +1424,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatOptions) -> i
         format_fat(&mut fat_slice, fat_type, boot.bpb.media, bytes_per_fat, boot.bpb.total_clusters())?;
     }
 
-    // Root directory
+    // init root directory - zero root directory region for FAT12/16 and alloc first root directory cluster for FAT32
     let root_dir_pos = fat_pos + bytes_per_fat as u64 * boot.bpb.fats as u64;
     disk.seek(SeekFrom::Start(root_dir_pos))?;
     let root_dir_sectors: u32 = boot.bpb.root_dir_sectors();
