@@ -675,7 +675,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
         // read FSInfo sector if this is FAT32
         let mut fs_info = if fat_type == FatType::Fat32 {
-            disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * 512))?;
+            disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * bpb.bytes_per_sector as u64))?;
             FsInfoSector::deserialize(&mut disk)?
         } else {
             FsInfoSector::default()
@@ -895,7 +895,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         let mut fs_info = self.fs_info.borrow_mut();
         if self.fat_type == FatType::Fat32 && fs_info.dirty {
             let mut disk = self.disk.borrow_mut();
-            disk.seek(SeekFrom::Start(self.bpb.fs_info_sector as u64 * 512))?;
+            disk.seek(SeekFrom::Start(self.offset_from_sector(self.bpb.fs_info_sector as u32)))?;
             fs_info.serialize(&mut *disk)?;
             fs_info.dirty = false;
         }
