@@ -48,7 +48,7 @@ fn basic_fs_test(fs: &FileSystem) {
     assert_eq!(filenames, ["subdir1", "new-name.txt"]);
 }
 
-fn test_format_fs(opts: fatfs::FormatOptions, total_bytes: u64) -> FileSystem {
+fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
     let _ = env_logger::try_init();
     let storage_vec: Vec<u8> = Vec::with_capacity(total_bytes as usize);
     let storage_cur = io::Cursor::new(storage_vec);
@@ -63,8 +63,7 @@ fn test_format_fs(opts: fatfs::FormatOptions, total_bytes: u64) -> FileSystem {
 #[test]
 fn test_format_1mb() {
     let total_bytes = 1 * MB;
-    let mut opts: fatfs::FormatOptions = Default::default();
-    opts.total_sectors = (total_bytes / 512) as u32;
+    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat12);
 }
@@ -72,8 +71,7 @@ fn test_format_1mb() {
 #[test]
 fn test_format_8mb() {
     let total_bytes = 8 * MB;
-    let mut opts: fatfs::FormatOptions = Default::default();
-    opts.total_sectors = (total_bytes / 512) as u32;
+    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
 }
@@ -81,8 +79,7 @@ fn test_format_8mb() {
 #[test]
 fn test_format_50mb() {
     let total_bytes = 50 * MB;
-    let mut opts: fatfs::FormatOptions = Default::default();
-    opts.total_sectors = (total_bytes / 512) as u32;
+    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
 }
@@ -91,17 +88,14 @@ fn test_format_50mb() {
 #[test]
 fn test_format_512mb() {
     let total_bytes = 2 * 1024 * MB;
-    let mut opts: fatfs::FormatOptions = Default::default();
-    opts.total_sectors = (total_bytes / 512) as u32;
+    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);
 }
 
-fn create_format_options(total_bytes: u64, bytes_per_sector: Option<u16>) -> fatfs::FormatOptions {
-    let mut opts: fatfs::FormatOptions = Default::default();
-    opts.total_sectors = (total_bytes / bytes_per_sector.unwrap_or(512) as u64) as u32;
-    opts.bytes_per_sector = bytes_per_sector;
-    opts
+fn create_format_options(total_bytes: u64, bytes_per_sector: Option<u16>) -> fatfs::FormatVolumeOptions {
+    let total_sectors = (total_bytes / bytes_per_sector.unwrap_or(512) as u64) as u32;
+    fatfs::FormatVolumeOptions::new(total_sectors, bytes_per_sector.unwrap_or(512))
 }
 
 #[test]
