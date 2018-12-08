@@ -931,7 +931,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == boot.bpb.root_dir_first_cluster);
-        let first_data_sector = reserved_sectors as u32 + sectors_per_fat + root_dir_sectors;
+        let first_data_sector = reserved_sectors as u32 + boot.bpb.sectors_per_all_fats() + root_dir_sectors;
         let sectors_per_cluster = boot.bpb.sectors_per_cluster;
         let root_dir_first_sector =
             ((root_dir_first_cluster - RESERVED_FAT_ENTRIES) * sectors_per_cluster as u32) + first_data_sector;
