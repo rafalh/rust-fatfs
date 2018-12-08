@@ -120,7 +120,7 @@ pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, t
     }
 }
 
-pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8, bytes_per_fat: u32, total_clusters: u32) -> io::Result<()> {
+pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8, bytes_per_fat: u64, total_clusters: u32) -> io::Result<()> {
     // init first two reserved entries to FAT ID
     match fat_type {
         FatType::Fat12 => {
@@ -137,9 +137,9 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media
         },
     };
     // mark entries at the end of FAT as used (after FAT but before sector end)
-    const BITS_PER_BYTE: u32 = 8;
+    const BITS_PER_BYTE: u64 = 8;
     let start_cluster = total_clusters + RESERVED_FAT_ENTRIES;
-    let end_cluster = bytes_per_fat * BITS_PER_BYTE / fat_type.bits_per_fat_entry();
+    let end_cluster = (bytes_per_fat * BITS_PER_BYTE / fat_type.bits_per_fat_entry() as u64) as u32;
     for cluster in start_cluster..end_cluster {
         write_fat(fat, fat_type, cluster, FatValue::EndOfChain)?;
     }

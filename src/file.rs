@@ -319,15 +319,15 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
                 new_pos = s as i64;
             }
         }
+        let mut new_pos = new_pos as u32;
         trace!("file seek {} -> {} - entry {:?}", self.offset, new_pos, self.entry);
-        if new_pos == self.offset as i64 {
+        if new_pos == self.offset {
             // position is the same - nothing to do
             return Ok(self.offset as u64);
         }
-        let cluster_size = self.fs.cluster_size();
         // get number of clusters to seek (favoring previous cluster in corner case)
-        let cluster_count = ((new_pos + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
-        let old_cluster_count = ((self.offset as i64 + cluster_size as i64 - 1) / cluster_size as i64 - 1) as isize;
+        let cluster_count = (self.fs.clusters_from_bytes(new_pos as u64) as i32 - 1) as isize;
+        let old_cluster_count = (self.fs.clusters_from_bytes(self.offset as u64) as i32 - 1) as isize;
         let new_cluster = if new_pos == 0 {
             None
         } else if cluster_count == old_cluster_count {
@@ -342,7 +342,7 @@ impl<'a, T: ReadWriteSeek> Seek for File<'a, T> {
                             Some(r) => r?,
                             None => {
                                 // chain ends before new position - seek to end of last cluster
-                                new_pos = (i + 1) as i64 * cluster_size as i64;
+                                new_pos = self.fs.bytes_from_clusters((i + 1) as u32) as u32;
                                 break;
                             },
                         };

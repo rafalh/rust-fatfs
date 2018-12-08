@@ -10,7 +10,10 @@ use dir_entry::DIR_ENTRY_SIZE;
 use fs::{FatType, FsStatusFlags, FormatVolumeOptions};
 use table::RESERVED_FAT_ENTRIES;
 
-#[allow(dead_code)]
+const KB: u64 = 1024;
+const MB: u64 = KB * 1024;
+const GB: u64 = MB * 1024;
+
 #[derive(Default, Debug, Clone)]
 pub(crate) struct BiosParameterBlock {
     pub(crate) bytes_per_sector: u16,
@@ -288,6 +291,10 @@ impl BiosParameterBlock {
         }
     }
 
+    pub(crate) fn reserved_sectors(&self) -> u32 {
+        self.reserved_sectors as u32
+    }
+
     pub(crate) fn root_dir_sectors(&self) -> u32 {
         let root_dir_bytes = self.root_entries as u32 * DIR_ENTRY_SIZE as u32;
         (root_dir_bytes + self.bytes_per_sector as u32 - 1) / self.bytes_per_sector as u32
@@ -300,7 +307,7 @@ impl BiosParameterBlock {
     pub(crate) fn first_data_sector(&self) -> u32 {
         let root_dir_sectors = self.root_dir_sectors();
         let fat_sectors = self.sectors_per_all_fats();
-        self.reserved_sectors as u32 + fat_sectors + root_dir_sectors
+        self.reserved_sectors() + fat_sectors + root_dir_sectors
     }
 
     pub(crate) fn total_clusters(&self) -> u32 {
@@ -309,10 +316,36 @@ impl BiosParameterBlock {
         let data_sectors = total_sectors - first_data_sector;
         data_sectors / self.sectors_per_cluster as u32
     }
+
+    pub(crate) fn bytes_from_sectors(&self, sectors: u32) -> u64 {
+        // Note: total number of sectors is a 32 bit number so offsets have to be 64 bit
+        (sectors as u64) * self.bytes_per_sector as u64
+    }
+
+    pub(crate) fn sectors_from_clusters(&self, clusters: u32) -> u32 {
+        // Note: total number of sectors is a 32 bit number so it should not overflow
+        clusters * (self.sectors_per_cluster as u32)
+    }
+
+    pub(crate) fn cluster_size(&self) -> u32 {
+        self.sectors_per_cluster as u32 * self.bytes_per_sector as u32
+    }
+
+    pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {
+        let cluster_size = self.cluster_size() as i64;
+        ((bytes as i64 + cluster_size - 1) / cluster_size) as u32
+    }
+
+    pub(crate) fn fs_info_sector(&self) -> u32 {
+        self.fs_info_sector as u32
+    }
+
+    pub(crate) fn backup_boot_sector(&self) -> u32 {
+        self.backup_boot_sector as u32
+    }
 }
 
-#[allow(dead_code)]
-pub(crate) struct BootRecord {
+pub(crate) struct BootSector {
     bootjmp: [u8; 3],
     oem_name: [u8; 8],
     pub(crate) bpb: BiosParameterBlock,
@@ -320,9 +353,9 @@ pub(crate) struct BootRecord {
     boot_sig: [u8; 2],
 }
 
-impl BootRecord {
-    pub(crate) fn deserialize<T: Read>(rdr: &mut T) -> io::Result<BootRecord> {
-        let mut boot: BootRecord = Default::default();
+impl BootSector {
+    pub(crate) fn deserialize<T: Read>(rdr: &mut T) -> io::Result<BootSector> {
+        let mut boot: BootSector = Default::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
         boot.bpb = BiosParameterBlock::deserialize(rdr)?;
@@ -362,9 +395,9 @@ impl BootRecord {
     }
 }
 
-impl Default for BootRecord {
-    fn default() -> BootRecord {
-        BootRecord {
+impl Default for BootSector {
+    fn default() -> BootSector {
+        BootSector {
             bootjmp: Default::default(),
             oem_name: Default::default(),
             bpb: Default::default(),
@@ -373,10 +406,6 @@ impl Default for BootRecord {
         }
     }
 }
-
-const KB: u64 = 1024;
-const MB: u64 = KB * 1024;
-const GB: u64 = MB * 1024;
 
 pub(crate) fn determine_fat_type(total_bytes: u64) -> FatType {
     if total_bytes < 4 * MB {
@@ -521,8 +550,8 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     Ok((bpb, fat_type))
 }
 
-pub(crate) fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(BootRecord, FatType)> {
-    let mut boot: BootRecord = Default::default();
+pub(crate) fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(BootSector, FatType)> {
+    let mut boot: BootSector = Default::default();
     let (bpb, fat_type) = format_bpb(options)?;
     boot.bpb = bpb;
     boot.oem_name.copy_from_slice("MSWIN4.1".as_bytes());

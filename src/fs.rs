@@ -12,7 +12,7 @@ use io::{Error, ErrorKind, SeekFrom};
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use boot_sector::{BootRecord, BiosParameterBlock, format_boot_sector};
+use boot_sector::{BootSector, BiosParameterBlock, format_boot_sector};
 use dir::{Dir, DirRawStream};
 use file::File;
 use table::{alloc_cluster, count_free_clusters, read_fat_flags, format_fat, ClusterIterator, RESERVED_FAT_ENTRIES};
@@ -300,7 +300,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
         // read boot sector
         let bpb = {
-            let boot = BootRecord::deserialize(&mut disk)?;
+            let boot = BootSector::deserialize(&mut disk)?;
             boot.validate()?;
             boot.bpb
         };
@@ -312,7 +312,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
         // read FSInfo sector if this is FAT32
         let mut fs_info = if fat_type == FatType::Fat32 {
-            disk.seek(SeekFrom::Start(bpb.fs_info_sector as u64 * bpb.bytes_per_sector as u64))?;
+            disk.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
             FsInfoSector::deserialize(&mut disk)?
         } else {
             FsInfoSector::default()
@@ -429,19 +429,27 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     }
 
     fn offset_from_sector(&self, sector: u32) -> u64 {
-        (sector as u64) * self.bpb.bytes_per_sector as u64
+        self.bpb.bytes_from_sectors(sector)
     }
 
     fn sector_from_cluster(&self, cluster: u32) -> u32 {
-        ((cluster - 2) * self.bpb.sectors_per_cluster as u32) + self.first_data_sector
+        self.first_data_sector + self.bpb.sectors_from_clusters(cluster - RESERVED_FAT_ENTRIES)
     }
 
-    pub(crate) fn cluster_size(&self) -> u32 {
-        self.bpb.sectors_per_cluster as u32 * self.bpb.bytes_per_sector as u32
+    pub fn cluster_size(&self) -> u32 {
+        self.bpb.cluster_size()
     }
 
     pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
         self.offset_from_sector(self.sector_from_cluster(cluser))
+    }
+
+    pub(crate) fn bytes_from_clusters(&self, clusters: u32) -> u64 {
+        self.bpb.bytes_from_sectors(self.bpb.sectors_from_clusters(clusters))
+    }
+
+    pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {
+        self.bpb.clusters_from_bytes(bytes)
     }
 
     fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, T>> {
@@ -482,7 +490,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         if zero {
             let mut disk = self.disk.borrow_mut();
             disk.seek(SeekFrom::Start(self.offset_from_cluster(cluster)))?;
-            write_zeros(&mut *disk, self.cluster_size() as usize)?;
+            write_zeros(&mut *disk, self.cluster_size() as u64)?;
         }
         let mut fs_info = self.fs_info.borrow_mut();
         fs_info.set_next_free_cluster(cluster + 1);
@@ -623,10 +631,10 @@ fn fat_slice<T: ReadWriteSeek>(io: T, bpb: &BiosParameterBlock) -> DiskSlice<T> 
     let sectors_per_fat = bpb.sectors_per_fat();
     let mirroring_enabled = bpb.mirroring_enabled();
     let (fat_first_sector, mirrors) = if mirroring_enabled {
-        (bpb.reserved_sectors as u32, bpb.fats)
+        (bpb.reserved_sectors(), bpb.fats)
     } else {
         let active_fat = bpb.active_fat() as u32;
-        let fat_first_sector = (bpb.reserved_sectors as u32) + active_fat * sectors_per_fat;
+        let fat_first_sector = (bpb.reserved_sectors()) + active_fat * sectors_per_fat;
         (fat_first_sector, 1)
     };
     DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, bpb, io)
@@ -652,10 +660,9 @@ impl<T> DiskSlice<T> {
     }
 
     fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: T) -> Self {
-        let bytes_per_sector = bpb.bytes_per_sector as u64;
         Self::new(
-            first_sector as u64 * bytes_per_sector,
-            sector_count as u64 * bytes_per_sector,
+            bpb.bytes_from_sectors(first_sector),
+            bpb.bytes_from_sectors(sector_count),
             mirrors,
             inner,
         )
@@ -761,20 +768,20 @@ impl OemCpConverter for LossyOemCpConverter {
 
 pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
 
-fn write_zeros<T: ReadWriteSeek>(mut disk: T, mut len: usize) -> io::Result<()> {
+pub(crate) fn write_zeros<T: ReadWriteSeek>(mut disk: T, mut len: u64) -> io::Result<()> {
     const ZEROS: [u8; 512] = [0u8; 512];
     while len > 0 {
-        let write_size = cmp::min(len, ZEROS.len());
+        let write_size = cmp::min(len, ZEROS.len() as u64) as usize;
         disk.write_all(&ZEROS[..write_size])?;
-        len -= write_size;
+        len -= write_size as u64;
     }
     Ok(())
 }
 
 fn write_zeros_until_end_of_sector<T: ReadWriteSeek>(mut disk: T, bytes_per_sector: u16) -> io::Result<()> {
     let pos = disk.seek(SeekFrom::Current(0))?;
-    let total_bytes_to_write = bytes_per_sector as usize - (pos % bytes_per_sector as u64) as usize;
-    if total_bytes_to_write != bytes_per_sector as usize {
+    let total_bytes_to_write = bytes_per_sector as u64 - (pos % bytes_per_sector as u64);
+    if total_bytes_to_write != bytes_per_sector as u64 {
         write_zeros(disk, total_bytes_to_write)?;
     }
     Ok(())
@@ -905,46 +912,47 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
             next_free_cluster: None,
             dirty: false,
         };
-        disk.seek(SeekFrom::Start(boot.bpb.fs_info_sector as u64 * bytes_per_sector as u64))?;
+        disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.fs_info_sector())))?;
         fs_info_sector.serialize(&mut disk)?;
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
 
         // backup boot sector
-        disk.seek(SeekFrom::Start(boot.bpb.backup_boot_sector as u64 * bytes_per_sector as u64))?;
+        disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.backup_boot_sector())))?;
         boot.serialize(&mut disk)?;
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
     }
 
     // format File Allocation Table
-    let sectors_per_fat: u32 = boot.bpb.sectors_per_fat();
-    let bytes_per_fat: u32 = sectors_per_fat * bytes_per_sector as u32;
-    let reserved_sectors = boot.bpb.reserved_sectors;
-    let fat_pos = reserved_sectors as u64 * bytes_per_sector as u64;
+    let reserved_sectors = boot.bpb.reserved_sectors();
+    let fat_pos = boot.bpb.bytes_from_sectors(reserved_sectors);
+    let sectors_per_all_fats = boot.bpb.sectors_per_all_fats();
     disk.seek(SeekFrom::Start(fat_pos))?;
-    write_zeros(&mut disk, bytes_per_fat as usize * boot.bpb.fats as usize)?;
+    write_zeros(&mut disk, boot.bpb.bytes_from_sectors(sectors_per_all_fats))?;
     {
         let mut fat_slice = fat_slice(&mut disk, &boot.bpb);
+        let sectors_per_fat = boot.bpb.sectors_per_fat();
+        let bytes_per_fat = boot.bpb.bytes_from_sectors(sectors_per_fat);
         format_fat(&mut fat_slice, fat_type, boot.bpb.media, bytes_per_fat, boot.bpb.total_clusters())?;
     }
 
     // init root directory - zero root directory region for FAT12/16 and alloc first root directory cluster for FAT32
-    let root_dir_pos = fat_pos + bytes_per_fat as u64 * boot.bpb.fats as u64;
+    let root_dir_first_sector = reserved_sectors + sectors_per_all_fats;
+    let root_dir_sectors = boot.bpb.root_dir_sectors();
+    let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
     disk.seek(SeekFrom::Start(root_dir_pos))?;
-    let root_dir_sectors: u32 = boot.bpb.root_dir_sectors();
-    write_zeros(&mut disk, root_dir_sectors as usize * bytes_per_sector as usize)?;
+    write_zeros(&mut disk, boot.bpb.bytes_from_sectors(root_dir_sectors))?;
     if fat_type == FatType::Fat32 {
         let root_dir_first_cluster = {
             let mut fat_slice = fat_slice(&mut disk, &boot.bpb);
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == boot.bpb.root_dir_first_cluster);
-        let first_data_sector = reserved_sectors as u32 + boot.bpb.sectors_per_all_fats() + root_dir_sectors;
-        let sectors_per_cluster = boot.bpb.sectors_per_cluster;
-        let root_dir_first_sector =
-            ((root_dir_first_cluster - RESERVED_FAT_ENTRIES) * sectors_per_cluster as u32) + first_data_sector;
-        let root_dir_pos = root_dir_first_sector as u64 * bytes_per_sector as u64;
+        let first_data_sector = reserved_sectors + sectors_per_all_fats + root_dir_sectors;
+        let root_dir_first_sector = first_data_sector
+            + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
+        let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
         disk.seek(SeekFrom::Start(root_dir_pos))?;
-        write_zeros(&mut disk, sectors_per_cluster as usize * bytes_per_sector as usize)?;
+        write_zeros(&mut disk, boot.bpb.cluster_size() as u64)?;
     }
 
     // TODO: create volume label dir entry if volume label is set
