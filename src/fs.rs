@@ -155,12 +155,12 @@ impl FsInfoSector {
     fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
         wrt.write_u32::<LittleEndian>(Self::LEAD_SIG)?;
         let reserved = [0u8; 480];
-        wrt.write(&reserved)?;
+        wrt.write_all(&reserved)?;
         wrt.write_u32::<LittleEndian>(Self::STRUC_SIG)?;
         wrt.write_u32::<LittleEndian>(self.free_cluster_count.unwrap_or(0xFFFFFFFF))?;
         wrt.write_u32::<LittleEndian>(self.next_free_cluster.unwrap_or(0xFFFFFFFF))?;
         let reserved2 = [0u8; 12];
-        wrt.write(&reserved2)?;
+        wrt.write_all(&reserved2)?;
         wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
         Ok(())
     }
