@@ -7,7 +7,7 @@ use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 use dir_entry::DIR_ENTRY_SIZE;
-use fs::{FatType, FsStatusFlags, FormatVolumeOptions};
+use fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use table::RESERVED_FAT_ENTRIES;
 
 const KB: u64 = 1024;
@@ -227,10 +227,7 @@ impl BiosParameterBlock {
         }
 
         if self.total_sectors() <= self.first_data_sector() {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "Invalid BPB (total_sectors field value is too small)",
-            ));
+            return Err(Error::new(ErrorKind::Other, "Invalid BPB (total_sectors field value is too small)"));
         }
 
         let total_clusters = self.total_clusters();
@@ -444,9 +441,14 @@ fn determine_bytes_per_cluster(total_bytes: u64, fat_type: FatType, bytes_per_se
     cmp::min(cmp::max(bytes_per_cluster, bytes_per_sector as u32), MAX_CLUSTER_SIZE)
 }
 
-fn determine_sectors_per_fat(total_sectors: u32, reserved_sectors: u16, fats: u8, root_dir_sectors: u32,
-        sectors_per_cluster: u8, fat_type: FatType) -> u32 {
-
+fn determine_sectors_per_fat(
+    total_sectors: u32,
+    reserved_sectors: u16,
+    fats: u8,
+    root_dir_sectors: u32,
+    sectors_per_cluster: u8,
+    fat_type: FatType,
+) -> u32 {
     // TODO: check if this calculation is always correct (especially for FAT12)
     let tmp_val1 = total_sectors - (reserved_sectors as u32 + root_dir_sectors as u32);
     let mut tmp_val2 = (256 * sectors_per_cluster as u32) + fats as u32;
@@ -464,7 +466,8 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     let total_sectors = options.total_sectors;
     let total_bytes = total_sectors as u64 * bytes_per_sector as u64;
     let fat_type = options.fat_type.unwrap_or_else(|| determine_fat_type(total_bytes));
-    let bytes_per_cluster = options.bytes_per_cluster
+    let bytes_per_cluster = options
+        .bytes_per_cluster
         .unwrap_or_else(|| determine_bytes_per_cluster(total_bytes, fat_type, bytes_per_sector));
     let sectors_per_cluster = (bytes_per_cluster / bytes_per_sector as u32) as u8;
 
@@ -481,15 +484,23 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     // Check if volume has enough space to accomodate reserved sectors, FAT, root directory and some data space
     // Having less than 8 sectors for FAT and data would make a little sense
     if total_sectors <= reserved_sectors as u32 + root_dir_sectors as u32 + 8 {
-        return Err(Error::new(ErrorKind::Other, "Volume is too small",));
+        return Err(Error::new(ErrorKind::Other, "Volume is too small"));
     }
 
     // calculate File Allocation Table size
-    let sectors_per_fat = determine_sectors_per_fat(total_sectors, reserved_sectors, fats, root_dir_sectors,
-        sectors_per_cluster, fat_type);
+    let sectors_per_fat = determine_sectors_per_fat(
+        total_sectors,
+        reserved_sectors,
+        fats,
+        root_dir_sectors,
+        sectors_per_cluster,
+        fat_type,
+    );
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
-    let drive_num = options.drive_num.unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
+    let drive_num = options
+        .drive_num
+        .unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
     // reserved_0 is always zero
     let reserved_0 = [0u8; 12];
@@ -544,7 +555,10 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
 
     // Check if number of clusters is proper for used FAT type
     if FatType::from_clusters(bpb.total_clusters()) != fat_type {
-        return Err(Error::new(ErrorKind::Other, "Total number of clusters and FAT type does not match. Try other volume size"));
+        return Err(Error::new(
+            ErrorKind::Other,
+            "Total number of clusters and FAT type does not match. Try other volume size",
+        ));
     }
 
     Ok((bpb, fat_type))

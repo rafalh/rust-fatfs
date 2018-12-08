@@ -11,7 +11,7 @@ use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileA
 #[cfg(feature = "alloc")]
 use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
 use file::File;
-use fs::{DiskSlice, FsIoAdapter, FileSystem, ReadWriteSeek};
+use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek};
 
 #[cfg(feature = "alloc")]
 type LfnUtf16 = Vec<u16>;
@@ -1002,12 +1002,8 @@ mod tests {
         assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), b"FOO     B  ");
         assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), b"FOO     BAR");
         assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), b"FOO_1~1 BAR");
-        assert_eq!(
-            &ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), b"VER_12~1TEX"
-        );
-        assert_eq!(
-            &ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), b"BASHRC~1SWP"
-        );
+        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), b"VER_12~1TEX");
+        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), b"BASHRC~1SWP");
     }
 
     #[test]

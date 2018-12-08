@@ -120,7 +120,13 @@ pub(crate) fn count_free_clusters<T: ReadSeek>(fat: &mut T, fat_type: FatType, t
     }
 }
 
-pub(crate) fn format_fat<T: ReadWriteSeek>(fat: &mut T, fat_type: FatType, media: u8, bytes_per_fat: u64, total_clusters: u32) -> io::Result<()> {
+pub(crate) fn format_fat<T: ReadWriteSeek>(
+    fat: &mut T,
+    fat_type: FatType,
+    media: u8,
+    bytes_per_fat: u64,
+    total_clusters: u32,
+) -> io::Result<()> {
     // init first two reserved entries to FAT ID
     match fat_type {
         FatType::Fat12 => {

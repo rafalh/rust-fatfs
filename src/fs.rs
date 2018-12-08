@@ -12,10 +12,10 @@ use io::{Error, ErrorKind, SeekFrom};
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use boot_sector::{BootSector, BiosParameterBlock, format_boot_sector};
+use boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use dir::{Dir, DirRawStream};
 use file::File;
-use table::{alloc_cluster, count_free_clusters, read_fat_flags, format_fat, ClusterIterator, RESERVED_FAT_ENTRIES};
+use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
 use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
 
 // FAT implementation based on:
@@ -453,9 +453,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     }
 
     fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, T>> {
-        let io = FsIoAdapter {
-            fs: self,
-        };
+        let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
 
@@ -621,9 +619,7 @@ impl<'a, T: ReadWriteSeek> Seek for FsIoAdapter<'a, T> {
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
 impl<'a, T: ReadWriteSeek> Clone for FsIoAdapter<'a, T> {
     fn clone(&self) -> Self {
-        FsIoAdapter {
-            fs: self.fs,
-        }
+        FsIoAdapter { fs: self.fs }
     }
 }
 
@@ -948,8 +944,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
         };
         assert!(root_dir_first_cluster == boot.bpb.root_dir_first_cluster);
         let first_data_sector = reserved_sectors + sectors_per_all_fats + root_dir_sectors;
-        let root_dir_first_sector = first_data_sector
-            + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
+        let root_dir_first_sector = first_data_sector + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
         let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
         disk.seek(SeekFrom::Start(root_dir_pos))?;
         write_zeros(&mut disk, boot.bpb.cluster_size() as u64)?;
