@@ -51,7 +51,7 @@ pub(crate) struct ShortName {
 }
 
 impl ShortName {
-    const PADDING: u8 = ' ' as u8;
+    const PADDING: u8 = b' ';
 
     pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
         // get name components length by looking for space character
@@ -64,7 +64,7 @@ impl ShortName {
         let mut name = [Self::PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
-            name[name_len] = '.' as u8;
+            name[name_len] = b'.';
             name[name_len + 1..name_len + 1 + ext_len].copy_from_slice(&raw_name[8..8 + ext_len]);
             // Return total name length
             name_len + 1 + ext_len
@@ -529,10 +529,10 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
     #[cfg(feature = "alloc")]
     pub fn file_name(&self) -> String {
-        if self.lfn_utf16.len() > 0 {
-            String::from_utf16_lossy(&self.lfn_utf16)
-        } else {
+        if self.lfn_utf16.is_empty() {
             self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
+        } else {
+            String::from_utf16_lossy(&self.lfn_utf16)
         }
     }
 
@@ -642,9 +642,9 @@ mod tests {
     #[test]
     fn short_name_with_ext() {
         let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice("FOO     BAR".as_bytes());
+        raw_short_name.copy_from_slice(b"FOO     BAR");
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
-        raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
+        raw_short_name.copy_from_slice(b"LOOK AT M E");
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
         raw_short_name[0] = 0x99;
         raw_short_name[10] = 0x99;
@@ -661,16 +661,16 @@ mod tests {
     #[test]
     fn short_name_without_ext() {
         let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice("FOO        ".as_bytes());
+        raw_short_name.copy_from_slice(b"FOO        ");
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
-        raw_short_name.copy_from_slice("LOOK AT    ".as_bytes());
+        raw_short_name.copy_from_slice(b"LOOK AT    ");
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT");
     }
 
     #[test]
     fn short_name_eq_ignore_case() {
         let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice("LOOK AT M E".as_bytes());
+        raw_short_name.copy_from_slice(b"LOOK AT M E");
         raw_short_name[0] = 0x99;
         raw_short_name[10] = 0x99;
         assert_eq!(
@@ -688,14 +688,14 @@ mod tests {
         let raw_short_name = [0x05; 11];
         assert_eq!(
             ShortName::new(&raw_short_name).as_bytes(),
-            [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, '.' as u8, 0x05, 0x05, 0x05]
+            [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, b'.', 0x05, 0x05, 0x05]
         );
     }
 
     #[test]
     fn lowercase_short_name() {
         let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice("FOO     RS ".as_bytes());
+        raw_short_name.copy_from_slice(b"FOO     RS ");
         let mut raw_entry = DirFileEntryData {
             name: raw_short_name,
             reserved_0: (1 << 3) | (1 << 4),

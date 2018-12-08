@@ -456,7 +456,7 @@ impl<T: ReadWriteSeek> Iterator for ClusterIterator<T> {
                 },
             }
         }
-        self.cluster.map(|n| Ok(n))
+        self.cluster.map(Ok)
     }
 }
 

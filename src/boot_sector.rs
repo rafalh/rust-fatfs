@@ -499,17 +499,17 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     if let Some(volume_label_from_opts) = options.volume_label {
         volume_label.copy_from_slice(&volume_label_from_opts);
     } else {
-        volume_label.copy_from_slice("NO NAME    ".as_bytes());
+        volume_label.copy_from_slice(b"NO NAME    ");
     }
 
     // setup fs_type_label field
     let mut fs_type_label = [0u8; 8];
     let fs_type_label_str = match fat_type {
-        FatType::Fat12 => "FAT12   ",
-        FatType::Fat16 => "FAT16   ",
-        FatType::Fat32 => "FAT32   ",
+        FatType::Fat12 => b"FAT12   ",
+        FatType::Fat16 => b"FAT16   ",
+        FatType::Fat32 => b"FAT32   ",
     };
-    fs_type_label.copy_from_slice(fs_type_label_str.as_bytes());
+    fs_type_label.copy_from_slice(fs_type_label_str);
 
     // create Bios Parameter Block struct
     let bpb = BiosParameterBlock {
@@ -554,7 +554,7 @@ pub(crate) fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(B
     let mut boot: BootSector = Default::default();
     let (bpb, fat_type) = format_bpb(options)?;
     boot.bpb = bpb;
-    boot.oem_name.copy_from_slice("MSWIN4.1".as_bytes());
+    boot.oem_name.copy_from_slice(b"MSWIN4.1");
     // Boot code copied from FAT32 boot sector initialized by mkfs.fat
     boot.bootjmp = [0xEB, 0x58, 0x90];
     let boot_code: [u8; 129] = [

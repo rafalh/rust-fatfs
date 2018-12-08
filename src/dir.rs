@@ -84,7 +84,7 @@ impl<'a, T: ReadWriteSeek> Seek for DirRawStream<'a, T> {
 
 fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
     // remove trailing slash and split into 2 components - top-most parent and rest
-    let mut path_split = path.trim_matches('/').splitn(2, "/");
+    let mut path_split = path.trim_matches('/').splitn(2, '/');
     let comp = path_split.next().unwrap(); // SAFE: splitn always returns at least one element
     let rest_opt = path_split.next();
     (comp, rest_opt)
@@ -262,7 +262,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             let e = r?;
             let name = e.short_file_name_as_bytes();
             // ignore special entries "." and ".."
-            if name != ".".as_bytes() && name != "..".as_bytes() {
+            if name != b"." && name != b".." {
                 return Ok(false);
             }
         }
@@ -324,7 +324,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         let (name, rest_opt) = split_path(dst_path);
         if let Some(rest) = rest_opt {
             let e = dst_dir.find_entry(name, Some(true), None)?;
-            return self.rename(src_path, &mut e.to_dir(), rest);
+            return self.rename(src_path, &e.to_dir(), rest);
         }
         // move/rename file
         self.rename_internal(src_path, dst_dir, dst_path)
@@ -415,7 +415,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         ()
     }
 
-    fn alloc_and_write_lfn_entries(&self, lfn_utf16: &LfnUtf16, short_name: &[u8]) -> io::Result<(DirRawStream<'a, T>, u64)> {
+    fn alloc_and_write_lfn_entries(&self, lfn_utf16: &LfnUtf16, short_name: &[u8; 11]) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(short_name);
         // create LFN entries generator
@@ -445,14 +445,14 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
         // return new logical entry descriptor
         let short_name = ShortName::new(raw_entry.name());
-        return Ok(DirEntry {
+        Ok(DirEntry {
             data: raw_entry,
             short_name,
             lfn_utf16,
             fs: self.fs,
             entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is absent only for empty file
             offset_range: (start_pos, end_pos),
-        });
+        })
     }
 }
 
@@ -527,7 +527,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                     return Ok(Some(DirEntry {
                         data,
                         short_name,
-                        lfn_utf16: lfn_buf.to_vec(),
+                        lfn_utf16: lfn_buf.into_vec(),
                         fs: self.fs,
                         entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is empty only for empty file
                         offset_range: (begin_offset, offset),
@@ -576,7 +576,7 @@ impl<'a, T: ReadWriteSeek> Iterator for DirIter<'a, T> {
 
 fn validate_long_name(name: &str) -> io::Result<()> {
     // check if length is valid
-    if name.len() == 0 {
+    if name.is_empty() {
         return Err(io::Error::new(ErrorKind::Other, "File name is empty"));
     }
     if name.len() > 255 {
@@ -595,10 +595,10 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn lfn_checksum(short_name: &[u8]) -> u8 {
+fn lfn_checksum(short_name: &[u8; 11]) -> u8 {
     let mut chksum = num::Wrapping(0u8);
-    for i in 0..11 {
-        chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(short_name[i]);
+    for b in short_name {
+        chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(*b);
     }
     chksum.0
 }
@@ -625,7 +625,7 @@ impl LongNameBuilder {
         self.index = 0;
     }
 
-    fn to_vec(mut self) -> Vec<u16> {
+    fn into_vec(mut self) -> Vec<u16> {
         // Check if last processed entry had index 1
         if self.index == 1 {
             self.truncate();
@@ -651,7 +651,7 @@ impl LongNameBuilder {
     fn is_empty(&self) -> bool {
         // Check if any LFN entry has been processed
         // Note: index 0 is not a valid index in LFN and can be seen only after struct initialization
-        return self.index == 0;
+        self.index == 0
     }
 
     fn process(&mut self, data: &DirLfnEntryData) {
@@ -688,7 +688,7 @@ impl LongNameBuilder {
         data.copy_name_to_slice(&mut self.buf[pos..pos + 13]);
     }
 
-    fn validate_chksum(&mut self, short_name: &[u8]) {
+    fn validate_chksum(&mut self, short_name: &[u8; 11]) {
         if self.is_empty() {
             // Nothing to validate - no LFN entries has been processed
             return;
@@ -710,10 +710,10 @@ impl LongNameBuilder {
         LongNameBuilder {}
     }
     fn clear(&mut self) {}
-    fn to_vec(self) {}
+    fn into_vec(self) {}
     fn truncate(&mut self) {}
     fn process(&mut self, _data: &DirLfnEntryData) {}
-    fn validate_chksum(&mut self, _short_name: &[u8]) {}
+    fn validate_chksum(&mut self, _short_name: &[u8; 11]) {}
 }
 
 #[cfg(feature = "alloc")]
@@ -892,7 +892,7 @@ impl ShortNameGenerator {
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
         let prefix_len = cmp::min(self.basename_len, 6) as usize;
-        let num_suffix = if short_name[prefix_len] as char == '~' {
+        let num_suffix = if short_name[prefix_len] == b'~' {
             (short_name[prefix_len + 1] as char).to_digit(10)
         } else {
             None
@@ -905,7 +905,7 @@ impl ShortNameGenerator {
 
         // check for short prefix + checksum form collision (TE021F~1.TXT)
         let prefix_len = cmp::min(self.basename_len, 2) as usize;
-        let num_suffix = if short_name[prefix_len + 4] as char == '~' {
+        let num_suffix = if short_name[prefix_len + 4] == b'~' {
             (short_name[prefix_len + 4 + 1] as char).to_digit(10)
         } else {
             None
@@ -970,7 +970,7 @@ impl ShortNameGenerator {
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
             prefix_len
         };
-        buf[prefix_len] = '~' as u8;
+        buf[prefix_len] = b'~';
         buf[prefix_len + 1] = char::from_digit(num, 10).unwrap() as u8; // SAFE
         buf[8..].copy_from_slice(&self.short_name[8..]);
         buf
@@ -981,7 +981,7 @@ impl ShortNameGenerator {
         let c2 = char::from_digit((x as u32 >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c3 = char::from_digit((x as u32 >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c4 = char::from_digit((x as u32 >> 0) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        return [c1, c2, c3, c4];
+        [c1, c2, c3, c4]
     }
 }
 
@@ -998,17 +998,15 @@ mod tests {
 
     #[test]
     fn test_generate_short_name() {
-        assert_eq!(&ShortNameGenerator::new("Foo").generate().unwrap(), "FOO        ".as_bytes());
-        assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), "FOO     B  ".as_bytes());
-        assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), "FOO     BAR".as_bytes());
-        assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), "FOO_1~1 BAR".as_bytes());
+        assert_eq!(&ShortNameGenerator::new("Foo").generate().unwrap(), b"FOO        ");
+        assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), b"FOO     B  ");
+        assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), b"FOO     BAR");
+        assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), b"FOO_1~1 BAR");
         assert_eq!(
-            &ShortNameGenerator::new("ver +1.2.text").generate().unwrap(),
-            "VER_12~1TEX".as_bytes()
+            &ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), b"VER_12~1TEX"
         );
         assert_eq!(
-            &ShortNameGenerator::new(".bashrc.swp").generate().unwrap(),
-            "BASHRC~1SWP".as_bytes()
+            &ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), b"BASHRC~1SWP"
         );
     }
 
@@ -1029,22 +1027,22 @@ mod tests {
         let mut buf: [u8; 11];
         let mut gen = ShortNameGenerator::new("TextFile.Mine.txt");
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TEXTFI~1TXT".as_bytes());
+        assert_eq!(&buf, b"TEXTFI~1TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TEXTFI~2TXT".as_bytes());
+        assert_eq!(&buf, b"TEXTFI~2TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TEXTFI~3TXT".as_bytes());
+        assert_eq!(&buf, b"TEXTFI~3TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TEXTFI~4TXT".as_bytes());
+        assert_eq!(&buf, b"TEXTFI~4TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TE527D~1TXT".as_bytes());
+        assert_eq!(&buf, b"TE527D~1TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TE527D~2TXT".as_bytes());
+        assert_eq!(&buf, b"TE527D~2TXT");
         for i in 3..10 {
             gen.add_existing(&buf);
             buf = gen.generate().unwrap();
@@ -1058,7 +1056,7 @@ mod tests {
             gen.add_existing(&buf);
         }
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "TE527E~1TXT".as_bytes());
+        assert_eq!(&buf, b"TE527E~1TXT");
     }
 
     #[test]
@@ -1066,24 +1064,24 @@ mod tests {
         let mut buf: [u8; 11];
         let mut gen = ShortNameGenerator::new("x.txt");
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X       TXT".as_bytes());
+        assert_eq!(&buf, b"X       TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X~1     TXT".as_bytes());
+        assert_eq!(&buf, b"X~1     TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X~2     TXT".as_bytes());
+        assert_eq!(&buf, b"X~2     TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X~3     TXT".as_bytes());
+        assert_eq!(&buf, b"X~3     TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X~4     TXT".as_bytes());
+        assert_eq!(&buf, b"X~4     TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X40DA~1 TXT".as_bytes());
+        assert_eq!(&buf, b"X40DA~1 TXT");
         gen.add_existing(&buf);
         buf = gen.generate().unwrap();
-        assert_eq!(&buf, "X40DA~2 TXT".as_bytes());
+        assert_eq!(&buf, b"X40DA~2 TXT");
     }
 }
