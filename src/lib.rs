@@ -76,6 +76,7 @@ extern crate core_io;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
 
+mod boot_sector;
 mod dir;
 mod dir_entry;
 mod file;
