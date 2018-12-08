@@ -10,14 +10,15 @@ Rust FAT FS
 A FAT filesystem library implemented in Rust.
 
 Features:
-* read/write file using standard Read/Write traits,
-* read directory contents,
-* create/remove file or directory,
-* rename/move file or directory,
-* read/write file timestamps (updated automatically if `chrono` feature is enabled),
-* FAT12, FAT16, FAT32 compatibility,
-* LFN (Long File Names) extension is supported,
-* Basic no_std environment support.
+* read/write file using standard Read/Write traits
+* read directory contents
+* create/remove file or directory
+* rename/move file or directory
+* read/write file timestamps (updated automatically if `chrono` feature is enabled)
+* format volume
+* FAT12, FAT16, FAT32 compatibility
+* LFN (Long File Names) extension is supported
+* Basic no_std environment support
 
 Usage
 -----

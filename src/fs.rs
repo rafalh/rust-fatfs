@@ -652,7 +652,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
-    /// image (e.g. partition) library user should wrap the file handle in a struct limiting
+    /// image (e.g. partition) library user should wrap the file struct in a struct limiting
     /// access to partition bytes only e.g. `fscommon::StreamSlice`.
     ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
@@ -1114,6 +1114,10 @@ impl OemCpConverter for LossyOemCpConverter {
 
 pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
 
+/// A FAT filesystem formatting options
+///
+/// This struct implements a builder pattern.
+/// Options are specified as an argument for `format_volume` function.
 #[derive(Default, Debug, Clone)]
 pub struct FormatVolumeOptions {
     bytes_per_sector: u16,
@@ -1130,6 +1134,12 @@ pub struct FormatVolumeOptions {
 }
 
 impl FormatVolumeOptions {
+    /// Create options struct
+    ///
+    /// `total_sectors` is size of partition in sectors.
+    /// `bytes_per_sector` is size of a logical sector (usually 512).
+    /// Other options can be optionally specified by calling adequate methods.
+    /// If not specified suitable defaults will be used based on partition size.
     pub fn new(total_sectors: u32, bytes_per_sector: u16) -> Self {
         FormatVolumeOptions {
             total_sectors,
@@ -1138,46 +1148,68 @@ impl FormatVolumeOptions {
         }
     }
 
+    /// Set size of cluster in bytes (must be dividable by sector size)
     pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
         self.bytes_per_cluster = Some(bytes_per_cluster);
         self
     }
 
+    /// Set File Allocation Table type
+    ///
+    /// Note: FAT type is defined by total number of clusters so changing this option
+    /// can cause formatting to fail if volume size is incompatible.
     pub fn fat_type(mut self, fat_type: FatType) -> Self {
         self.fat_type = Some(fat_type);
         self
     }
 
+    /// Set maximal numer of entries in root directory for FAT12/FAT16 volumes
     pub fn root_entries(mut self, root_entries: u16) -> Self {
         self.root_entries = Some(root_entries);
         self
     }
 
+    /// Set media field for Bios Parameters Block
+    ///
+    /// Default is `0xF8`.
     pub fn media(mut self, media: u8) -> Self {
         self.media = Some(media);
         self
     }
 
+    /// Set number of physical sectors per track for Bios Parameters Block (INT 13h CHS geometry)
+    ///
+    /// Default is `0x20`.
     pub fn sectors_per_track(mut self, sectors_per_track: u16) -> Self {
         self.sectors_per_track = Some(sectors_per_track);
         self
     }
 
+    /// Set number of heads for Bios Parameters Block (INT 13h CHS geometry)
+    ///
+    /// Default is `0x40`.
     pub fn heads(mut self, heads: u16) -> Self {
         self.heads = Some(heads);
         self
     }
 
+    /// Set drive number for Bios Parameters Block
+    ///
+    /// Default is `0` for FAT12, `0x80` for FAT16/FAT32.
     pub fn drive_num(mut self, drive_num: u8) -> Self {
         self.drive_num = Some(drive_num);
         self
     }
 
+    /// Set volume ID for Bios Parameters Block
+    ///
+    /// Default is `0x12345678`.
     pub fn volume_id(mut self, volume_id: u32) -> Self {
         self.volume_id = Some(volume_id);
         self
     }
 
+    /// Set volume label
     pub fn volume_label(mut self, volume_label: [u8; 11]) -> Self {
         self.volume_label = Some(volume_label);
         self
@@ -1385,6 +1417,11 @@ fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(BootRecord, 
     Ok((boot, fat_type))
 }
 
+/// Create FAT filesystem on a disk or partition (format a volume)
+///
+/// Supplied `disk` parameter cannot be seeked. If there is a need to format a fragment of a disk
+/// image (e.g. partition) library user should wrap the file struct in a struct limiting
+/// access to partition bytes only e.g. `fscommon::StreamSlice`.
 pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
     disk.seek(SeekFrom::Start(0))?;
     // Create boot sector, validate and write to storage device
