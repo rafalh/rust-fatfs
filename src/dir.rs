@@ -171,6 +171,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     ///
     /// `path` is a '/' separated directory path relative to self directory.
     pub fn open_dir(&self, path: &str) -> io::Result<Self> {
+        trace!("open_dir {}", path);
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, Some(true), None)?;
         match rest_opt {
@@ -183,6 +184,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     ///
     /// `path` is a '/' separated file path relative to self directory.
     pub fn open_file(&self, path: &str) -> io::Result<File<'a, T>> {
+        trace!("open_file {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -199,6 +201,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     /// `path` is a '/' separated file path relative to self directory.
     /// File is never truncated when opening. It can be achieved by calling `File::truncate` method after opening.
     pub fn create_file(&self, path: &str) -> io::Result<File<'a, T>> {
+        trace!("create_file {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -221,6 +224,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     ///
     /// `path` is a '/' separated path relative to self directory.
     pub fn create_dir(&self, path: &str) -> io::Result<Self> {
+        trace!("create_dir {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -252,6 +256,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     }
 
     fn is_empty(&self) -> io::Result<bool> {
+        trace!("is_empty");
         // check if directory contains no files
         for r in self.iter() {
             let e = r?;
@@ -270,13 +275,13 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn remove(&self, path: &str) -> io::Result<()> {
+        trace!("remove {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
             let e = self.find_entry(name, Some(true), None)?;
             return e.to_dir().remove(rest);
         }
-        trace!("removing {}", path);
         // in case of directory check if it is empty
         let e = self.find_entry(name, None, None)?;
         if e.is_dir() && !e.to_dir().is_empty()? {
@@ -308,6 +313,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
     pub fn rename(&self, src_path: &str, dst_dir: &Dir<T>, dst_path: &str) -> io::Result<()> {
+        trace!("rename {} {}", src_path, dst_path);
         // traverse source path
         let (name, rest_opt) = split_path(src_path);
         if let Some(rest) = rest_opt {
@@ -325,7 +331,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     }
 
     fn rename_internal(&self, src_name: &str, dst_dir: &Dir<T>, dst_name: &str) -> io::Result<()> {
-        trace!("moving {} to {}", src_name, dst_name);
+        trace!("rename_internal {} {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
         // check if destionation filename is unused
@@ -491,6 +497,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
     }
 
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, T>>> {
+        trace!("read_dir_entry");
         let mut lfn_buf = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
@@ -503,6 +510,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
             }
             // Check if this is deleted or volume ID entry
             if self.should_ship_entry(&raw_entry) {
+                trace!("skip entry");
                 lfn_buf.clear();
                 begin_offset = offset;
                 continue;
@@ -515,6 +523,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                     lfn_buf.validate_chksum(data.name());
                     // Return directory entry
                     let short_name = ShortName::new(data.name());
+                    trace!("file entry {:?}", data.name());
                     return Ok(Some(DirEntry {
                         data,
                         short_name,
@@ -526,6 +535,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                 },
                 DirEntryData::Lfn(data) => {
                     // Append to LFN buffer
+                    trace!("lfn entry");
                     lfn_buf.process(&data);
                 },
             }

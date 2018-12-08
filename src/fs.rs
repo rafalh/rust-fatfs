@@ -295,6 +295,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     /// cause a filesystem corruption.
     pub fn new(mut disk: T, options: FsOptions) -> io::Result<Self> {
         // Make sure given image is not seeked
+        trace!("FileSystem::new");
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
         // read boot sector
@@ -327,6 +328,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
         // return FileSystem struct
         let status_flags = bpb.status_flags();
+        trace!("FileSystem::new end");
         Ok(FileSystem {
             disk: RefCell::new(disk),
             options,
@@ -410,6 +412,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
     pub fn root_dir<'b>(&'b self) -> Dir<'b, T> {
+        trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
                 FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
@@ -470,6 +473,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     }
 
     pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
+        trace!("alloc_cluster");
         let hint = self.fs_info.borrow().next_free_cluster;
         let mut fat = self.fat_slice();
         let cluster = alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?;
@@ -877,6 +881,7 @@ impl FormatVolumeOptions {
 /// image (e.g. partition) library user should wrap the file struct in a struct limiting
 /// access to partition bytes only e.g. `fscommon::StreamSlice`.
 pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
+    trace!("format_volume");
     disk.seek(SeekFrom::Start(0))?;
     // Create boot sector, validate and write to storage device
     let (boot, fat_type) = format_boot_sector(&options)?;
@@ -938,5 +943,6 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
     // TODO: create volume label dir entry if volume label is set
 
     disk.seek(SeekFrom::Start(0))?;
+    trace!("format_volume end");
     Ok(())
 }
