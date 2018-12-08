@@ -50,7 +50,8 @@ fn basic_fs_test(fs: &FileSystem) {
 
 fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
     let _ = env_logger::try_init();
-    let storage_vec: Vec<u8> = Vec::with_capacity(total_bytes as usize);
+    // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
+    let storage_vec: Vec<u8> = vec![0xD1u8; total_bytes as usize];
     let storage_cur = io::Cursor::new(storage_vec);
     let mut buffered_stream = BufStream::new(storage_cur);
     fatfs::format_volume(&mut buffered_stream, opts).expect("format volume");
@@ -86,7 +87,7 @@ fn test_format_50mb() {
 
 
 #[test]
-fn test_format_512mb() {
+fn test_format_512mb_512sec() {
     let total_bytes = 2 * 1024 * MB;
     let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
     let fs = test_format_fs(opts, total_bytes);

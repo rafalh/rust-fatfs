@@ -472,11 +472,18 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         Ok(())
     }
 
-    pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>) -> io::Result<u32> {
+    pub(crate) fn alloc_cluster(&self, prev_cluster: Option<u32>, zero: bool) -> io::Result<u32> {
         trace!("alloc_cluster");
         let hint = self.fs_info.borrow().next_free_cluster;
-        let mut fat = self.fat_slice();
-        let cluster = alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?;
+        let cluster = {
+            let mut fat = self.fat_slice();
+            alloc_cluster(&mut fat, self.fat_type, prev_cluster, hint, self.total_clusters)?
+        };
+        if zero {
+            let mut disk = self.disk.borrow_mut();
+            disk.seek(SeekFrom::Start(self.offset_from_cluster(cluster)))?;
+            write_zeros(&mut *disk, self.cluster_size() as usize)?;
+        }
         let mut fs_info = self.fs_info.borrow_mut();
         fs_info.set_next_free_cluster(cluster + 1);
         fs_info.add_free_clusters(-1);

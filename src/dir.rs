@@ -236,7 +236,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
             // directory does not exist - create it
             DirEntryOrShortName::ShortName(short_name) => {
                 // alloc cluster for directory data
-                let cluster = self.fs.alloc_cluster(None)?;
+                let cluster = self.fs.alloc_cluster(None, true)?;
                 // create entry in parent directory
                 let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
                 let entry = self.write_entry(name, sfn_entry)?;
