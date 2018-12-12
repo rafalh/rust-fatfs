@@ -513,8 +513,9 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     let sectors_per_cluster = (bytes_per_cluster / bytes_per_sector as u32) as u8;
 
     // Note: most of implementations use 32 reserved sectors for FAT32 but it's wasting of space
-    // We use 4 because there are two boot sectors and one FS Info sector (1 sector remains unused)
-    let reserved_sectors: u16 = if fat_type == FatType::Fat32 { 4 } else { 1 };
+    // This implementation uses only 8. This is enough to fit in two boot sectors (main and backup) with additional
+    // bootstrap code and one FSInfo sector. It also makes FAT alligned to 4096 which is a nice number.
+    let reserved_sectors: u16 = if fat_type == FatType::Fat32 { 8 } else { 1 };
 
     let fats = 2u8;
     let is_fat32 = fat_type == FatType::Fat32;

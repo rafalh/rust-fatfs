@@ -14,6 +14,14 @@ const TEST_STR: &str = "Hi there Rust programmer!\n";
 type FileSystem = fatfs::FileSystem<BufStream<io::Cursor<Vec<u8>>>>;
 
 fn basic_fs_test(fs: &FileSystem) {
+    let stats = fs.stats().expect("stats");
+    if fs.fat_type() == fatfs::FatType::Fat32 {
+        // On FAT32 one cluster is allocated for root directory
+        assert_eq!(stats.total_clusters(), stats.free_clusters() + 1);
+    } else {
+        assert_eq!(stats.total_clusters(), stats.free_clusters());
+    }
+
     let root_dir = fs.root_dir();
     let entries = root_dir.iter().map(|r| r.unwrap()).collect::<Vec<_>>();
     assert_eq!(entries.len(), 0);
