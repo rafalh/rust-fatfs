@@ -202,6 +202,13 @@ impl BiosParameterBlock {
             ));
         }
 
+        if !is_fat32 && self.root_entries == 0 {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "Empty root directory region defined in FAT12/FAT16 BPB",
+            ));
+        }
+
         if (u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32) % u32::from(self.bytes_per_sector) != 0 {
             warn!("Root entries should fill sectors fully");
         }
@@ -233,6 +240,14 @@ impl BiosParameterBlock {
 
         if self.total_sectors() <= self.first_data_sector() {
             return Err(Error::new(ErrorKind::Other, "Invalid BPB (total_sectors field value is too small)"));
+        }
+
+        if is_fat32 && self.backup_boot_sector() >= self.reserved_sectors() {
+            return Err(Error::new(ErrorKind::Other, "Invalid BPB (backup boot-sector not in a reserved region)"));
+        }
+
+        if is_fat32 && self.fs_info_sector() >= self.reserved_sectors() {
+            return Err(Error::new(ErrorKind::Other, "Invalid BPB (FSInfo sector not in a reserved region)"));
         }
 
         let total_clusters = self.total_clusters();

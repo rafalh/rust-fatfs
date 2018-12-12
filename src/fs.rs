@@ -913,7 +913,6 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
 
         // backup boot sector
-        debug_assert!(boot.bpb.backup_boot_sector() < boot.bpb.reserved_sectors());
         disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.backup_boot_sector())))?;
         boot.serialize(&mut disk)?;
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
