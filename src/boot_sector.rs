@@ -10,6 +10,7 @@ use dir_entry::DIR_ENTRY_SIZE;
 use fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use table::RESERVED_FAT_ENTRIES;
 
+const BITS_PER_BYTE: u32 = 8;
 const KB: u64 = 1024;
 const MB: u64 = KB * 1024;
 const GB: u64 = MB * 1024;
@@ -201,6 +202,10 @@ impl BiosParameterBlock {
             ));
         }
 
+        if (u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32) % u32::from(self.bytes_per_sector) != 0 {
+            warn!("Root entries should fill sectors fully");
+        }
+
         if is_fat32 && self.total_sectors_16 != 0 {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -242,7 +247,7 @@ impl BiosParameterBlock {
         let bits_per_fat_entry = fat_type.bits_per_fat_entry();
         let total_fat_entries = self.sectors_per_fat() * self.bytes_per_sector as u32 * 8 / bits_per_fat_entry as u32;
         if total_fat_entries - RESERVED_FAT_ENTRIES < total_clusters {
-            warn!("FAT is too small to compared to total number of clusters");
+            warn!("FAT is too small compared to total number of clusters");
         }
 
         Ok(())
@@ -443,25 +448,61 @@ fn determine_bytes_per_cluster(total_bytes: u64, fat_type: FatType, bytes_per_se
 
 fn determine_sectors_per_fat(
     total_sectors: u32,
-    reserved_sectors: u16,
-    fats: u8,
-    root_dir_sectors: u32,
+    bytes_per_sector: u16,
     sectors_per_cluster: u8,
     fat_type: FatType,
+    reserved_sectors: u16,
+    root_dir_sectors: u32,
+    fats: u8,
 ) -> u32 {
-    // TODO: check if this calculation is always correct (especially for FAT12)
-    let tmp_val1 = total_sectors - (reserved_sectors as u32 + root_dir_sectors as u32);
-    let mut tmp_val2 = (256 * sectors_per_cluster as u32) + fats as u32;
-    if fat_type == FatType::Fat32 {
-        tmp_val2 = tmp_val2 / 2;
-    } else if fat_type == FatType::Fat12 {
-        tmp_val2 = tmp_val2 / 3 * 4
-    }
-    (tmp_val1 + (tmp_val2 - 1)) / tmp_val2
+    //
+    // FAT size formula transformations:
+    //
+    // Initial basic formula:
+    // size of FAT in bits >= (total number of clusters + 2) * bits per FAT entry
+    //
+    // Note: when computing number of clusters from number of sectors rounding down is used because partial clusters
+    // are not allowed
+    // Note: in those transformations '/' is a floating-point division (not a rounding towards zero division)
+    //
+    // data_sectors = total_sectors - reserved_sectors - fats * sectors_per_fat - root_dir_sectors
+    // total_clusters = floor(data_sectors / sectors_per_cluster)
+    // bits_per_sector = bytes_per_sector * 8
+    // sectors_per_fat * bits_per_sector >= (total_clusters + 2) * bits_per_fat_entry
+    // sectors_per_fat * bits_per_sector >= (floor(data_sectors / sectors_per_cluster) + 2) * bits_per_fat_entry
+    //
+    // Note: omitting the floor function can cause the FAT to be bigger by 1 entry - negligible
+    //
+    // sectors_per_fat * bits_per_sector >= (data_sectors / sectors_per_cluster + 2) * bits_per_fat_entry
+    // t0 = total_sectors - reserved_sectors - root_dir_sectors
+    // sectors_per_fat * bits_per_sector >= ((t0 - fats * sectors_per_fat) / sectors_per_cluster + 2) * bits_per_fat_entry
+    // sectors_per_fat * bits_per_sector / bits_per_fat_entry >= (t0 - fats * sectors_per_fat) / sectors_per_cluster + 2
+    // sectors_per_fat * bits_per_sector / bits_per_fat_entry >= t0 / sectors_per_cluster + 2 - fats * sectors_per_fat / sectors_per_cluster
+    // sectors_per_fat * bits_per_sector / bits_per_fat_entry + fats * sectors_per_fat / sectors_per_cluster >= t0 / sectors_per_cluster + 2
+    // sectors_per_fat * (bits_per_sector / bits_per_fat_entry + fats / sectors_per_cluster) >= t0 / sectors_per_cluster + 2
+    // sectors_per_fat >= (t0 / sectors_per_cluster + 2) / (bits_per_sector / bits_per_fat_entry + fats / sectors_per_cluster)
+    //
+    // Note: MS specification omits the constant 2 in calculations. This library is taking a better approach...
+    //
+    // sectors_per_fat >= ((t0 + 2 * sectors_per_cluster) / sectors_per_cluster) / (bits_per_sector / bits_per_fat_entry + fats / sectors_per_cluster)
+    // sectors_per_fat >= (t0 + 2 * sectors_per_cluster) / (sectors_per_cluster * bits_per_sector / bits_per_fat_entry + fats)
+    //
+    // Note: compared to MS formula this one can suffer from an overflow problem if u32 type is used
+    //
+    // When converting formula to integer types round towards a bigger FAT:
+    // * first division towards infinity
+    // * second division towards zero (it is in a denominator of the first division)
+
+    let t0: u32 = total_sectors - u32::from(reserved_sectors) - root_dir_sectors;
+    let t1: u64 = u64::from(t0) + u64::from(2 * u32::from(sectors_per_cluster));
+    let bits_per_cluster = u32::from(sectors_per_cluster) * u32::from(bytes_per_sector) * BITS_PER_BYTE;
+    let t2 = u64::from(bits_per_cluster / u32::from(fat_type.bits_per_fat_entry()) + u32::from(fats));
+    let sectors_per_fat = (t1 + t2 - 1) / t2;
+    // Note: casting is safe here because number of sectors per FAT cannot be bigger than total sectors number
+    sectors_per_fat as u32
 }
 
 fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, FatType)> {
-    // TODO: maybe total_sectors could be optional?
     let bytes_per_sector = options.bytes_per_sector;
     let total_sectors = options.total_sectors;
     let total_bytes = total_sectors as u64 * bytes_per_sector as u64;
@@ -490,11 +531,12 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     // calculate File Allocation Table size
     let sectors_per_fat = determine_sectors_per_fat(
         total_sectors,
-        reserved_sectors,
-        fats,
-        root_dir_sectors,
+        bytes_per_sector,
         sectors_per_cluster,
         fat_type,
+        reserved_sectors,
+        root_dir_sectors,
+        fats,
     );
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
@@ -649,9 +691,93 @@ mod tests {
         assert_eq!(determine_bytes_per_cluster(999 * GB as u64, FatType::Fat32, 512), 32 * KB as u32);
     }
 
+    fn test_determine_sectors_per_fat_single(
+        total_bytes: u64,
+        bytes_per_sector: u16,
+        bytes_per_cluster: u32,
+        fat_type: FatType,
+        reserved_sectors: u16,
+        fats: u8,
+        root_dir_entries: u32,
+    ) {
+        let total_sectors = total_bytes / u64::from(bytes_per_sector);
+        debug_assert!(total_sectors < u64::from(core::u32::MAX));
+        let total_sectors = total_sectors as u32;
+
+        let sectors_per_cluster = (bytes_per_cluster / u32::from(bytes_per_sector)) as u8;
+        let root_dir_size = root_dir_entries * DIR_ENTRY_SIZE as u32;
+        let root_dir_sectors = (root_dir_size + u32::from(bytes_per_sector) - 1) / u32::from(bytes_per_sector);
+        let sectors_per_fat = determine_sectors_per_fat(
+            total_sectors,
+            bytes_per_sector,
+            sectors_per_cluster,
+            fat_type,
+            reserved_sectors,
+            root_dir_sectors,
+            fats,
+        );
+
+        let sectors_per_all_fats = u32::from(fats) * sectors_per_fat;
+        let total_data_sectors = total_sectors - u32::from(reserved_sectors) - sectors_per_all_fats - root_dir_sectors;
+        let total_clusters = total_data_sectors / u32::from(sectors_per_cluster);
+        if FatType::from_clusters(total_clusters) != fat_type {
+            // Skip impossible FAT configurations
+            return;
+        }
+        let bits_per_sector = u32::from(bytes_per_sector) * BITS_PER_BYTE;
+        let bits_per_fat = u64::from(sectors_per_fat) * u64::from(bits_per_sector);
+        let total_fat_entries = (bits_per_fat / u64::from(fat_type.bits_per_fat_entry())) as u32;
+        let fat_clusters = total_fat_entries - RESERVED_FAT_ENTRIES;
+        // Note: fat_entries_per_sector is rounded down for FAT12
+        let fat_entries_per_sector = u32::from(bits_per_sector) / fat_type.bits_per_fat_entry();
+        let desc = format!("total_clusters {}, fat_clusters {}, total_sectors {}, bytes/sector {}, sectors/cluster {}, fat_type {:?}, reserved_sectors {}, root_dir_sectors {}, sectors_per_fat {}",
+            total_clusters, fat_clusters, total_sectors, bytes_per_sector, sectors_per_cluster, fat_type, reserved_sectors, root_dir_sectors, sectors_per_fat);
+        assert!(fat_clusters >= total_clusters, "Too small FAT: {}", desc);
+        assert!(fat_clusters <= total_clusters + 2 * fat_entries_per_sector, "Too big FAT: {}", desc);
+    }
+
+    fn test_determine_sectors_per_fat_for_multiple_sizes(
+        bytes_per_sector: u16,
+        fat_type: FatType,
+        reserved_sectors: u16,
+        fats: u8,
+        root_dir_entries: u32,
+    ) {
+        let mut bytes_per_cluster = u32::from(bytes_per_sector);
+        while bytes_per_cluster <= 64 * KB as u32 {
+            let mut size = 1 * MB;
+            while size <= 2048 * GB {
+                test_determine_sectors_per_fat_single(
+                    size,
+                    bytes_per_sector,
+                    bytes_per_cluster,
+                    fat_type,
+                    reserved_sectors,
+                    fats,
+                    root_dir_entries,
+                );
+                size = size + size / 7;
+            }
+            bytes_per_cluster *= 2;
+        }
+    }
+
     #[test]
     fn test_determine_sectors_per_fat() {
-        assert_eq!(determine_sectors_per_fat(1 * MB as u32 / 512, 1, 2, 32, 1, FatType::Fat12), 6);
+        let _ = env_logger::try_init();
+
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat12, 1, 2, 512);
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat12, 1, 1, 512);
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat12, 1, 2, 8192);
+        test_determine_sectors_per_fat_for_multiple_sizes(4096, FatType::Fat12, 1, 2, 512);
+
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat16, 1, 2, 512);
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat16, 1, 1, 512);
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat16, 1, 2, 8192);
+        test_determine_sectors_per_fat_for_multiple_sizes(4096, FatType::Fat16, 1, 2, 512);
+
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat32, 32, 2, 0);
+        test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat32, 32, 1, 0);
+        test_determine_sectors_per_fat_for_multiple_sizes(4096, FatType::Fat32, 32, 2, 0);
     }
 }
-
