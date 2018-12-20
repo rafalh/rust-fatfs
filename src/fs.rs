@@ -3,6 +3,7 @@ use alloc::String;
 use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
+use core::u32;
 use core::fmt::Debug;
 use core::iter::FromIterator;
 use io;
@@ -927,7 +928,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
         let total_bytes: u64 = disk.seek(SeekFrom::End(0))?;
         let total_sectors_64 = total_bytes / u64::from(bytes_per_sector);
         disk.seek(SeekFrom::Start(0))?;
-        if total_sectors_64 > u64::from(core::u32::MAX) {
+        if total_sectors_64 > u64::from(u32::MAX) {
             return Err(Error::new(ErrorKind::Other, "Volume has too many sectors"));
         }
         total_sectors_64 as u32
