@@ -789,8 +789,8 @@ fn write_zeros_until_end_of_sector<T: ReadWriteSeek>(mut disk: T, bytes_per_sect
 /// Options are specified as an argument for `format_volume` function.
 #[derive(Default, Debug, Clone)]
 pub struct FormatVolumeOptions {
-    pub(crate) bytes_per_sector: u16,
-    pub(crate) total_sectors: u32,
+    pub(crate) bytes_per_sector: Option<u16>,
+    pub(crate) total_sectors: Option<u32>,
     pub(crate) bytes_per_cluster: Option<u32>,
     pub(crate) fat_type: Option<FatType>,
     pub(crate) root_entries: Option<u16>,
@@ -803,21 +803,21 @@ pub struct FormatVolumeOptions {
 }
 
 impl FormatVolumeOptions {
-    /// Create options struct
+    /// Create options struct for `format_volume` function
     ///
-    /// `total_sectors` is size of partition in sectors.
-    /// `bytes_per_sector` is size of a logical sector (usually 512).
-    /// Other options can be optionally specified by calling adequate methods.
-    /// If not specified suitable defaults will be used based on partition size.
-    pub fn new(total_sectors: u32, bytes_per_sector: u16) -> Self {
+    /// Allows to overwrite many filesystem parameters.
+    /// In normal use-case defaults should suffice.
+    pub fn new() -> Self {
         FormatVolumeOptions {
-            total_sectors,
-            bytes_per_sector,
             ..Default::default()
         }
     }
 
     /// Set size of cluster in bytes (must be dividable by sector size)
+    ///
+    /// Cluster size must be a power of two and be greater or equal to sector size.
+    /// If option is not specified optimal cluster size is selected based on partition size and
+    /// optionally FAT type override (if specified using `fat_type` method).
     pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
         self.bytes_per_cluster = Some(bytes_per_cluster);
         self
@@ -825,14 +825,37 @@ impl FormatVolumeOptions {
 
     /// Set File Allocation Table type
     ///
-    /// Note: FAT type is defined by total number of clusters so changing this option
-    /// can cause formatting to fail if volume size is incompatible.
+    /// Option allows to override File Allocation Table (FAT) entry size.
+    /// It is unrecommended to set this option unless you know what you are doing.
+    /// Note: FAT type is determined from total number of clusters. Changing this option can cause formatting to fail
+    /// if the volume cannot be divided into proper number of clusters for selected FAT type.
     pub fn fat_type(mut self, fat_type: FatType) -> Self {
         self.fat_type = Some(fat_type);
         self
     }
 
+    /// Set sector size in bytes
+    ///
+    /// Sector size must be a power of two and be in range 512 - 4096.
+    /// Default is `512`.
+    pub fn bytes_per_sector(mut self, bytes_per_sector: u16) -> Self {
+        self.bytes_per_sector = Some(bytes_per_sector);
+        self
+    }
+
+    /// Set total number of sectors
+    ///
+    /// If option is not specified total number of sectors is calculated as storage device size divided by sector size.
+    pub fn total_sectors(mut self, total_sectors: u32) -> Self {
+        self.total_sectors = Some(total_sectors);
+        self
+    }
+
     /// Set maximal numer of entries in root directory for FAT12/FAT16 volumes
+    ///
+    /// Total root directory size should be dividable by sectors size so keep it a multiple of 16 (for default sector
+    /// size).
+    /// Default is `512`.
     pub fn root_entries(mut self, root_entries: u16) -> Self {
         self.root_entries = Some(root_entries);
         self
@@ -879,6 +902,8 @@ impl FormatVolumeOptions {
     }
 
     /// Set volume label
+    ///
+    /// Default is empty label.
     pub fn volume_label(mut self, volume_label: [u8; 11]) -> Self {
         self.volume_label = Some(volume_label);
         self
@@ -887,14 +912,31 @@ impl FormatVolumeOptions {
 
 /// Create FAT filesystem on a disk or partition (format a volume)
 ///
-/// Supplied `disk` parameter cannot be seeked. If there is a need to format a fragment of a disk
-/// image (e.g. partition) library user should wrap the file struct in a struct limiting
-/// access to partition bytes only e.g. `fscommon::StreamSlice`.
+/// Warning: this function overrides internal FAT filesystem structures and causes a loss of all data on provided
+/// partition. Please use it with caution.
+/// Only quick formatting is supported. To achieve a full format zero entire partition before calling this function.
+/// Supplied `disk` parameter cannot be seeked (internal pointer must be on position 0).
+/// To format a fragment of a disk image (e.g. partition) library user should wrap the file struct in a struct
+/// limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
 pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
     trace!("format_volume");
-    disk.seek(SeekFrom::Start(0))?;
+    debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
+
+    let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
+    let total_sectors = if options.total_sectors.is_none() {
+        let total_bytes: u64 = disk.seek(SeekFrom::End(0))?;
+        let total_sectors_64 = total_bytes / u64::from(bytes_per_sector);
+        disk.seek(SeekFrom::Start(0))?;
+        if total_sectors_64 > u64::from(core::u32::MAX) {
+            return Err(Error::new(ErrorKind::Other, "Volume has too many sectors"));
+        }
+        total_sectors_64 as u32
+    } else {
+        options.total_sectors.unwrap() // SAFE: checked above
+    };
+
     // Create boot sector, validate and write to storage device
-    let (boot, fat_type) = format_boot_sector(&options)?;
+    let (boot, fat_type) = format_boot_sector(&options, total_sectors, bytes_per_sector)?;
     boot.validate()?;
     boot.serialize(&mut disk)?;
     // Make sure entire logical sector is updated (serialize method always writes 512 bytes)

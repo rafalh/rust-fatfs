@@ -74,7 +74,7 @@ fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSys
 #[test]
 fn test_format_1mb() {
     let total_bytes = 1 * MB;
-    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
+    let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat12);
 }
@@ -82,7 +82,7 @@ fn test_format_1mb() {
 #[test]
 fn test_format_8mb() {
     let total_bytes = 8 * MB;
-    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
+    let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
 }
@@ -90,7 +90,7 @@ fn test_format_8mb() {
 #[test]
 fn test_format_50mb() {
     let total_bytes = 50 * MB;
-    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
+    let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
 }
@@ -98,20 +98,15 @@ fn test_format_50mb() {
 #[test]
 fn test_format_512mb_512sec() {
     let total_bytes = 2 * 1024 * MB;
-    let opts = fatfs::FormatVolumeOptions::new((total_bytes / 512) as u32, 512);
+    let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);
-}
-
-fn create_format_options(total_bytes: u64, bytes_per_sector: Option<u16>) -> fatfs::FormatVolumeOptions {
-    let total_sectors = (total_bytes / bytes_per_sector.unwrap_or(512) as u64) as u32;
-    fatfs::FormatVolumeOptions::new(total_sectors, bytes_per_sector.unwrap_or(512))
 }
 
 #[test]
 fn test_format_512mb_4096sec() {
     let total_bytes = 1 * 1024 * MB;
-    let opts = create_format_options(total_bytes, Some(1024));
+    let opts = fatfs::FormatVolumeOptions::new().bytes_per_sector(4096);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);
 }

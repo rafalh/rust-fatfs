@@ -258,6 +258,9 @@ impl BiosParameterBlock {
                 "Invalid BPB (result of FAT32 determination from total number of clusters and sectors_per_fat_16 field differs)",
             ));
         }
+        if fat_type == FatType::Fat32 && total_clusters > 0x0FFF_FFFF {
+            return Err(Error::new(ErrorKind::Other, "Invalid BPB (too many clusters)"));
+        }
 
         let bits_per_fat_entry = fat_type.bits_per_fat_entry();
         let total_fat_entries = self.sectors_per_fat() * self.bytes_per_sector as u32 * 8 / bits_per_fat_entry as u32;
@@ -517,10 +520,9 @@ fn determine_sectors_per_fat(
     sectors_per_fat as u32
 }
 
-fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, FatType)> {
-    let bytes_per_sector = options.bytes_per_sector;
-    let total_sectors = options.total_sectors;
-    let total_bytes = total_sectors as u64 * bytes_per_sector as u64;
+fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BiosParameterBlock, FatType)> {
+    let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
+    // FIXME: determine FAT type from cluster size because it can be modified by user
     let fat_type = options.fat_type.unwrap_or_else(|| determine_fat_type(total_bytes));
     let bytes_per_cluster = options
         .bytes_per_cluster
@@ -622,9 +624,9 @@ fn format_bpb(options: &FormatVolumeOptions) -> io::Result<(BiosParameterBlock, 
     Ok((bpb, fat_type))
 }
 
-pub(crate) fn format_boot_sector(options: &FormatVolumeOptions) -> io::Result<(BootSector, FatType)> {
+pub(crate) fn format_boot_sector(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BootSector, FatType)> {
     let mut boot: BootSector = Default::default();
-    let (bpb, fat_type) = format_bpb(options)?;
+    let (bpb, fat_type) = format_bpb(options, total_sectors, bytes_per_sector)?;
     boot.bpb = bpb;
     boot.oem_name.copy_from_slice(b"MSWIN4.1");
     // Boot code copied from FAT32 boot sector initialized by mkfs.fat
@@ -717,7 +719,7 @@ mod tests {
         root_dir_entries: u32,
     ) {
         let total_sectors = total_bytes / u64::from(bytes_per_sector);
-        debug_assert!(total_sectors < u64::from(core::u32::MAX));
+        debug_assert!(total_sectors <= u64::from(core::u32::MAX), "{:x}", total_sectors);
         let total_sectors = total_sectors as u32;
 
         let sectors_per_cluster = (bytes_per_cluster / u32::from(bytes_per_sector)) as u8;
@@ -762,7 +764,7 @@ mod tests {
         let mut bytes_per_cluster = u32::from(bytes_per_sector);
         while bytes_per_cluster <= 64 * KB as u32 {
             let mut size = 1 * MB;
-            while size <= 2048 * GB {
+            while size < 2048 * GB {
                 test_determine_sectors_per_fat_single(
                     size,
                     bytes_per_sector,
@@ -774,6 +776,16 @@ mod tests {
                 );
                 size = size + size / 7;
             }
+            size = 2048 * GB - 1;
+            test_determine_sectors_per_fat_single(
+                size,
+                bytes_per_sector,
+                bytes_per_cluster,
+                fat_type,
+                reserved_sectors,
+                fats,
+                root_dir_entries,
+            );
             bytes_per_cluster *= 2;
         }
     }
@@ -795,5 +807,19 @@ mod tests {
         test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat32, 32, 2, 0);
         test_determine_sectors_per_fat_for_multiple_sizes(512, FatType::Fat32, 32, 1, 0);
         test_determine_sectors_per_fat_for_multiple_sizes(4096, FatType::Fat32, 32, 2, 0);
+    }
+
+    #[test]
+    fn test_format_boot_sector_large_partition() {
+        let _ = env_logger::try_init();
+        let bytes_per_sector = 512;
+        let bytes_per_cluster = 4 * 4096;
+        let total_sectors = core::u32::MAX;
+        let (boot, _) = format_boot_sector(&FormatVolumeOptions::new()
+            .total_sectors(total_sectors)
+            .bytes_per_sector(bytes_per_sector)
+            .bytes_per_cluster(bytes_per_cluster), total_sectors, bytes_per_sector)
+            .expect("format_boot_sector");
+        boot.validate().expect("validate");
     }
 }
