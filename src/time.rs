@@ -73,10 +73,7 @@ pub struct DateTime {
 
 impl DateTime {
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
-        DateTime {
-            date: Date::decode(dos_date),
-            time: Time::decode(dos_time, dos_time_hi_res),
-        }
+        DateTime { date: Date::decode(dos_date), time: Time::decode(dos_time, dos_time_hi_res) }
     }
 }
 
@@ -102,11 +99,7 @@ impl From<DateTime> for chrono::DateTime<Local> {
 #[cfg(feature = "chrono")]
 impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
-        Date {
-            year: date.year() as u16,
-            month: date.month() as u16,
-            day: date.day() as u16,
-        }
+        Date { year: date.year() as u16, month: date.month() as u16, day: date.day() as u16 }
     }
 }
 

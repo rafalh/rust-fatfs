@@ -1,6 +1,6 @@
 use core::cmp;
-use core::u8;
 use core::u16;
+use core::u8;
 use io;
 use io::prelude::*;
 use io::{Error, ErrorKind};
@@ -140,10 +140,7 @@ impl BiosParameterBlock {
     fn validate(&self) -> io::Result<()> {
         // sanity checks
         if self.bytes_per_sector.count_ones() != 1 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "invalid bytes_per_sector value in BPB (not power of two)",
-            ));
+            return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (not power of two)"));
         } else if self.bytes_per_sector < 512 {
             return Err(Error::new(ErrorKind::Other, "invalid bytes_per_sector value in BPB (value < 512)"));
         } else if self.bytes_per_sector > 4096 {
@@ -151,17 +148,11 @@ impl BiosParameterBlock {
         }
 
         if self.sectors_per_cluster.count_ones() != 1 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "invalid sectors_per_cluster value in BPB (not power of two)",
-            ));
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (not power of two)"));
         } else if self.sectors_per_cluster < 1 {
             return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value < 1)"));
         } else if self.sectors_per_cluster > 128 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "invalid sectors_per_cluster value in BPB (value > 128)",
-            ));
+            return Err(Error::new(ErrorKind::Other, "invalid sectors_per_cluster value in BPB (value > 128)"));
         }
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
@@ -198,17 +189,11 @@ impl BiosParameterBlock {
         }
 
         if is_fat32 && self.root_entries != 0 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "Invalid root_entries value in BPB (should be zero for FAT32)",
-            ));
+            return Err(Error::new(ErrorKind::Other, "Invalid root_entries value in BPB (should be zero for FAT32)"));
         }
 
         if !is_fat32 && self.root_entries == 0 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "Empty root directory region defined in FAT12/FAT16 BPB",
-            ));
+            return Err(Error::new(ErrorKind::Other, "Empty root directory region defined in FAT12/FAT16 BPB"));
         }
 
         if (u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32) % u32::from(self.bytes_per_sector) != 0 {
@@ -524,8 +509,14 @@ fn determine_sectors_per_fat(
     sectors_per_fat as u32
 }
 
-fn try_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_cluster: u8, fat_type: FatType,
-    root_dir_sectors: u32, fats: u8) -> io::Result<(u16, u32)> {
+fn try_fs_geometry(
+    total_sectors: u32,
+    bytes_per_sector: u16,
+    sectors_per_cluster: u8,
+    fat_type: FatType,
+    root_dir_sectors: u32,
+    fats: u8,
+) -> io::Result<(u16, u32)> {
     // Note: most of implementations use 32 reserved sectors for FAT32 but it's wasting of space
     // This implementation uses only 8. This is enough to fit in two boot sectors (main and backup) with additional
     // bootstrap code and one FSInfo sector. It also makes FAT alligned to 4096 which is a nice number.
@@ -548,8 +539,8 @@ fn try_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_cluste
         fats,
     );
 
-    let data_sectors = total_sectors - u32::from(reserved_sectors) - u32::from(root_dir_sectors)
-        - sectors_per_fat * u32::from(fats);
+    let data_sectors =
+        total_sectors - u32::from(reserved_sectors) - u32::from(root_dir_sectors) - sectors_per_fat * u32::from(fats);
     let total_clusters = data_sectors / u32::from(sectors_per_cluster);
     if fat_type != FatType::from_clusters(total_clusters) {
         return Err(Error::new(ErrorKind::Other, "Invalid FAT type"));
@@ -572,13 +563,17 @@ fn determine_root_dir_sectors(root_dir_entries: u16, bytes_per_sector: u16, fat_
     }
 }
 
-fn determine_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_cluster: u8,
-    root_dir_entries: u16, fats: u8
+fn determine_fs_geometry(
+    total_sectors: u32,
+    bytes_per_sector: u16,
+    sectors_per_cluster: u8,
+    root_dir_entries: u16,
+    fats: u8,
 ) -> io::Result<(FatType, u16, u32)> {
-
     for &fat_type in &[FatType::Fat32, FatType::Fat16, FatType::Fat12] {
         let root_dir_sectors = determine_root_dir_sectors(root_dir_entries, bytes_per_sector, fat_type);
-        let result = try_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, fat_type, root_dir_sectors, fats);
+        let result =
+            try_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, fat_type, root_dir_sectors, fats);
         if result.is_ok() {
             let (reserved_sectors, sectors_per_fat) = result.unwrap(); // SAFE: used is_ok() before
             return Ok((fat_type, reserved_sectors, sectors_per_fat));
@@ -588,13 +583,15 @@ fn determine_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_
     return Err(Error::new(ErrorKind::Other, "Cannot select FAT type - unfortunate disk size"));
 }
 
-fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BiosParameterBlock, FatType)> {
-    let bytes_per_cluster = options
-        .bytes_per_cluster
-        .unwrap_or_else(|| {
-            let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
-            determine_bytes_per_cluster(total_bytes, bytes_per_sector, options.fat_type)
-        });
+fn format_bpb(
+    options: &FormatVolumeOptions,
+    total_sectors: u32,
+    bytes_per_sector: u16,
+) -> io::Result<(BiosParameterBlock, FatType)> {
+    let bytes_per_cluster = options.bytes_per_cluster.unwrap_or_else(|| {
+        let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
+        determine_bytes_per_cluster(total_bytes, bytes_per_sector, options.fat_type)
+    });
 
     let sectors_per_cluster = bytes_per_cluster / u32::from(bytes_per_sector);
     assert!(sectors_per_cluster <= u32::from(u8::MAX));
@@ -606,9 +603,7 @@ fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_secto
         determine_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, root_dir_entries, fats)?;
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
-    let drive_num = options
-        .drive_num
-        .unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
+    let drive_num = options.drive_num.unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
     // reserved_0 is always zero
     let reserved_0 = [0u8; 12];
@@ -679,7 +674,11 @@ fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_secto
     Ok((bpb, fat_type))
 }
 
-pub(crate) fn format_boot_sector(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BootSector, FatType)> {
+pub(crate) fn format_boot_sector(
+    options: &FormatVolumeOptions,
+    total_sectors: u32,
+    bytes_per_sector: u16,
+) -> io::Result<(BootSector, FatType)> {
     let mut boot: BootSector = Default::default();
     let (bpb, fat_type) = format_bpb(options, total_sectors, bytes_per_sector)?;
     boot.bpb = bpb;
@@ -687,15 +686,15 @@ pub(crate) fn format_boot_sector(options: &FormatVolumeOptions, total_sectors: u
     // Boot code copied from FAT32 boot sector initialized by mkfs.fat
     boot.bootjmp = [0xEB, 0x58, 0x90];
     let boot_code: [u8; 129] = [
-        0x0E, 0x1F, 0xBE, 0x77, 0x7C, 0xAC, 0x22, 0xC0, 0x74, 0x0B, 0x56, 0xB4, 0x0E, 0xBB, 0x07, 0x00,
-        0xCD, 0x10, 0x5E, 0xEB, 0xF0, 0x32, 0xE4, 0xCD, 0x16, 0xCD, 0x19, 0xEB, 0xFE, 0x54, 0x68, 0x69,
-        0x73, 0x20, 0x69, 0x73, 0x20, 0x6E, 0x6F, 0x74, 0x20, 0x61, 0x20, 0x62, 0x6F, 0x6F, 0x74, 0x61,
-        0x62, 0x6C, 0x65, 0x20, 0x64, 0x69, 0x73, 0x6B, 0x2E, 0x20, 0x20, 0x50, 0x6C, 0x65, 0x61, 0x73,
-        0x65, 0x20, 0x69, 0x6E, 0x73, 0x65, 0x72, 0x74, 0x20, 0x61, 0x20, 0x62, 0x6F, 0x6F, 0x74, 0x61,
-        0x62, 0x6C, 0x65, 0x20, 0x66, 0x6C, 0x6F, 0x70, 0x70, 0x79, 0x20, 0x61, 0x6E, 0x64, 0x0D, 0x0A,
-        0x70, 0x72, 0x65, 0x73, 0x73, 0x20, 0x61, 0x6E, 0x79, 0x20, 0x6B, 0x65, 0x79, 0x20, 0x74, 0x6F,
-        0x20, 0x74, 0x72, 0x79, 0x20, 0x61, 0x67, 0x61, 0x69, 0x6E, 0x20, 0x2E, 0x2E, 0x2E, 0x20, 0x0D,
-        0x0A];
+        0x0E, 0x1F, 0xBE, 0x77, 0x7C, 0xAC, 0x22, 0xC0, 0x74, 0x0B, 0x56, 0xB4, 0x0E, 0xBB, 0x07, 0x00, 0xCD, 0x10,
+        0x5E, 0xEB, 0xF0, 0x32, 0xE4, 0xCD, 0x16, 0xCD, 0x19, 0xEB, 0xFE, 0x54, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73,
+        0x20, 0x6E, 0x6F, 0x74, 0x20, 0x61, 0x20, 0x62, 0x6F, 0x6F, 0x74, 0x61, 0x62, 0x6C, 0x65, 0x20, 0x64, 0x69,
+        0x73, 0x6B, 0x2E, 0x20, 0x20, 0x50, 0x6C, 0x65, 0x61, 0x73, 0x65, 0x20, 0x69, 0x6E, 0x73, 0x65, 0x72, 0x74,
+        0x20, 0x61, 0x20, 0x62, 0x6F, 0x6F, 0x74, 0x61, 0x62, 0x6C, 0x65, 0x20, 0x66, 0x6C, 0x6F, 0x70, 0x70, 0x79,
+        0x20, 0x61, 0x6E, 0x64, 0x0D, 0x0A, 0x70, 0x72, 0x65, 0x73, 0x73, 0x20, 0x61, 0x6E, 0x79, 0x20, 0x6B, 0x65,
+        0x79, 0x20, 0x74, 0x6F, 0x20, 0x74, 0x72, 0x79, 0x20, 0x61, 0x67, 0x61, 0x69, 0x6E, 0x20, 0x2E, 0x2E, 0x2E,
+        0x20, 0x0D, 0x0A,
+    ];
     boot.boot_code[..boot_code.len()].copy_from_slice(&boot_code);
     boot.boot_sig = [0x55, 0xAA];
 

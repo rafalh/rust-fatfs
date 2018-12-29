@@ -56,11 +56,7 @@ impl ShortName {
     pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
         // get name components length by looking for space character
         let name_len = raw_name[0..8].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
-        let ext_len = raw_name[8..11]
-            .iter()
-            .rposition(|x| *x != Self::PADDING)
-            .map(|p| p + 1)
-            .unwrap_or(0);
+        let ext_len = raw_name[8..11].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
         let mut name = [Self::PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
@@ -77,10 +73,7 @@ impl ShortName {
             name[0] = 0xE5;
         }
         // Short names in FAT filesystem are encoded in OEM code-page
-        ShortName {
-            name,
-            len: total_len as u8,
-        }
+        ShortName { name, len: total_len as u8 }
     }
 
     fn as_bytes(&self) -> &[u8] {
@@ -124,11 +117,7 @@ pub(crate) struct DirFileEntryData {
 
 impl DirFileEntryData {
     pub(crate) fn new(name: [u8; 11], attrs: FileAttributes) -> Self {
-        DirFileEntryData {
-            name,
-            attrs,
-            ..Default::default()
-        }
+        DirFileEntryData { name, attrs, ..Default::default() }
     }
 
     pub(crate) fn renamed(&self, new_name: [u8; 11]) -> Self {
@@ -279,12 +268,7 @@ pub(crate) struct DirLfnEntryData {
 
 impl DirLfnEntryData {
     pub(crate) fn new(order: u8, checksum: u8) -> Self {
-        DirLfnEntryData {
-            order,
-            checksum,
-            attrs: FileAttributes::LFN,
-            ..Default::default()
-        }
+        DirLfnEntryData { order, checksum, attrs: FileAttributes::LFN, ..Default::default() }
     }
 
     pub(crate) fn copy_name_from_slice(&mut self, lfn_part: &[u16; LFN_PART_LEN]) {
@@ -369,10 +353,7 @@ impl DirEntryData {
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             // read long name entry
-            let mut data = DirLfnEntryData {
-                attrs,
-                ..Default::default()
-            };
+            let mut data = DirLfnEntryData { attrs, ..Default::default() };
             // use cursor to divide name into order and LFN name_0
             let mut cur = Cursor::new(&name);
             data.order = cur.read_u8()?;
@@ -648,10 +629,7 @@ mod tests {
         assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
         raw_short_name[0] = 0x99;
         raw_short_name[10] = 0x99;
-        assert_eq!(
-            ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER),
-            "\u{FFFD}OOK AT.M \u{FFFD}"
-        );
+        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "\u{FFFD}OOK AT.M \u{FFFD}");
         assert_eq!(
             ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
             true
@@ -696,11 +674,8 @@ mod tests {
     fn lowercase_short_name() {
         let mut raw_short_name = [0u8; 11];
         raw_short_name.copy_from_slice(b"FOO     RS ");
-        let mut raw_entry = DirFileEntryData {
-            name: raw_short_name,
-            reserved_0: (1 << 3) | (1 << 4),
-            ..Default::default()
-        };
+        let mut raw_entry =
+            DirFileEntryData { name: raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..Default::default() };
         assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.rs");
         raw_entry.reserved_0 = 1 << 3;
         assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.RS");

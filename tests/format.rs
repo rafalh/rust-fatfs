@@ -47,9 +47,7 @@ fn basic_fs_test(fs: &FileSystem) {
     let filenames = subdir2.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(filenames, [".", "..", "test file name.txt"]);
 
-    subdir1
-        .rename("subdir2 with long name/test file name.txt", &root_dir, "new-name.txt")
-        .expect("rename");
+    subdir1.rename("subdir2 with long name/test file name.txt", &root_dir, "new-name.txt").expect("rename");
 
     let filenames = subdir2.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
     assert_eq!(filenames, [".", ".."]);

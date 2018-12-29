@@ -3,9 +3,9 @@ use alloc::String;
 use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
-use core::u32;
 use core::fmt::Debug;
 use core::iter::FromIterator;
+use core::u32;
 use io;
 use io::prelude::*;
 use io::{Error, ErrorKind, SeekFrom};
@@ -108,10 +108,7 @@ impl FsStatusFlags {
     }
 
     pub(crate) fn decode(flags: u8) -> Self {
-        FsStatusFlags {
-            dirty: flags & 1 != 0,
-            io_error: flags & 2 != 0,
-        }
+        FsStatusFlags { dirty: flags & 1 != 0, io_error: flags & 2 != 0 }
     }
 }
 
@@ -166,11 +163,7 @@ impl FsInfoSector {
         if trail_sig != Self::TRAIL_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid trail_sig in FsInfo sector"));
         }
-        Ok(FsInfoSector {
-            free_cluster_count,
-            next_free_cluster,
-            dirty: false,
-        })
+        Ok(FsInfoSector { free_cluster_count, next_free_cluster, dirty: false })
     }
 
     fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
@@ -190,10 +183,7 @@ impl FsInfoSector {
         let max_valid_cluster_number = total_clusters + RESERVED_FAT_ENTRIES;
         if let Some(n) = self.free_cluster_count {
             if n > total_clusters {
-                warn!(
-                    "invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})",
-                    n, total_clusters
-                );
+                warn!("invalid free_cluster_count ({}) in fs_info exceeds total cluster count ({})", n, total_clusters);
                 self.free_cluster_count = None;
             }
         }
@@ -537,11 +527,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
             Some(n) => n,
             _ => self.recalc_free_clusters()?,
         };
-        Ok(FileSystemStats {
-            cluster_size: self.cluster_size(),
-            total_clusters: self.total_clusters,
-            free_clusters,
-        })
+        Ok(FileSystemStats { cluster_size: self.cluster_size(), total_clusters: self.total_clusters, free_clusters })
     }
 
     /// Forces free clusters recalculation.
@@ -667,22 +653,11 @@ pub(crate) struct DiskSlice<T> {
 
 impl<T> DiskSlice<T> {
     pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: T) -> Self {
-        DiskSlice {
-            begin,
-            size,
-            mirrors,
-            inner,
-            offset: 0,
-        }
+        DiskSlice { begin, size, mirrors, inner, offset: 0 }
     }
 
     fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: T) -> Self {
-        Self::new(
-            bpb.bytes_from_sectors(first_sector),
-            bpb.bytes_from_sectors(sector_count),
-            mirrors,
-            inner,
-        )
+        Self::new(bpb.bytes_from_sectors(first_sector), bpb.bytes_from_sectors(sector_count), mirrors, inner)
     }
 
     pub(crate) fn abs_pos(&self) -> u64 {
@@ -830,9 +805,7 @@ impl FormatVolumeOptions {
     /// Allows to overwrite many filesystem parameters.
     /// In normal use-case defaults should suffice.
     pub fn new() -> Self {
-        FormatVolumeOptions {
-            ..Default::default()
-        }
+        FormatVolumeOptions { ..Default::default() }
     }
 
     /// Set size of cluster in bytes (must be dividable by sector size)
@@ -980,11 +953,7 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
 
     if boot.bpb.is_fat32() {
         // FSInfo sector
-        let fs_info_sector = FsInfoSector {
-            free_cluster_count: None,
-            next_free_cluster: None,
-            dirty: false,
-        };
+        let fs_info_sector = FsInfoSector { free_cluster_count: None, next_free_cluster: None, dirty: false };
         disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.fs_info_sector())))?;
         fs_info_sector.serialize(&mut disk)?;
         write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
@@ -1021,7 +990,8 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
         };
         assert!(root_dir_first_cluster == boot.bpb.root_dir_first_cluster);
         let first_data_sector = reserved_sectors + sectors_per_all_fats + root_dir_sectors;
-        let root_dir_first_sector = first_data_sector + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
+        let root_dir_first_sector =
+            first_data_sector + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
         let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
         disk.seek(SeekFrom::Start(root_dir_pos))?;
         write_zeros(&mut disk, boot.bpb.cluster_size() as u64)?;

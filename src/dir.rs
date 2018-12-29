@@ -246,7 +246,8 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
                 dir.write_entry(".", sfn_entry)?;
                 let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
-                let sfn_entry = self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
+                let sfn_entry =
+                    self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
                 dir.write_entry("..", sfn_entry)?;
                 Ok(dir)
             },
@@ -396,7 +397,12 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         }
     }
 
-    fn create_sfn_entry(&self, short_name: [u8; 11], attrs: FileAttributes, first_cluster: Option<u32>) -> DirFileEntryData {
+    fn create_sfn_entry(
+        &self,
+        short_name: [u8; 11],
+        attrs: FileAttributes,
+        first_cluster: Option<u32>,
+    ) -> DirFileEntryData {
         let mut raw_entry = DirFileEntryData::new(short_name, attrs);
         raw_entry.set_first_cluster(first_cluster, self.fs.fat_type());
         let now = self.fs.options.time_provider.get_current_date_time();
@@ -415,7 +421,11 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         ()
     }
 
-    fn alloc_and_write_lfn_entries(&self, lfn_utf16: &LfnUtf16, short_name: &[u8; 11]) -> io::Result<(DirRawStream<'a, T>, u64)> {
+    fn alloc_and_write_lfn_entries(
+        &self,
+        lfn_utf16: &LfnUtf16,
+        short_name: &[u8; 11],
+    ) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(short_name);
         // create LFN entries generator
@@ -459,10 +469,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
 impl<'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
     fn clone(&self) -> Self {
-        Self {
-            stream: self.stream.clone(),
-            fs: self.fs,
-        }
+        Self { stream: self.stream.clone(), fs: self.fs }
     }
 }
 
@@ -478,12 +485,7 @@ pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
 
 impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
     fn new(stream: DirRawStream<'a, T>, fs: &'a FileSystem<T>, skip_volume: bool) -> Self {
-        DirIter {
-            stream,
-            fs,
-            skip_volume,
-            err: false,
-        }
+        DirIter { stream, fs, skip_volume, err: false }
     }
 
     fn should_ship_entry(&self, raw_entry: &DirEntryData) -> bool {
@@ -546,12 +548,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
 impl<'a, T: ReadWriteSeek> Clone for DirIter<'a, T> {
     fn clone(&self) -> Self {
-        Self {
-            stream: self.stream.clone(),
-            fs: self.fs,
-            err: self.err,
-            skip_volume: self.skip_volume,
-        }
+        Self { stream: self.stream.clone(), fs: self.fs, err: self.err, skip_volume: self.skip_volume }
     }
 }
 
@@ -587,8 +584,8 @@ fn validate_long_name(name: &str) -> io::Result<()> {
         match c {
             'a'...'z' | 'A'...'Z' | '0'...'9' => {},
             '\u{80}'...'\u{FFFF}' => {},
-            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ',' | ';' | '=' | '['
-            | ']' => {},
+            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
+            | ';' | '=' | '[' | ']' => {},
             _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
         }
     }
@@ -613,11 +610,7 @@ struct LongNameBuilder {
 #[cfg(feature = "alloc")]
 impl LongNameBuilder {
     fn new() -> Self {
-        LongNameBuilder {
-            buf: Vec::<u16>::new(),
-            chksum: 0,
-            index: 0,
-        }
+        LongNameBuilder { buf: Vec::<u16>::new(), chksum: 0, index: 0 }
     }
 
     fn clear(&mut self) {
@@ -670,13 +663,7 @@ impl LongNameBuilder {
             self.buf.resize(index as usize * LFN_PART_LEN, 0);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
-            warn!(
-                "currupted lfn entry! {:x} {:x} {:x} {:x}",
-                data.order(),
-                self.index,
-                data.checksum(),
-                self.chksum
-            );
+            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order(), self.index, data.checksum(), self.chksum);
             self.clear();
             return;
         } else {
@@ -833,25 +820,20 @@ impl ShortNameGenerator {
         let (basename_len, name_fits, lossy_conv) = match name.rfind('.') {
             Some(index) => {
                 // extension found - copy parts before and after dot
-                let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name[..index]);
+                let (basename_len, basename_fits, basename_lossy) =
+                    Self::copy_short_name_part(&mut short_name[0..8], &name[..index]);
                 let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[index + 1..]);
                 (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
             },
             None => {
                 // no extension - copy name and leave extension empty
-                let (basename_len, basename_fits, basename_lossy) = Self::copy_short_name_part(&mut short_name[0..8], &name);
+                let (basename_len, basename_fits, basename_lossy) =
+                    Self::copy_short_name_part(&mut short_name[0..8], &name);
                 (basename_len, basename_fits, basename_lossy)
             },
         };
         let chksum = Self::checksum(name);
-        Self {
-            short_name,
-            chksum,
-            name_fits,
-            lossy_conv,
-            basename_len: basename_len as u8,
-            ..Default::default()
-        }
+        Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Default::default() }
     }
 
     fn copy_short_name_part(dst: &mut [u8], src: &str) -> (usize, bool, bool) {
@@ -892,11 +874,8 @@ impl ShortNameGenerator {
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
         let prefix_len = cmp::min(self.basename_len, 6) as usize;
-        let num_suffix = if short_name[prefix_len] == b'~' {
-            (short_name[prefix_len + 1] as char).to_digit(10)
-        } else {
-            None
-        };
+        let num_suffix =
+            if short_name[prefix_len] == b'~' { (short_name[prefix_len + 1] as char).to_digit(10) } else { None };
         let ext_matches = short_name[8..] == self.short_name[8..];
         if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
             let num = num_suffix.unwrap(); // SAFE
@@ -911,7 +890,8 @@ impl ShortNameGenerator {
             None
         };
         if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
-            let chksum_res = str::from_utf8(&short_name[prefix_len..prefix_len + 4]).map(|s| u16::from_str_radix(s, 16));
+            let chksum_res =
+                str::from_utf8(&short_name[prefix_len..prefix_len + 4]).map(|s| u16::from_str_radix(s, 16));
             if chksum_res == Ok(Ok(self.chksum)) {
                 let num = num_suffix.unwrap(); // SAFE
                 self.prefix_chksum_bitmap |= 1 << num;
@@ -1013,9 +993,7 @@ mod tests {
 
     #[test]
     fn test_lfn_checksum_overflow() {
-        lfn_checksum(&[
-            0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8,
-        ]);
+        lfn_checksum(&[0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]);
     }
 
     #[test]
