@@ -37,10 +37,14 @@ pub enum FatType {
 }
 
 impl FatType {
+    const FAT16_MIN_CLUSTERS: u32 = 4085;
+    const FAT32_MIN_CLUSTERS: u32 = 65525;
+    const FAT32_MAX_CLUSTERS: u32 = 0x0FFF_FFF4;
+
     pub(crate) fn from_clusters(total_clusters: u32) -> FatType {
-        if total_clusters < 4085 {
+        if total_clusters < Self::FAT16_MIN_CLUSTERS {
             FatType::Fat12
-        } else if total_clusters < 65525 {
+        } else if total_clusters < Self::FAT32_MIN_CLUSTERS {
             FatType::Fat16
         } else {
             FatType::Fat32
@@ -52,6 +56,22 @@ impl FatType {
             &FatType::Fat12 => 12,
             &FatType::Fat16 => 16,
             &FatType::Fat32 => 32,
+        }
+    }
+
+    pub(crate) fn min_clusters(&self) -> u32 {
+        match self {
+            &FatType::Fat12 => 0,
+            &FatType::Fat16 => Self::FAT16_MIN_CLUSTERS,
+            &FatType::Fat32 => Self::FAT32_MIN_CLUSTERS,
+        }
+    }
+
+    pub(crate) fn max_clusters(&self) -> u32 {
+        match self {
+            &FatType::Fat12 => Self::FAT16_MIN_CLUSTERS - 1,
+            &FatType::Fat16 => Self::FAT32_MIN_CLUSTERS - 1,
+            &FatType::Fat32 => Self::FAT32_MAX_CLUSTERS,
         }
     }
 }
@@ -794,7 +814,8 @@ pub struct FormatVolumeOptions {
     pub(crate) total_sectors: Option<u32>,
     pub(crate) bytes_per_cluster: Option<u32>,
     pub(crate) fat_type: Option<FatType>,
-    pub(crate) root_entries: Option<u16>,
+    pub(crate) max_root_dir_entries: Option<u16>,
+    pub(crate) fats: Option<u8>,
     pub(crate) media: Option<u8>,
     pub(crate) sectors_per_track: Option<u16>,
     pub(crate) heads: Option<u16>,
@@ -857,8 +878,18 @@ impl FormatVolumeOptions {
     /// Total root directory size should be dividable by sectors size so keep it a multiple of 16 (for default sector
     /// size).
     /// Default is `512`.
-    pub fn root_entries(mut self, root_entries: u16) -> Self {
-        self.root_entries = Some(root_entries);
+    pub fn max_root_dir_entries(mut self, max_root_dir_entries: u16) -> Self {
+        self.max_root_dir_entries = Some(max_root_dir_entries);
+        self
+    }
+
+    /// Set number of File Allocation Tables
+    ///
+    /// The only allowed values are `1` and `2`. If `2` is used FAT is mirrored.
+    /// Default is `2`.
+    pub fn fats(mut self, fats: u8) -> Self {
+        assert!(fats >= 1 && fats <= 2);
+        self.fats = Some(fats);
         self
     }
 

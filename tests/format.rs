@@ -80,9 +80,9 @@ fn test_format_1mb() {
 }
 
 #[test]
-fn test_format_8mb() {
+fn test_format_8mb_1fat() {
     let total_bytes = 8 * MB;
-    let opts = fatfs::FormatVolumeOptions::new();
+    let opts = fatfs::FormatVolumeOptions::new().fats(1);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
 }

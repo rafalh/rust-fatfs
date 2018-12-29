@@ -1,4 +1,6 @@
 use core::cmp;
+use core::u8;
+use core::u16;
 use io;
 use io::prelude::*;
 use io::{Error, ErrorKind};
@@ -427,7 +429,8 @@ impl Default for BootSector {
     }
 }
 
-pub(crate) fn determine_fat_type(total_bytes: u64) -> FatType {
+pub(crate) fn estimate_fat_type(total_bytes: u64) -> FatType {
+    // Used only to select cluster size if FAT type has not been overriden in options
     if total_bytes < 4 * MB {
         FatType::Fat12
     } else if total_bytes < 512 * MB {
@@ -437,7 +440,8 @@ pub(crate) fn determine_fat_type(total_bytes: u64) -> FatType {
     }
 }
 
-fn determine_bytes_per_cluster(total_bytes: u64, fat_type: FatType, bytes_per_sector: u16) -> u32 {
+fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type: Option<FatType>) -> u32 {
+    let fat_type = fat_type.unwrap_or_else(|| estimate_fat_type(total_bytes));
     let bytes_per_cluster = match fat_type {
         FatType::Fat12 => (total_bytes.next_power_of_two() / MB * 512) as u32,
         FatType::Fat16 => {
@@ -520,29 +524,16 @@ fn determine_sectors_per_fat(
     sectors_per_fat as u32
 }
 
-fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BiosParameterBlock, FatType)> {
-    let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
-    // FIXME: determine FAT type from cluster size because it can be modified by user
-    let fat_type = options.fat_type.unwrap_or_else(|| determine_fat_type(total_bytes));
-    let bytes_per_cluster = options
-        .bytes_per_cluster
-        .unwrap_or_else(|| determine_bytes_per_cluster(total_bytes, fat_type, bytes_per_sector));
-    let sectors_per_cluster = (bytes_per_cluster / bytes_per_sector as u32) as u8;
-
+fn try_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_cluster: u8, fat_type: FatType,
+    root_dir_sectors: u32, fats: u8) -> io::Result<(u16, u32)> {
     // Note: most of implementations use 32 reserved sectors for FAT32 but it's wasting of space
     // This implementation uses only 8. This is enough to fit in two boot sectors (main and backup) with additional
     // bootstrap code and one FSInfo sector. It also makes FAT alligned to 4096 which is a nice number.
     let reserved_sectors: u16 = if fat_type == FatType::Fat32 { 8 } else { 1 };
 
-    let fats = 2u8;
-    let is_fat32 = fat_type == FatType::Fat32;
-    let root_entries = if is_fat32 { 0 } else { options.root_entries.unwrap_or(512) };
-    let root_dir_bytes = root_entries as u32 * DIR_ENTRY_SIZE as u32;
-    let root_dir_sectors = (root_dir_bytes + bytes_per_sector as u32 - 1) / bytes_per_sector as u32;
-
     // Check if volume has enough space to accomodate reserved sectors, FAT, root directory and some data space
     // Having less than 8 sectors for FAT and data would make a little sense
-    if total_sectors <= reserved_sectors as u32 + root_dir_sectors as u32 + 8 {
+    if total_sectors <= u32::from(reserved_sectors) + u32::from(root_dir_sectors) + 8 {
         return Err(Error::new(ErrorKind::Other, "Volume is too small"));
     }
 
@@ -556,6 +547,63 @@ fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_secto
         root_dir_sectors,
         fats,
     );
+
+    let data_sectors = total_sectors - u32::from(reserved_sectors) - u32::from(root_dir_sectors)
+        - sectors_per_fat * u32::from(fats);
+    let total_clusters = data_sectors / u32::from(sectors_per_cluster);
+    if fat_type != FatType::from_clusters(total_clusters) {
+        return Err(Error::new(ErrorKind::Other, "Invalid FAT type"));
+    }
+    debug_assert!(total_clusters >= fat_type.min_clusters());
+    if total_clusters > fat_type.max_clusters() {
+        // Note: it can happen for FAT32
+        return Err(Error::new(ErrorKind::Other, "Too many clusters"));
+    }
+
+    return Ok((reserved_sectors, sectors_per_fat));
+}
+
+fn determine_root_dir_sectors(root_dir_entries: u16, bytes_per_sector: u16, fat_type: FatType) -> u32 {
+    if fat_type == FatType::Fat32 {
+        0
+    } else {
+        let root_dir_bytes = u32::from(root_dir_entries) * DIR_ENTRY_SIZE as u32;
+        (root_dir_bytes + u32::from(bytes_per_sector) - 1) / u32::from(bytes_per_sector)
+    }
+}
+
+fn determine_fs_geometry(total_sectors: u32, bytes_per_sector: u16, sectors_per_cluster: u8,
+    root_dir_entries: u16, fats: u8
+) -> io::Result<(FatType, u16, u32)> {
+
+    for &fat_type in &[FatType::Fat32, FatType::Fat16, FatType::Fat12] {
+        let root_dir_sectors = determine_root_dir_sectors(root_dir_entries, bytes_per_sector, fat_type);
+        let result = try_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, fat_type, root_dir_sectors, fats);
+        if result.is_ok() {
+            let (reserved_sectors, sectors_per_fat) = result.unwrap(); // SAFE: used is_ok() before
+            return Ok((fat_type, reserved_sectors, sectors_per_fat));
+        }
+    }
+
+    return Err(Error::new(ErrorKind::Other, "Cannot select FAT type - unfortunate disk size"));
+}
+
+fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_sector: u16) -> io::Result<(BiosParameterBlock, FatType)> {
+    let bytes_per_cluster = options
+        .bytes_per_cluster
+        .unwrap_or_else(|| {
+            let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
+            determine_bytes_per_cluster(total_bytes, bytes_per_sector, options.fat_type)
+        });
+
+    let sectors_per_cluster = bytes_per_cluster / u32::from(bytes_per_sector);
+    assert!(sectors_per_cluster <= u32::from(u8::MAX));
+    let sectors_per_cluster = sectors_per_cluster as u8;
+
+    let fats = options.fats.unwrap_or(2u8);
+    let root_dir_entries = options.max_root_dir_entries.unwrap_or(512);
+    let (fat_type, reserved_sectors, sectors_per_fat) =
+        determine_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, root_dir_entries, fats)?;
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
     let drive_num = options
@@ -583,15 +631,22 @@ fn format_bpb(options: &FormatVolumeOptions, total_sectors: u32, bytes_per_secto
     fs_type_label.copy_from_slice(fs_type_label_str);
 
     // create Bios Parameter Block struct
+    let is_fat32 = fat_type == FatType::Fat32;
+    let sectors_per_fat_16 = if is_fat32 {
+        0
+    } else {
+        debug_assert!(sectors_per_fat <= u32::from(u16::MAX));
+        sectors_per_fat as u16
+    };
     let bpb = BiosParameterBlock {
         bytes_per_sector,
         sectors_per_cluster,
         reserved_sectors,
         fats,
-        root_entries,
+        root_entries: if is_fat32 { 0 } else { root_dir_entries },
         total_sectors_16: if total_sectors < 0x10000 { total_sectors as u16 } else { 0 },
         media: options.media.unwrap_or(0xF8),
-        sectors_per_fat_16: if is_fat32 { 0 } else { sectors_per_fat as u16 },
+        sectors_per_fat_16,
         sectors_per_track: options.sectors_per_track.unwrap_or(0x20),
         heads: options.heads.unwrap_or(0x40),
         hidden_sectors: 0,
@@ -647,11 +702,11 @@ pub(crate) fn format_boot_sector(options: &FormatVolumeOptions, total_sectors: u
     // fix offsets in bootjmp and boot code for non-FAT32 filesystems (bootcode is on a different offset)
     if fat_type != FatType::Fat32 {
         // offset of boot code
-        let boot_code_offset = 0x36 + 8;
-        boot.bootjmp[1] = (boot_code_offset - 2) as u8;
+        let boot_code_offset: u8 = 0x36 + 8;
+        boot.bootjmp[1] = boot_code_offset - 2;
         // offset of message
-        const MESSAGE_OFFSET: u32 = 29;
-        let message_offset_in_sector = boot_code_offset + MESSAGE_OFFSET + 0x7c00;
+        const MESSAGE_OFFSET: u16 = 29;
+        let message_offset_in_sector = u16::from(boot_code_offset) + MESSAGE_OFFSET + 0x7c00;
         boot.boot_code[3] = (message_offset_in_sector & 0xff) as u8;
         boot.boot_code[4] = (message_offset_in_sector >> 8) as u8;
     }
@@ -664,49 +719,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_determine_fat_type() {
-        assert_eq!(determine_fat_type(3 * MB), FatType::Fat12);
-        assert_eq!(determine_fat_type(4 * MB), FatType::Fat16);
-        assert_eq!(determine_fat_type(511 * MB), FatType::Fat16);
-        assert_eq!(determine_fat_type(512 * MB), FatType::Fat32);
+    fn test_estimate_fat_type() {
+        assert_eq!(estimate_fat_type(3 * MB), FatType::Fat12);
+        assert_eq!(estimate_fat_type(4 * MB), FatType::Fat16);
+        assert_eq!(estimate_fat_type(511 * MB), FatType::Fat16);
+        assert_eq!(estimate_fat_type(512 * MB), FatType::Fat32);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat12() {
-        assert_eq!(determine_bytes_per_cluster(1 * MB + 0, FatType::Fat12, 512), 512);
-        assert_eq!(determine_bytes_per_cluster(1 * MB + 1, FatType::Fat12, 512), 1024);
-        assert_eq!(determine_bytes_per_cluster(1 * MB, FatType::Fat12, 4096), 4096);
+        assert_eq!(determine_bytes_per_cluster(1 * MB + 0, 512, Some(FatType::Fat12)), 512);
+        assert_eq!(determine_bytes_per_cluster(1 * MB + 1, 512, Some(FatType::Fat12)), 1024);
+        assert_eq!(determine_bytes_per_cluster(1 * MB, 4096, Some(FatType::Fat12)), 4096);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat16() {
-        assert_eq!(determine_bytes_per_cluster(1 * MB, FatType::Fat16, 512), 1 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(1 * MB, FatType::Fat16, 4 * KB as u16), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * MB + 0, FatType::Fat16, 512), 1 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * MB + 1, FatType::Fat16, 512), 2 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(128 * MB + 0, FatType::Fat16, 512), 2 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(128 * MB + 1, FatType::Fat16, 512), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(256 * MB + 0, FatType::Fat16, 512), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(256 * MB + 1, FatType::Fat16, 512), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(512 * MB + 0, FatType::Fat16, 512), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(512 * MB + 1, FatType::Fat16, 512), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(1024 * MB + 0, FatType::Fat16, 512), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(1024 * MB + 1, FatType::Fat16, 512), 32 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(99999 * MB, FatType::Fat16, 512), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(1 * MB, 512, Some(FatType::Fat16)), 1 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(1 * MB, 4 * KB as u16, Some(FatType::Fat16)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(16 * MB + 0, 512, Some(FatType::Fat16)), 1 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(16 * MB + 1, 512, Some(FatType::Fat16)), 2 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(128 * MB + 0, 512, Some(FatType::Fat16)), 2 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(128 * MB + 1, 512, Some(FatType::Fat16)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(256 * MB + 0, 512, Some(FatType::Fat16)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(256 * MB + 1, 512, Some(FatType::Fat16)), 8 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(512 * MB + 0, 512, Some(FatType::Fat16)), 8 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(512 * MB + 1, 512, Some(FatType::Fat16)), 16 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(1024 * MB + 0, 512, Some(FatType::Fat16)), 16 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(1024 * MB + 1, 512, Some(FatType::Fat16)), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(99999 * MB, 512, Some(FatType::Fat16)), 32 * KB as u32);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat32() {
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64, FatType::Fat32, 512), 512);
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64, FatType::Fat32, 4 * KB as u16), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64 + 1, FatType::Fat32, 512), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(8 * GB as u64, FatType::Fat32, 512), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(8 * GB as u64 + 1, FatType::Fat32, 512), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * GB as u64 + 0, FatType::Fat32, 512), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * GB as u64 + 1, FatType::Fat32, 512), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(32 * GB as u64, FatType::Fat32, 512), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(32 * GB as u64 + 1, FatType::Fat32, 512), 32 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(999 * GB as u64, FatType::Fat32, 512), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(260 * MB as u64, 512, Some(FatType::Fat32)), 512);
+        assert_eq!(determine_bytes_per_cluster(260 * MB as u64, 4 * KB as u16, Some(FatType::Fat32)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(260 * MB as u64 + 1, 512, Some(FatType::Fat32)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(8 * GB as u64, 512, Some(FatType::Fat32)), 4 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(8 * GB as u64 + 1, 512, Some(FatType::Fat32)), 8 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(16 * GB as u64 + 0, 512, Some(FatType::Fat32)), 8 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(16 * GB as u64 + 1, 512, Some(FatType::Fat32)), 16 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(32 * GB as u64, 512, Some(FatType::Fat32)), 16 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(32 * GB as u64 + 1, 512, Some(FatType::Fat32)), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(999 * GB as u64, 512, Some(FatType::Fat32)), 32 * KB as u32);
     }
 
     fn test_determine_sectors_per_fat_single(
@@ -810,16 +865,21 @@ mod tests {
     }
 
     #[test]
-    fn test_format_boot_sector_large_partition() {
+    fn test_format_boot_sector() {
         let _ = env_logger::try_init();
-        let bytes_per_sector = 512;
-        let bytes_per_cluster = 4 * 4096;
-        let total_sectors = core::u32::MAX;
-        let (boot, _) = format_boot_sector(&FormatVolumeOptions::new()
-            .total_sectors(total_sectors)
-            .bytes_per_sector(bytes_per_sector)
-            .bytes_per_cluster(bytes_per_cluster), total_sectors, bytes_per_sector)
-            .expect("format_boot_sector");
-        boot.validate().expect("validate");
+        let bytes_per_sector = 512u16;
+        // test all partition sizes from 1MB to 2TB (u32::MAX sectors is 2TB - 1 for 512 byte sectors)
+        let mut total_sectors_vec = Vec::new();
+        let mut size = 1 * MB;
+        while size < 2048 * GB {
+            total_sectors_vec.push((size / u64::from(bytes_per_sector)) as u32);
+            size = size + size / 7;
+        }
+        total_sectors_vec.push(core::u32::MAX);
+        for total_sectors in total_sectors_vec {
+            let (boot, _) = format_boot_sector(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
+                .expect("format_boot_sector");
+            boot.validate().expect("validate");
+        }
     }
 }
