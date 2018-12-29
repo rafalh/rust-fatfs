@@ -1,6 +1,17 @@
 Changelog
 =========
 
+Version 0.3.2
+-------------
+Features:
+* Add `format_volume` function for initializing a FAT filesystem on a partition
+* Add more checks of filesystem correctness when mounting
+
+Fixes:
+* Clear directory returned from `create_dir` method - upgrade ASAP if this method is used
+* Fix handling of FSInfo sector on FAT32 volumes with sector size different than 512 - upgrade ASAP if such sector size is used
+* Use `write_all` in `serialize` method for FSInfo sector - previously it could have been improperly updated
+
 Version 0.3.1
 -------------
 New features:
