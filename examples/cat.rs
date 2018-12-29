@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
     let buf_rdr = BufStream::new(file);
     let fs = FileSystem::new(buf_rdr, FsOptions::new())?;
     let root_dir = fs.root_dir();
-    let mut file = root_dir.open_file(&env::args().nth(1).unwrap())?;
+    let mut file = root_dir.open_file(&env::args().nth(1).expect("filename expected"))?;
     let mut buf = vec![];
     file.read_to_end(&mut buf)?;
     print!("{}", String::from_utf8_lossy(&buf));
