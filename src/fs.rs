@@ -841,6 +841,7 @@ impl FormatVolumeOptions {
     /// If option is not specified optimal cluster size is selected based on partition size and
     /// optionally FAT type override (if specified using `fat_type` method).
     pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
+        assert!(bytes_per_cluster.count_ones() == 1 && bytes_per_cluster >= 512, "Invalid bytes_per_cluster");
         self.bytes_per_cluster = Some(bytes_per_cluster);
         self
     }
@@ -861,6 +862,7 @@ impl FormatVolumeOptions {
     /// Sector size must be a power of two and be in range 512 - 4096.
     /// Default is `512`.
     pub fn bytes_per_sector(mut self, bytes_per_sector: u16) -> Self {
+        assert!(bytes_per_sector.count_ones() == 1 && bytes_per_sector >= 512, "Invalid bytes_per_sector");
         self.bytes_per_sector = Some(bytes_per_sector);
         self
     }
@@ -877,6 +879,7 @@ impl FormatVolumeOptions {
     ///
     /// Total root directory size should be dividable by sectors size so keep it a multiple of 16 (for default sector
     /// size).
+    /// Note: this limit is not used on FAT32 volumes.
     /// Default is `512`.
     pub fn max_root_dir_entries(mut self, max_root_dir_entries: u16) -> Self {
         self.max_root_dir_entries = Some(max_root_dir_entries);
@@ -885,10 +888,10 @@ impl FormatVolumeOptions {
 
     /// Set number of File Allocation Tables
     ///
-    /// The only allowed values are `1` and `2`. If `2` is used FAT is mirrored.
+    /// The only allowed values are `1` and `2`. If value `2` is used the FAT is mirrored.
     /// Default is `2`.
     pub fn fats(mut self, fats: u8) -> Self {
-        assert!(fats >= 1 && fats <= 2);
+        assert!(fats >= 1 && fats <= 2, "Invalid number of FATs");
         self.fats = Some(fats);
         self
     }
