@@ -44,7 +44,7 @@ Note: it is recommended to wrap the underlying file struct in a buffering/cachin
 
     extern crate fscommon;
     let buf_stream = BufStream::new(img_file);
-    let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
+    let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
 
 See more examples in the `examples` subdirectory.
 
