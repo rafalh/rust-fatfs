@@ -16,7 +16,7 @@ matrix:
         # nostd build
         # byteorder crate version is configured here to fix build in old nightly compiler
         # See: https://github.com/BurntSushi/byteorder/pull/150
-        - cargo update -p byteorder --precise 1.2.7
+        - cargo update && cargo update -p byteorder --precise 1.2.7
         - cargo build --no-default-features --features core_io
         - cargo build --no-default-features --features core_io,alloc,core_io/collections
 
