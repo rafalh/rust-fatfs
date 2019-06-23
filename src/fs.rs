@@ -926,7 +926,7 @@ impl FormatVolumeOptions {
 /// Supplied `disk` parameter cannot be seeked (internal pointer must be on position 0).
 /// To format a fragment of a disk image (e.g. partition) library user should wrap the file struct in a struct
 /// limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
-pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
+pub fn format_volume<T: ReadWriteSeek>(mut disk: &mut T, options: FormatVolumeOptions) -> io::Result<()> {
     trace!("format_volume");
     debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
