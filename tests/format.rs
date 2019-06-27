@@ -57,7 +57,7 @@ fn basic_fs_test(fs: &FileSystem) {
 }
 
 fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
-    let _ = env_logger::try_init();
+    let _ = env_logger::builder().is_test(true).try_init();
     // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
     let storage_vec: Vec<u8> = vec![0xD1u8; total_bytes as usize];
     let storage_cur = io::Cursor::new(storage_vec);

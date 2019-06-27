@@ -22,7 +22,7 @@ const TEST_STR2: &str = "Rust is cool!\n";
 type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
 
 fn call_with_tmp_img(f: &Fn(&str) -> (), filename: &str, test_seq: u32) {
-    let _ = env_logger::try_init();
+    let _ = env_logger::builder().is_test(true).try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
     fs::create_dir(TMP_DIR).ok();
