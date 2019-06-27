@@ -10,7 +10,7 @@ use io::Cursor;
 use byteorder::LittleEndian;
 use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use dir::{Dir, DirRawStream};
+use dir::{Dir, DirRawStream, LfnBuffer};
 use file::File;
 use fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
 use time::{Date, DateTime};
@@ -302,12 +302,10 @@ impl DirLfnEntryData {
         Ok(())
     }
 
-    #[cfg(feature = "alloc")]
     pub(crate) fn order(&self) -> u8 {
         self.order
     }
 
-    #[cfg(feature = "alloc")]
     pub(crate) fn checksum(&self) -> u8 {
         self.checksum
     }
@@ -482,10 +480,8 @@ impl DirEntryEditor {
 pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
-    #[cfg(feature = "alloc")]
-    pub(crate) lfn_utf16: Vec<u16>,
-    #[cfg(not(feature = "alloc"))]
-    pub(crate) lfn_utf16: (),
+    #[cfg(feature = "lfn")]
+    pub(crate) lfn_utf16: LfnBuffer,
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
     pub(crate) fs: &'a FileSystem<T>,
@@ -507,14 +503,30 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
         self.short_name.as_bytes()
     }
 
+    /// Returns long file name as u16 array slice.
+    ///
+    /// Characters are encoded in the UCS-2 encoding.
+    #[cfg(feature = "lfn")]
+    pub fn long_file_name_as_ucs2_units(&self) -> Option<&[u16]> {
+        if self.lfn_utf16.len() > 0 {
+            Some(self.lfn_utf16.as_ucs2_units())
+        } else {
+            None
+        }
+    }
+
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
     #[cfg(feature = "alloc")]
     pub fn file_name(&self) -> String {
-        if self.lfn_utf16.is_empty() {
-            self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
-        } else {
-            String::from_utf16_lossy(&self.lfn_utf16)
+        #[cfg(feature = "lfn")]
+        {
+            let lfn_opt = self.long_file_name_as_ucs2_units();
+            if let Some(lfn) = lfn_opt {
+                return String::from_utf16_lossy(lfn);
+            }
         }
+
+        self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
     }
 
     /// Returns file attributes.
@@ -594,17 +606,34 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
         &self.data.name
     }
 
-    #[cfg(feature = "alloc")]
-    pub(crate) fn eq_name(&self, name: &str) -> bool {
-        let self_name = self.file_name();
-        let self_name_lowercase_iter = self_name.chars().flat_map(|c| c.to_uppercase());
-        let other_name_lowercase_iter = name.chars().flat_map(|c| c.to_uppercase());
-        let long_name_matches = self_name_lowercase_iter.eq(other_name_lowercase_iter);
-        let short_name_matches = self.short_name.eq_ignore_case(name, self.fs.options.oem_cp_converter);
-        long_name_matches || short_name_matches
+    #[cfg(feature = "lfn")]
+    fn eq_name_lfn(&self, name: &str) -> bool {
+        if let Some(lfn) = self.long_file_name_as_ucs2_units() {
+            if char::decode_utf16(lfn.iter().cloned()).any(|r| r.is_err()) {
+                // File name cannot be decoded
+                return false;
+            }
+            // Convert both names to uppercase character iterators to achieve case insensitive comparsion
+            let self_name_uppercase_iter = char::decode_utf16(lfn.iter().cloned())
+                .map(|r| r.unwrap())
+                .flat_map(|c| c.to_uppercase());
+            let other_name_uppercase_iter = name.chars().flat_map(|c| c.to_uppercase());
+            // Compare two iterators
+            if self_name_uppercase_iter.eq(other_name_uppercase_iter) {
+                return true;
+            }
+        }
+        false
     }
-    #[cfg(not(feature = "alloc"))]
+
     pub(crate) fn eq_name(&self, name: &str) -> bool {
+        #[cfg(feature = "lfn")]
+        {
+            if self.eq_name_lfn(name) {
+                return true;
+            }
+        }
+
         self.short_name.eq_ignore_case(name, self.fs.options.oem_cp_converter)
     }
 }

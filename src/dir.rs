@@ -1,22 +1,17 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::Vec;
 use core::{char, cmp, num, str};
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 use core::{iter, slice};
 use io;
 use io::prelude::*;
 use io::{ErrorKind, SeekFrom};
 
 use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
 use file::File;
 use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek};
-
-#[cfg(feature = "alloc")]
-type LfnUtf16 = Vec<u16>;
-#[cfg(not(feature = "alloc"))]
-type LfnUtf16 = ();
 
 pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
     File(File<'a, T>),
@@ -412,24 +407,24 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         raw_entry
     }
 
-    #[cfg(feature = "alloc")]
-    fn encode_lfn_utf16(name: &str) -> Vec<u16> {
-        name.encode_utf16().collect::<Vec<u16>>()
+    #[cfg(feature = "lfn")]
+    fn encode_lfn_utf16(name: &str) -> LfnBuffer {
+        LfnBuffer::from_ucs2_units(name.encode_utf16())
     }
-    #[cfg(not(feature = "alloc"))]
-    fn encode_lfn_utf16(_name: &str) -> () {
-        ()
+    #[cfg(not(feature = "lfn"))]
+    fn encode_lfn_utf16(_name: &str) -> LfnBuffer {
+        LfnBuffer {}
     }
 
     fn alloc_and_write_lfn_entries(
         &self,
-        lfn_utf16: &LfnUtf16,
+        lfn_utf16: &LfnBuffer,
         short_name: &[u8; 11],
     ) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(short_name);
         // create LFN entries generator
-        let lfn_iter = LfnEntriesGenerator::new(&lfn_utf16, lfn_chsum);
+        let lfn_iter = LfnEntriesGenerator::new(lfn_utf16.as_ucs2_units(), lfn_chsum);
         // find space for new entries (multiple LFN entries and 1 SFN entry)
         let num_entries = lfn_iter.len() + 1;
         let mut stream = self.find_free_entries(num_entries)?;
@@ -458,6 +453,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
         Ok(DirEntry {
             data: raw_entry,
             short_name,
+            #[cfg(feature = "lfn")]
             lfn_utf16,
             fs: self.fs,
             entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is absent only for empty file
@@ -500,7 +496,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
 
     fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, T>>> {
         trace!("read_dir_entry");
-        let mut lfn_buf = LongNameBuilder::new();
+        let mut lfn_builder = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
         loop {
@@ -513,7 +509,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
             // Check if this is deleted or volume ID entry
             if self.should_ship_entry(&raw_entry) {
                 trace!("skip entry");
-                lfn_buf.clear();
+                lfn_builder.clear();
                 begin_offset = offset;
                 continue;
             }
@@ -522,14 +518,15 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                     // Get entry position on volume
                     let abs_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
-                    lfn_buf.validate_chksum(data.name());
+                    lfn_builder.validate_chksum(data.name());
                     // Return directory entry
                     let short_name = ShortName::new(data.name());
                     trace!("file entry {:?}", data.name());
                     return Ok(Some(DirEntry {
                         data,
                         short_name,
-                        lfn_utf16: lfn_buf.into_vec(),
+                        #[cfg(feature = "lfn")]
+                        lfn_utf16: lfn_builder.into_buf(),
                         fs: self.fs,
                         entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is empty only for empty file
                         offset_range: (begin_offset, offset),
@@ -538,7 +535,7 @@ impl<'a, T: ReadWriteSeek> DirIter<'a, T> {
                 DirEntryData::Lfn(data) => {
                     // Append to LFN buffer
                     trace!("lfn entry");
-                    lfn_buf.process(&data);
+                    lfn_builder.process(&data);
                 },
             }
         }
@@ -600,17 +597,105 @@ fn lfn_checksum(short_name: &[u8; 11]) -> u8 {
     chksum.0
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "lfn", feature = "alloc"))]
+#[derive(Clone)]
+pub(crate) struct LfnBuffer {
+    ucs2_units: Vec<u16>,
+}
+
+#[cfg(not(feature = "alloc"))]
+const MAX_LFN_LEN: usize = 256;
+
+#[cfg(all(feature = "lfn", not(feature = "alloc")))]
+#[derive(Clone)]
+pub(crate) struct LfnBuffer {
+    ucs2_units: [u16; MAX_LFN_LEN],
+    len: usize,
+}
+
+#[cfg(all(feature = "lfn", feature = "alloc"))]
+impl LfnBuffer {
+    fn new() -> Self {
+        LfnBuffer { ucs2_units: Vec::<u16>::new() }
+    }
+
+    fn from_ucs2_units<I>(usc2_units: I) -> Self
+    where I: Iterator<Item = u16> {
+        LfnBuffer { ucs2_units: usc2_units.collect() }
+    }
+
+    fn clear(&mut self) {
+        self.ucs2_units.clear();
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.ucs2_units.len()
+    }
+
+    fn set_len(&mut self, len: usize) {
+        self.ucs2_units.resize(len, 0u16);
+    }
+
+    pub(crate) fn as_ucs2_units(&self) -> &[u16] {
+        &self.ucs2_units
+    }
+}
+
+#[cfg(all(feature = "lfn", not(feature = "alloc")))]
+impl LfnBuffer {
+    fn new() -> Self {
+        LfnBuffer { ucs2_units: [0u16; MAX_LFN_LEN], len: 0 }
+    }
+
+    fn from_ucs2_units<I>(usc2_units: I) -> Self
+    where I: Iterator<Item = u16> {
+        let mut lfn = LfnBuffer { ucs2_units: [0u16; MAX_LFN_LEN], len: 0 };
+        for (i, usc2_unit) in usc2_units.enumerate() {
+            lfn.ucs2_units[i] = usc2_unit;
+        }
+        lfn
+    }
+
+    fn clear(&mut self) {
+        self.ucs2_units = [0u16; MAX_LFN_LEN];
+        self.len = 0;
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
+
+    pub(crate) fn as_ucs2_units(&self) -> &[u16] {
+        &self.ucs2_units
+    }
+}
+
+#[cfg(not(feature = "lfn"))]
+#[derive(Clone)]
+pub(crate) struct LfnBuffer {}
+
+#[cfg(not(feature = "lfn"))]
+impl LfnBuffer {
+    pub(crate) fn as_ucs2_units(&self) -> &[u16] {
+        &[]
+    }
+}
+
+#[cfg(feature = "lfn")]
 struct LongNameBuilder {
-    buf: Vec<u16>,
+    buf: LfnBuffer,
     chksum: u8,
     index: u8,
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 impl LongNameBuilder {
     fn new() -> Self {
-        LongNameBuilder { buf: Vec::<u16>::new(), chksum: 0, index: 0 }
+        LongNameBuilder { buf: LfnBuffer::new(), chksum: 0, index: 0 }
     }
 
     fn clear(&mut self) {
@@ -618,7 +703,7 @@ impl LongNameBuilder {
         self.index = 0;
     }
 
-    fn into_vec(mut self) -> Vec<u16> {
+    fn into_buf(mut self) -> LfnBuffer {
         // Check if last processed entry had index 1
         if self.index == 1 {
             self.truncate();
@@ -633,12 +718,12 @@ impl LongNameBuilder {
         // Truncate 0 and 0xFFFF characters from LFN buffer
         let mut lfn_len = self.buf.len();
         while lfn_len > 0 {
-            match self.buf[lfn_len - 1] {
+            match self.buf.ucs2_units[lfn_len - 1] {
                 0xFFFF | 0 => lfn_len -= 1,
                 _ => break,
             }
         }
-        self.buf.truncate(lfn_len);
+        self.buf.set_len(lfn_len);
     }
 
     fn is_empty(&self) -> bool {
@@ -660,7 +745,7 @@ impl LongNameBuilder {
             // last entry is actually first entry in stream
             self.index = index;
             self.chksum = data.checksum();
-            self.buf.resize(index as usize * LFN_PART_LEN, 0);
+            self.buf.set_len(index as usize * LFN_PART_LEN);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
             warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order(), self.index, data.checksum(), self.chksum);
@@ -672,7 +757,7 @@ impl LongNameBuilder {
         }
         let pos = LFN_PART_LEN * (index - 1) as usize;
         // copy name parts into LFN buffer
-        data.copy_name_to_slice(&mut self.buf[pos..pos + 13]);
+        data.copy_name_to_slice(&mut self.buf.ucs2_units[pos..pos + 13]);
     }
 
     fn validate_chksum(&mut self, short_name: &[u8; 11]) {
@@ -689,9 +774,9 @@ impl LongNameBuilder {
 }
 
 // Dummy implementation for non-alloc build
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 struct LongNameBuilder {}
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 impl LongNameBuilder {
     fn new() -> Self {
         LongNameBuilder {}
@@ -703,7 +788,7 @@ impl LongNameBuilder {
     fn validate_chksum(&mut self, _short_name: &[u8; 11]) {}
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 struct LfnEntriesGenerator<'a> {
     name_parts_iter: iter::Rev<slice::Chunks<'a, u16>>,
     checksum: u8,
@@ -712,7 +797,7 @@ struct LfnEntriesGenerator<'a> {
     ended: bool,
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 impl<'a> LfnEntriesGenerator<'a> {
     fn new(name_utf16: &'a [u16], checksum: u8) -> Self {
         let num_entries = (name_utf16.len() + LFN_PART_LEN - 1) / LFN_PART_LEN;
@@ -727,7 +812,7 @@ impl<'a> LfnEntriesGenerator<'a> {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 impl<'a> Iterator for LfnEntriesGenerator<'a> {
     type Item = DirLfnEntryData;
 
@@ -773,19 +858,19 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
 }
 
 // name_parts_iter is ExactSizeIterator so size_hint returns one limit
-#[cfg(feature = "alloc")]
+#[cfg(feature = "lfn")]
 impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
 
 // Dummy implementation for non-alloc build
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 struct LfnEntriesGenerator {}
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 impl LfnEntriesGenerator {
-    fn new(_name_utf16: &(), _checksum: u8) -> Self {
+    fn new(_name_utf16: &[u16], _checksum: u8) -> Self {
         LfnEntriesGenerator {}
     }
 }
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 impl Iterator for LfnEntriesGenerator {
     type Item = DirLfnEntryData;
 
@@ -797,7 +882,7 @@ impl Iterator for LfnEntriesGenerator {
         (0, Some(0))
     }
 }
-#[cfg(not(feature = "alloc"))]
+#[cfg(not(feature = "lfn"))]
 impl ExactSizeIterator for LfnEntriesGenerator {}
 
 #[derive(Default, Debug, Clone)]
