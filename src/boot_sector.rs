@@ -716,6 +716,8 @@ pub(crate) fn format_boot_sector(
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate env_logger;
+    use core::u32;
 
     #[test]
     fn test_estimate_fat_type() {
@@ -773,7 +775,7 @@ mod tests {
         root_dir_entries: u32,
     ) {
         let total_sectors = total_bytes / u64::from(bytes_per_sector);
-        debug_assert!(total_sectors <= u64::from(core::u32::MAX), "{:x}", total_sectors);
+        debug_assert!(total_sectors <= u64::from(u32::MAX), "{:x}", total_sectors);
         let total_sectors = total_sectors as u32;
 
         let sectors_per_cluster = (bytes_per_cluster / u32::from(bytes_per_sector)) as u8;
@@ -874,7 +876,7 @@ mod tests {
             total_sectors_vec.push((size / u64::from(bytes_per_sector)) as u32);
             size = size + size / 7;
         }
-        total_sectors_vec.push(core::u32::MAX);
+        total_sectors_vec.push(u32::MAX);
         for total_sectors in total_sectors_vec {
             let (boot, _) = format_boot_sector(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
                 .expect("format_boot_sector");
