@@ -24,8 +24,10 @@ std = []
 lfn = []
 # Use dynamic allocation. When used without std please enable core_io/collections
 alloc = []
+# Full Unicode support. Disabling it reduces code size by avoiding Unicode-aware character case conversion
+unicode = []
 # Default features
-default = ["chrono", "std", "alloc", "lfn"]
+default = ["chrono", "std", "alloc", "lfn", "unicode"]
 
 [dependencies]
 byteorder = "1"

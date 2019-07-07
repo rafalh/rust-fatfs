@@ -1,6 +1,8 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{String, Vec};
 use core::char;
+#[cfg(not(feature = "unicode"))]
+use core::iter;
 use core::iter::FromIterator;
 use core::{fmt, str};
 use io;
@@ -42,6 +44,16 @@ pub(crate) const LFN_PART_LEN: usize = 13;
 
 // Bit used in order field to mark last LFN entry
 pub(crate) const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
+
+// Character to upper case conversion which supports Unicode only if `unicode` feature is enabled
+#[cfg(feature = "unicode")]
+fn char_to_uppercase(c: char) -> char::ToUppercase {
+    c.to_uppercase()
+}
+#[cfg(not(feature = "unicode"))]
+fn char_to_uppercase(c: char) -> iter::Once<char> {
+    iter::once(c.to_ascii_uppercase())
+}
 
 /// Decoded file short name
 #[derive(Clone, Debug, Default)]
@@ -89,12 +101,12 @@ impl ShortName {
     }
 
     fn eq_ignore_case(&self, name: &str, oem_cp_converter: &OemCpConverter) -> bool {
-        // Strip non-ascii characters from short name
+        // Convert name to UTF-8 character iterator
         let byte_iter = self.as_bytes().iter().cloned();
         let char_iter = byte_iter.map(|c| oem_cp_converter.decode(c));
-        let uppercase_char_iter = char_iter.flat_map(|c| c.to_uppercase());
-        // Build string from character iterator
-        uppercase_char_iter.eq(name.chars().flat_map(|c| c.to_uppercase()))
+        // Compare interators ignoring case
+        let uppercase_char_iter = char_iter.flat_map(char_to_uppercase);
+        uppercase_char_iter.eq(name.chars().flat_map(char_to_uppercase))
     }
 }
 
@@ -616,8 +628,8 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
             // Convert both names to uppercase character iterators to achieve case insensitive comparsion
             let self_name_uppercase_iter = char::decode_utf16(lfn.iter().cloned())
                 .map(|r| r.unwrap())
-                .flat_map(|c| c.to_uppercase());
-            let other_name_uppercase_iter = name.chars().flat_map(|c| c.to_uppercase());
+                .flat_map(char_to_uppercase);
+            let other_name_uppercase_iter = name.chars().flat_map(char_to_uppercase);
             // Compare two iterators
             if self_name_uppercase_iter.eq(other_name_uppercase_iter) {
                 return true;
