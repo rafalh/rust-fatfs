@@ -235,7 +235,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 // create entry in parent directory
                 let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::DIRECTORY, Some(cluster));
                 let entry = self.write_entry(name, sfn_entry)?;
-                let mut dir = entry.to_dir();
+                let dir = entry.to_dir();
                 // create special entries "." and ".."
                 let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
                 let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
