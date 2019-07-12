@@ -585,7 +585,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
             'a'...'z' | 'A'...'Z' | '0'...'9' => {},
             '\u{80}'...'\u{FFFF}' => {},
             '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
-            | ';' | '=' | '[' | ']' => {},
+            | ';' | '=' | '[' | ']' | '^' | '#' | '&' => {},
             _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
         }
     }
