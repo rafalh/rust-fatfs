@@ -18,6 +18,8 @@ type LfnUtf16 = Vec<u16>;
 #[cfg(not(feature = "alloc"))]
 type LfnUtf16 = ();
 
+const SFN_PADDING: u8 = 0x20;
+
 pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
     File(File<'a, T>),
     Root(DiskSlice<FsIoAdapter<'a, T>>),
@@ -242,10 +244,10 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
                 let entry = self.write_entry(name, sfn_entry)?;
                 let dir = entry.to_dir();
                 // create special entries "." and ".."
-                let dot_sfn = ShortNameGenerator::new(".").generate().unwrap();
+                let dot_sfn = ShortNameGenerator::generate_dot();
                 let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
                 dir.write_entry(".", sfn_entry)?;
-                let dotdot_sfn = ShortNameGenerator::new("..").generate().unwrap();
+                let dotdot_sfn = ShortNameGenerator::generate_dotdot();
                 let sfn_entry =
                     self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
                 dir.write_entry("..", sfn_entry)?;
@@ -815,7 +817,7 @@ struct ShortNameGenerator {
 impl ShortNameGenerator {
     fn new(name: &str) -> Self {
         // padded by ' '
-        let mut short_name = [0x20u8; 11];
+        let mut short_name = [SFN_PADDING; 11];
         // find extension after last dot
         let (basename_len, name_fits, lossy_conv) = match name.rfind('.') {
             Some(index) => {
@@ -834,6 +836,19 @@ impl ShortNameGenerator {
         };
         let chksum = Self::checksum(name);
         Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Default::default() }
+    }
+
+    fn generate_dot() -> [u8; 11] {
+        let mut short_name = [SFN_PADDING; 11];
+        short_name[0] = 0x2e;
+        short_name
+    }
+
+    fn generate_dotdot() -> [u8; 11] {
+        let mut short_name = [SFN_PADDING; 11];
+        short_name[0] = 0x2e;
+        short_name[1] = 0x2e;
+        short_name
     }
 
     fn copy_short_name_part(dst: &mut [u8], src: &str) -> (usize, bool, bool) {
@@ -939,7 +954,7 @@ impl ShortNameGenerator {
     }
 
     fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; 11] {
-        let mut buf = [0x20u8; 11];
+        let mut buf = [SFN_PADDING; 11];
         let prefix_len = if with_chksum {
             let prefix_len = cmp::min(self.basename_len as usize, 2);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
