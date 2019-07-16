@@ -233,6 +233,13 @@ fn test_create_dir(fs: FileSystem) {
         names = subdir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
         assert_eq!(names, [".", "..", "long"]);
     }
+    // check short names validity after create_dir
+    {
+        let subdir = root_dir.create_dir("test").unwrap();
+        names = subdir.iter().map(|r| r.unwrap().short_file_name()).collect::<Vec<String>>();
+        assert_eq!(names, [".", ".."]);
+    }
+
     // check using create_dir with existing file fails
     assert!(root_dir.create_dir("very/long/path/test.txt").is_err());
 }
