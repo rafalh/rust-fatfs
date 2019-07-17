@@ -39,6 +39,9 @@ pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
 pub(crate) const DIR_ENTRY_DELETED_FLAG: u8 = 0xE5;
 pub(crate) const DIR_ENTRY_REALLY_E5_FLAG: u8 = 0x05;
 
+// Byte used for short name padding
+pub(crate) const SFN_PADDING: u8 = b' ';
+
 // Length in characters of a LFN fragment packed in one directory entry
 pub(crate) const LFN_PART_LEN: usize = 13;
 
@@ -63,13 +66,11 @@ pub(crate) struct ShortName {
 }
 
 impl ShortName {
-    const PADDING: u8 = b' ';
-
     pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
         // get name components length by looking for space character
-        let name_len = raw_name[0..8].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
-        let ext_len = raw_name[8..11].iter().rposition(|x| *x != Self::PADDING).map(|p| p + 1).unwrap_or(0);
-        let mut name = [Self::PADDING; 12];
+        let name_len = raw_name[0..8].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
+        let ext_len = raw_name[8..11].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
+        let mut name = [SFN_PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
             name[name_len] = b'.';

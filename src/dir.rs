@@ -10,10 +10,9 @@ use io::{ErrorKind, SeekFrom};
 use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 #[cfg(feature = "lfn")]
 use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
+use dir_entry::SFN_PADDING;
 use file::File;
 use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek};
-
-const SFN_PADDING: u8 = 0x20;
 
 pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
     File(File<'a, T>),
@@ -834,7 +833,8 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
                 }
                 debug_assert!(order > 0);
                 // name is padded with ' '
-                let mut lfn_part = [0xFFFFu16; LFN_PART_LEN];
+                const LFN_PADDING: u16 = 0xFFFF;
+                let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
                 lfn_part[..name_part.len()].copy_from_slice(&name_part);
                 if name_part.len() < LFN_PART_LEN {
                     // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
@@ -925,14 +925,14 @@ impl ShortNameGenerator {
 
     fn generate_dot() -> [u8; 11] {
         let mut short_name = [SFN_PADDING; 11];
-        short_name[0] = 0x2e;
+        short_name[0] = b'.';
         short_name
     }
 
     fn generate_dotdot() -> [u8; 11] {
         let mut short_name = [SFN_PADDING; 11];
-        short_name[0] = 0x2e;
-        short_name[1] = 0x2e;
+        short_name[0] = b'.';
+        short_name[1] = b'.';
         short_name
     }
 
