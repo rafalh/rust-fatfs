@@ -19,7 +19,7 @@ travis-ci = { repository = "rafalh/rust-fatfs" }
 
 [features]
 # Use Rust std library
-std = []
+std = ["byteorder/std"]
 # Use dynamic allocation - required for LFN support. When used without std please enable core_io/collections
 alloc = []
 # Default features
