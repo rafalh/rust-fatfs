@@ -55,7 +55,7 @@
 #![crate_type = "lib"]
 #![crate_name = "fatfs"]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
+#![cfg_attr(all(not(feature = "std"), feature = "alloc"), feature(alloc))]
 // Disable warnings to not clutter code with cfg too much
 #![cfg_attr(not(feature = "alloc"), allow(dead_code, unused_imports))]
 
