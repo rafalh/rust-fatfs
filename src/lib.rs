@@ -58,6 +58,12 @@
 #![cfg_attr(all(not(feature = "std"), feature = "alloc"), feature(alloc))]
 // Disable warnings to not clutter code with cfg too much
 #![cfg_attr(not(feature = "alloc"), allow(dead_code, unused_imports))]
+// Inclusive ranges requires Rust 1.26.0
+#![allow(ellipsis_inclusive_range_patterns)]
+// `dyn` syntax requires Rust 1.27.0
+#![allow(bare_trait_objects)]
+// `alloc` compiler feature is needed in Rust before 1.36
+#![cfg_attr(all(not(feature = "std"), feature = "alloc"), allow(stable_features))]
 
 extern crate byteorder;
 
