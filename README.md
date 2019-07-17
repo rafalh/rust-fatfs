@@ -56,12 +56,18 @@ Add this to your `Cargo.toml`:
     [dependencies]
     fatfs = { version = "0.3", features = ["core_io"], default-features = false }
 
-Note: LFN support requires `alloc` and `core_io/collections` features and makes use of `alloc` crate.
-You may have to provide a memory allocator implementation.
+For building in `no_std` mode a Rust compiler version compatible with `core_io` crate is required.
 
-For building in `no_std` mode a nightly Rust compiler version compatible with the current `core_io` crate is required.
-See a date string in the `core_io` dependency version.
+For now `core_io` supports only nightly Rust channel. See a date suffix in latest `core_io` crate version for exact
+compiler version.
+
+Additional features:
+
+* `alloc` - use `alloc` crate for dynamic allocation. Required for LFN (long file name) support and API which uses
+`String` type. You may have to provide a memory allocator implementation.
+
+Note: above feature is enabled by default.
 
 License
 -------
-The MIT license. See LICENSE.txt.
+The MIT license. See `LICENSE.txt`.
