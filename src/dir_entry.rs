@@ -1,5 +1,5 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::{String, Vec};
+use alloc::{string::String, vec::Vec};
 use core::char;
 use core::iter::FromIterator;
 use core::{fmt, str};
