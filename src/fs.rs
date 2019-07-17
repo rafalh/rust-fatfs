@@ -1,5 +1,5 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::String;
+use alloc::string::String;
 use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
