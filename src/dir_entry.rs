@@ -39,6 +39,9 @@ pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
 pub(crate) const DIR_ENTRY_DELETED_FLAG: u8 = 0xE5;
 pub(crate) const DIR_ENTRY_REALLY_E5_FLAG: u8 = 0x05;
 
+// Short file name field size in bytes (besically 8 + 3)
+pub(crate) const SFN_SIZE: usize = 11;
+
 // Byte used for short name padding
 pub(crate) const SFN_PADDING: u8 = b' ';
 
@@ -66,7 +69,7 @@ pub(crate) struct ShortName {
 }
 
 impl ShortName {
-    pub(crate) fn new(raw_name: &[u8; 11]) -> Self {
+    pub(crate) fn new(raw_name: &[u8; SFN_SIZE]) -> Self {
         // get name components length by looking for space character
         let name_len = raw_name[0..8].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
         let ext_len = raw_name[8..11].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
@@ -114,7 +117,7 @@ impl ShortName {
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DirFileEntryData {
-    name: [u8; 11],
+    name: [u8; SFN_SIZE],
     attrs: FileAttributes,
     reserved_0: u8,
     create_time_0: u8,
@@ -129,23 +132,23 @@ pub(crate) struct DirFileEntryData {
 }
 
 impl DirFileEntryData {
-    pub(crate) fn new(name: [u8; 11], attrs: FileAttributes) -> Self {
+    pub(crate) fn new(name: [u8; SFN_SIZE], attrs: FileAttributes) -> Self {
         DirFileEntryData { name, attrs, ..Default::default() }
     }
 
-    pub(crate) fn renamed(&self, new_name: [u8; 11]) -> Self {
+    pub(crate) fn renamed(&self, new_name: [u8; SFN_SIZE]) -> Self {
         let mut sfn_entry = self.clone();
         sfn_entry.name = new_name;
         sfn_entry
     }
 
-    pub(crate) fn name(&self) -> &[u8; 11] {
+    pub(crate) fn name(&self) -> &[u8; SFN_SIZE] {
         &self.name
     }
 
     #[cfg(feature = "alloc")]
     fn lowercase_name(&self) -> ShortName {
-        let mut name_copy: [u8; 11] = self.name;
+        let mut name_copy: [u8; SFN_SIZE] = self.name;
         if self.lowercase_basename() {
             for c in &mut name_copy[..8] {
                 *c = (*c as char).to_ascii_lowercase() as u8;
@@ -351,7 +354,7 @@ impl DirEntryData {
     }
 
     pub(crate) fn deserialize(rdr: &mut Read) -> io::Result<Self> {
-        let mut name = [0; 11];
+        let mut name = [0; SFN_SIZE];
         match rdr.read_exact(&mut name) {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
                 // entries can occupy all clusters of directory so there is no zero entry at the end
@@ -615,7 +618,7 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
         self.data.modified()
     }
 
-    pub(crate) fn raw_short_name(&self) -> &[u8; 11] {
+    pub(crate) fn raw_short_name(&self) -> &[u8; SFN_SIZE] {
         &self.data.name
     }
 
@@ -664,48 +667,40 @@ mod tests {
 
     #[test]
     fn short_name_with_ext() {
-        let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice(b"FOO     BAR");
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
-        raw_short_name.copy_from_slice(b"LOOK AT M E");
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
-        raw_short_name[0] = 0x99;
-        raw_short_name[10] = 0x99;
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "\u{FFFD}OOK AT.M \u{FFFD}");
+        assert_eq!(ShortName::new(b"FOO     BAR").to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
+        assert_eq!(ShortName::new(b"LOOK AT M E").to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
         assert_eq!(
-            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(b"\x99OOK AT M \x99").to_string(&LOSSY_OEM_CP_CONVERTER),
+            "\u{FFFD}OOK AT.M \u{FFFD}"
+        );
+        assert_eq!(
+            ShortName::new(b"\x99OOK AT M \x99").eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
             true
         );
     }
 
     #[test]
     fn short_name_without_ext() {
-        let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice(b"FOO        ");
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
-        raw_short_name.copy_from_slice(b"LOOK AT    ");
-        assert_eq!(ShortName::new(&raw_short_name).to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT");
+        assert_eq!(ShortName::new(b"FOO        ").to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
+        assert_eq!(ShortName::new(&b"LOOK AT    ").to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT");
     }
 
     #[test]
     fn short_name_eq_ignore_case() {
-        let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice(b"LOOK AT M E");
-        raw_short_name[0] = 0x99;
-        raw_short_name[10] = 0x99;
+        let raw_short_name: &[u8; SFN_SIZE] = b"\x99OOK AT M \x99";
         assert_eq!(
-            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
             true
         );
         assert_eq!(
-            ShortName::new(&raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
             true
         );
     }
 
     #[test]
     fn short_name_05_changed_to_e5() {
-        let raw_short_name = [0x05; 11];
+        let raw_short_name = [0x05; SFN_SIZE];
         assert_eq!(
             ShortName::new(&raw_short_name).as_bytes(),
             [0xE5, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, b'.', 0x05, 0x05, 0x05]
@@ -714,10 +709,9 @@ mod tests {
 
     #[test]
     fn lowercase_short_name() {
-        let mut raw_short_name = [0u8; 11];
-        raw_short_name.copy_from_slice(b"FOO     RS ");
+        let raw_short_name: &[u8; SFN_SIZE] = b"FOO     RS ";
         let mut raw_entry =
-            DirFileEntryData { name: raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..Default::default() };
+            DirFileEntryData { name: *raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..Default::default() };
         assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.rs");
         raw_entry.reserved_0 = 1 << 3;
         assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.RS");

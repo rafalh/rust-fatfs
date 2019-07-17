@@ -10,7 +10,7 @@ use io::{ErrorKind, SeekFrom};
 use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 #[cfg(feature = "lfn")]
 use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
-use dir_entry::SFN_PADDING;
+use dir_entry::{SFN_SIZE, SFN_PADDING};
 use file::File;
 use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek};
 
@@ -88,7 +88,7 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
 
 enum DirEntryOrShortName<'a, T: ReadWriteSeek + 'a> {
     DirEntry(DirEntry<'a, T>),
-    ShortName([u8; 11]),
+    ShortName([u8; SFN_SIZE]),
 }
 
 /// A FAT filesystem directory.
@@ -395,7 +395,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
 
     fn create_sfn_entry(
         &self,
-        short_name: [u8; 11],
+        short_name: [u8; SFN_SIZE],
         attrs: FileAttributes,
         first_cluster: Option<u32>,
     ) -> DirFileEntryData {
@@ -420,7 +420,7 @@ impl<'a, T: ReadWriteSeek + 'a> Dir<'a, T> {
     fn alloc_and_write_lfn_entries(
         &self,
         lfn_utf16: &LfnBuffer,
-        short_name: &[u8; 11],
+        short_name: &[u8; SFN_SIZE],
     ) -> io::Result<(DirRawStream<'a, T>, u64)> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(short_name);
@@ -590,7 +590,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn lfn_checksum(short_name: &[u8; 11]) -> u8 {
+fn lfn_checksum(short_name: &[u8; SFN_SIZE]) -> u8 {
     let mut chksum = num::Wrapping(0u8);
     for b in short_name {
         chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(*b);
@@ -761,7 +761,7 @@ impl LongNameBuilder {
         data.copy_name_to_slice(&mut self.buf.ucs2_units[pos..pos + 13]);
     }
 
-    fn validate_chksum(&mut self, short_name: &[u8; 11]) {
+    fn validate_chksum(&mut self, short_name: &[u8; SFN_SIZE]) {
         if self.is_empty() {
             // Nothing to validate - no LFN entries has been processed
             return;
@@ -786,7 +786,7 @@ impl LongNameBuilder {
     fn into_vec(self) {}
     fn truncate(&mut self) {}
     fn process(&mut self, _data: &DirLfnEntryData) {}
-    fn validate_chksum(&mut self, _short_name: &[u8; 11]) {}
+    fn validate_chksum(&mut self, _short_name: &[u8; SFN_SIZE]) {}
 }
 
 #[cfg(feature = "lfn")]
@@ -896,13 +896,13 @@ struct ShortNameGenerator {
     lossy_conv: bool,
     exact_match: bool,
     basename_len: u8,
-    short_name: [u8; 11],
+    short_name: [u8; SFN_SIZE],
 }
 
 impl ShortNameGenerator {
     fn new(name: &str) -> Self {
         // padded by ' '
-        let mut short_name = [SFN_PADDING; 11];
+        let mut short_name = [SFN_PADDING; SFN_SIZE];
         // find extension after last dot
         let (basename_len, name_fits, lossy_conv) = match name.rfind('.') {
             Some(index) => {
@@ -923,14 +923,14 @@ impl ShortNameGenerator {
         Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Default::default() }
     }
 
-    fn generate_dot() -> [u8; 11] {
-        let mut short_name = [SFN_PADDING; 11];
+    fn generate_dot() -> [u8; SFN_SIZE] {
+        let mut short_name = [SFN_PADDING; SFN_SIZE];
         short_name[0] = b'.';
         short_name
     }
 
-    fn generate_dotdot() -> [u8; 11] {
-        let mut short_name = [SFN_PADDING; 11];
+    fn generate_dotdot() -> [u8; SFN_SIZE] {
+        let mut short_name = [SFN_PADDING; SFN_SIZE];
         short_name[0] = b'.';
         short_name[1] = b'.';
         short_name
@@ -967,7 +967,7 @@ impl ShortNameGenerator {
         (dst_pos, true, lossy_conv)
     }
 
-    fn add_existing(&mut self, short_name: &[u8; 11]) {
+    fn add_existing(&mut self, short_name: &[u8; SFN_SIZE]) {
         // check for exact match collision
         if short_name == &self.short_name {
             self.exact_match = true;
@@ -1008,7 +1008,7 @@ impl ShortNameGenerator {
         chksum.0
     }
 
-    fn generate(&self) -> io::Result<[u8; 11]> {
+    fn generate(&self) -> io::Result<[u8; SFN_SIZE]> {
         if !self.lossy_conv && self.name_fits && !self.exact_match {
             // If there was no lossy conversion and name fits into
             // 8.3 convention and there is no collision return it as is
@@ -1038,8 +1038,8 @@ impl ShortNameGenerator {
         self.prefix_chksum_bitmap = 0;
     }
 
-    fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; 11] {
-        let mut buf = [SFN_PADDING; 11];
+    fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; SFN_SIZE] {
+        let mut buf = [SFN_PADDING; SFN_SIZE];
         let prefix_len = if with_chksum {
             let prefix_len = cmp::min(self.basename_len as usize, 2);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
@@ -1098,7 +1098,7 @@ mod tests {
 
     #[test]
     fn test_generate_short_name_collisions_long() {
-        let mut buf: [u8; 11];
+        let mut buf: [u8; SFN_SIZE];
         let mut gen = ShortNameGenerator::new("TextFile.Mine.txt");
         buf = gen.generate().unwrap();
         assert_eq!(&buf, b"TEXTFI~1TXT");
@@ -1135,7 +1135,7 @@ mod tests {
 
     #[test]
     fn test_generate_short_name_collisions_short() {
-        let mut buf: [u8; 11];
+        let mut buf: [u8; SFN_SIZE];
         let mut gen = ShortNameGenerator::new("x.txt");
         buf = gen.generate().unwrap();
         assert_eq!(&buf, b"X       TXT");

@@ -15,7 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 use boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use dir::{Dir, DirRawStream};
-use dir_entry::SFN_PADDING;
+use dir_entry::{SFN_PADDING, SFN_SIZE};
 use file::File;
 use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
 use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
@@ -415,7 +415,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     ///
     /// Label is encoded in the OEM codepage.
     /// It finds file with `VOLUME_ID` attribute and returns its short name.
-    pub fn read_volume_label_from_root_dir_as_bytes(&self) -> io::Result<Option<[u8; 11]>> {
+    pub fn read_volume_label_from_root_dir_as_bytes(&self) -> io::Result<Option<[u8; SFN_SIZE]>> {
         let entry_opt = self.root_dir().find_volume_entry()?;
         Ok(entry_opt.map(|e| *e.raw_short_name()))
     }
@@ -795,7 +795,7 @@ pub struct FormatVolumeOptions {
     pub(crate) heads: Option<u16>,
     pub(crate) drive_num: Option<u8>,
     pub(crate) volume_id: Option<u32>,
-    pub(crate) volume_label: Option<[u8; 11]>,
+    pub(crate) volume_label: Option<[u8; SFN_SIZE]>,
 }
 
 impl FormatVolumeOptions {
@@ -911,7 +911,7 @@ impl FormatVolumeOptions {
     /// Set volume label
     ///
     /// Default is empty label.
-    pub fn volume_label(mut self, volume_label: [u8; 11]) -> Self {
+    pub fn volume_label(mut self, volume_label: [u8; SFN_SIZE]) -> Self {
         self.volume_label = Some(volume_label);
         self
     }
