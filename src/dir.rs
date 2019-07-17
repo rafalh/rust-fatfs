@@ -904,15 +904,18 @@ impl ShortNameGenerator {
         // padded by ' '
         let mut short_name = [SFN_PADDING; SFN_SIZE];
         // find extension after last dot
-        let (basename_len, name_fits, lossy_conv) = match name.rfind('.') {
+        // Note: short file name cannot start with the extension
+        let (basename_len, name_fits, lossy_conv) = match name[1..].rfind('.') {
             Some(index) => {
                 // extension found - copy parts before and after dot
+                let dot_index = index + 1;
                 let (basename_len, basename_fits, basename_lossy) =
-                    Self::copy_short_name_part(&mut short_name[0..8], &name[..index]);
-                let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[index + 1..]);
+                    Self::copy_short_name_part(&mut short_name[0..8], &name[..dot_index]);
+                let (_, ext_fits, ext_lossy) =
+                    Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
                 (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
             },
-            None => {
+            _ => {
                 // no extension - copy name and leave extension empty
                 let (basename_len, basename_fits, basename_lossy) =
                     Self::copy_short_name_part(&mut short_name[0..8], &name);
@@ -1084,6 +1087,7 @@ mod tests {
         assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), b"FOO_1~1 BAR");
         assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), b"VER_12~1TEX");
         assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), b"BASHRC~1SWP");
+        assert_eq!(&ShortNameGenerator::new(".foo").generate().unwrap(), b"FOO~1      ");
     }
 
     #[test]
