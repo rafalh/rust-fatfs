@@ -367,8 +367,8 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     /// Returns a volume label from BPB in the Boot Sector as `String`.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
-    /// Note: File with `VOLUME_ID` attribute in root directory is ignored by this library.
-    /// Only label from BPB is used.
+    /// Note: This function returns label stored in the BPB block. Use `read_volume_label_from_root_dir` to read label
+    /// from the root directory.
     #[cfg(feature = "alloc")]
     pub fn volume_label(&self) -> String {
         // Decode volume label from OEM codepage
@@ -381,8 +381,8 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     /// Returns a volume label from BPB in the Boot Sector as byte array slice.
     ///
     /// Label is encoded in the OEM codepage.
-    /// Note: File with `VOLUME_ID` attribute in root directory is ignored by this library.
-    /// Only label from BPB is used.
+    /// Note: This function returns label stored in the BPB block. Use `read_volume_label_from_root_dir_as_bytes` to
+    /// read label from the root directory.
     pub fn volume_label_as_bytes(&self) -> &[u8] {
         let full_label_slice = &self.bpb.volume_label;
         let len = full_label_slice.iter().rposition(|b| *b != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
