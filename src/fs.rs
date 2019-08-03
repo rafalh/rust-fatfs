@@ -730,7 +730,7 @@ impl<'a, T> Seek for DiskSlice<T> {
 /// Provides a custom implementation for a short name encoding/decoding.
 /// Default implementation changes all non-ASCII characters to the replacement character (U+FFFD).
 /// `OemCpConverter` is specified by the `oem_cp_converter` property in `FsOptions` struct.
-pub trait OemCpConverter: Debug {
+pub trait OemCpConverter: Debug + Sync {
     fn decode(&self, oem_char: u8) -> char;
     fn encode(&self, uni_char: char) -> Option<u8>;
 }
