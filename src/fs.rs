@@ -1,10 +1,12 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
+use crate::core::borrow::BorrowMut;
 use crate::core::cell::{Cell, RefCell};
 use crate::core::char;
 use crate::core::cmp;
 use crate::core::fmt::Debug;
 use crate::core::iter::FromIterator;
+use crate::core::marker::PhantomData;
 use crate::core::u32;
 use crate::io;
 use crate::io::prelude::*;
@@ -304,17 +306,35 @@ pub struct FileSystem<IO: ReadWriteSeek, TP, OCC> {
     current_status_flags: Cell<FsStatusFlags>,
 }
 
-impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
+pub trait IntoStorage<T: Read + Write + Seek> {
+    fn into_storage(self) -> T;
+}
+
+impl<T: Read + Write + Seek> IntoStorage<T> for T {
+    fn into_storage(self) -> T {
+        self
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: std::io::Read + std::io::Write + std::io::Seek> IntoStorage<io::StdIoWrapper<T>> for T {
+    fn into_storage(self) -> io::StdIoWrapper<T> {
+        io::StdIoWrapper::new(self)
+    }
+}
+
+impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
-    /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
+    /// Supplied `storage` parameter cannot be seeked. If there is a need to read a fragment of disk
     /// image (e.g. partition) library user should wrap the file struct in a struct limiting
     /// access to partition bytes only e.g. `fscommon::StreamSlice`.
     ///
-    /// Note: creating multiple filesystem objects with one underlying device/disk image can
+    /// Note: creating multiple filesystem objects with a single underlying storage can
     /// cause a filesystem corruption.
-    pub fn new(mut disk: IO, options: FsOptions<TP, OCC>) -> io::Result<Self> {
+    pub fn new<T: IntoStorage<IO>>(storage: T, options: FsOptions<TP, OCC>) -> io::Result<Self> {
         // Make sure given image is not seeked
+        let mut disk = storage.into_storage();
         trace!("FileSystem::new");
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
@@ -407,12 +427,12 @@ impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice<'a>(&'a self) -> DiskSlice<FsIoAdapter<'a, IO, TP, OCC>> {
+    fn fat_slice<'a>(&'a self) -> impl ReadWriteSeek + 'a {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
 
-    pub(crate) fn cluster_iter<'a>(&'a self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'a, IO, TP, OCC>>> {
+    pub(crate) fn cluster_iter<'a>(&'a self, cluster: u32) -> ClusterIterator<impl ReadWriteSeek + 'a> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
@@ -641,7 +661,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     }
 }
 
-fn fat_slice<IO: ReadWriteSeek>(io: IO, bpb: &BiosParameterBlock) -> DiskSlice<IO> {
+fn fat_slice<S: ReadWriteSeek, B: BorrowMut<S>>(io: B, bpb: &BiosParameterBlock) -> impl ReadWriteSeek {
     let sectors_per_fat = bpb.sectors_per_fat();
     let mirroring_enabled = bpb.mirroring_enabled();
     let (fat_first_sector, mirrors) = if mirroring_enabled {
@@ -654,20 +674,21 @@ fn fat_slice<IO: ReadWriteSeek>(io: IO, bpb: &BiosParameterBlock) -> DiskSlice<I
     DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, bpb, io)
 }
 
-pub(crate) struct DiskSlice<IO> {
+pub(crate) struct DiskSlice<B, S = B> {
     begin: u64,
     size: u64,
     offset: u64,
     mirrors: u8,
-    inner: IO,
+    inner: B,
+    phantom: PhantomData<S>,
 }
 
-impl<IO> DiskSlice<IO> {
-    pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: IO) -> Self {
-        DiskSlice { begin, size, mirrors, inner, offset: 0 }
+impl<B: BorrowMut<S>, S: ReadWriteSeek> DiskSlice<B, S> {
+    pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: B) -> Self {
+        DiskSlice { begin, size, mirrors, inner, offset: 0, phantom: PhantomData }
     }
 
-    fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: IO) -> Self {
+    fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: B) -> Self {
         Self::new(bpb.bytes_from_sectors(first_sector), bpb.bytes_from_sectors(sector_count), mirrors, inner)
     }
 
@@ -677,7 +698,7 @@ impl<IO> DiskSlice<IO> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<IO: Clone> Clone for DiskSlice<IO> {
+impl<B: Clone, S> Clone for DiskSlice<B, S> {
     fn clone(&self) -> Self {
         DiskSlice {
             begin: self.begin,
@@ -685,22 +706,24 @@ impl<IO: Clone> Clone for DiskSlice<IO> {
             offset: self.offset,
             mirrors: self.mirrors,
             inner: self.inner.clone(),
+            // phantom is needed to add type bounds on the storage type
+            phantom: PhantomData,
         }
     }
 }
 
-impl<IO: Read + Seek> Read for DiskSlice<IO> {
+impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
-        self.inner.seek(SeekFrom::Start(offset))?;
-        let size = self.inner.read(&mut buf[..read_size])?;
+        self.inner.borrow_mut().seek(SeekFrom::Start(offset))?;
+        let size = self.inner.borrow_mut().read(&mut buf[..read_size])?;
         self.offset += size as u64;
         Ok(size)
     }
 }
 
-impl<IO: Write + Seek> Write for DiskSlice<IO> {
+impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -709,19 +732,19 @@ impl<IO: Write + Seek> Write for DiskSlice<IO> {
         }
         // Write data
         for i in 0..self.mirrors {
-            self.inner.seek(SeekFrom::Start(offset + i as u64 * self.size))?;
-            self.inner.write_all(&buf[..write_size])?;
+            self.inner.borrow_mut().seek(SeekFrom::Start(offset + i as u64 * self.size))?;
+            self.inner.borrow_mut().write_all(&buf[..write_size])?;
         }
         self.offset += write_size as u64;
         Ok(write_size)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
+        self.inner.borrow_mut().flush()
     }
 }
 
-impl<IO> Seek for DiskSlice<IO> {
+impl<B, S> Seek for DiskSlice<B, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
@@ -775,7 +798,7 @@ impl OemCpConverter for LossyOemCpConverter {
     }
 }
 
-pub(crate) fn write_zeros<IO: ReadWriteSeek>(mut disk: IO, mut len: u64) -> io::Result<()> {
+pub(crate) fn write_zeros<IO: ReadWriteSeek>(disk: &mut IO, mut len: u64) -> io::Result<()> {
     const ZEROS: [u8; 512] = [0u8; 512];
     while len > 0 {
         let write_size = cmp::min(len, ZEROS.len() as u64) as usize;
@@ -785,7 +808,7 @@ pub(crate) fn write_zeros<IO: ReadWriteSeek>(mut disk: IO, mut len: u64) -> io::
     Ok(())
 }
 
-fn write_zeros_until_end_of_sector<IO: ReadWriteSeek>(mut disk: IO, bytes_per_sector: u16) -> io::Result<()> {
+fn write_zeros_until_end_of_sector<IO: ReadWriteSeek>(disk: &mut IO, bytes_per_sector: u16) -> io::Result<()> {
     let pos = disk.seek(SeekFrom::Current(0))?;
     let total_bytes_to_write = bytes_per_sector as u64 - (pos % bytes_per_sector as u64);
     if total_bytes_to_write != bytes_per_sector as u64 {
@@ -938,20 +961,20 @@ impl FormatVolumeOptions {
 /// Warning: this function overrides internal FAT filesystem structures and causes a loss of all data on provided
 /// partition. Please use it with caution.
 /// Only quick formatting is supported. To achieve a full format zero entire partition before calling this function.
-/// Supplied `disk` parameter cannot be seeked (internal pointer must be on position 0).
+/// Supplied `storage` parameter cannot be seeked (internal pointer must be on position 0).
 /// To format a fragment of a disk image (e.g. partition) library user should wrap the file struct in a struct
 /// limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
-pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptions) -> io::Result<()> {
+pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOptions) -> io::Result<()> {
     trace!("format_volume");
-    debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
+    debug_assert!(storage.seek(SeekFrom::Current(0))? == 0);
 
     let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
     let total_sectors = if let Some(total_sectors) = options.total_sectors {
         total_sectors
     } else {
-        let total_bytes: u64 = disk.seek(SeekFrom::End(0))?;
+        let total_bytes: u64 = storage.seek(SeekFrom::End(0))?;
         let total_sectors_64 = total_bytes / u64::from(bytes_per_sector);
-        disk.seek(SeekFrom::Start(0))?;
+        storage.seek(SeekFrom::Start(0))?;
         if total_sectors_64 > u64::from(u32::MAX) {
             return Err(Error::new(ErrorKind::Other, "Volume has too many sectors"));
         }
@@ -961,32 +984,32 @@ pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptio
     // Create boot sector, validate and write to storage device
     let (boot, fat_type) = format_boot_sector(&options, total_sectors, bytes_per_sector)?;
     boot.validate()?;
-    boot.serialize(&mut disk)?;
+    boot.serialize(storage)?;
     // Make sure entire logical sector is updated (serialize method always writes 512 bytes)
     let bytes_per_sector = boot.bpb.bytes_per_sector;
-    write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
+    write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
 
     if boot.bpb.is_fat32() {
         // FSInfo sector
         let fs_info_sector = FsInfoSector { free_cluster_count: None, next_free_cluster: None, dirty: false };
-        disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.fs_info_sector())))?;
-        fs_info_sector.serialize(&mut disk)?;
-        write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
+        storage.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.fs_info_sector())))?;
+        fs_info_sector.serialize(storage)?;
+        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
 
         // backup boot sector
-        disk.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.backup_boot_sector())))?;
-        boot.serialize(&mut disk)?;
-        write_zeros_until_end_of_sector(&mut disk, bytes_per_sector)?;
+        storage.seek(SeekFrom::Start(boot.bpb.bytes_from_sectors(boot.bpb.backup_boot_sector())))?;
+        boot.serialize(storage)?;
+        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
     }
 
     // format File Allocation Table
     let reserved_sectors = boot.bpb.reserved_sectors();
     let fat_pos = boot.bpb.bytes_from_sectors(reserved_sectors);
     let sectors_per_all_fats = boot.bpb.sectors_per_all_fats();
-    disk.seek(SeekFrom::Start(fat_pos))?;
-    write_zeros(&mut disk, boot.bpb.bytes_from_sectors(sectors_per_all_fats))?;
+    storage.seek(SeekFrom::Start(fat_pos))?;
+    write_zeros(storage, boot.bpb.bytes_from_sectors(sectors_per_all_fats))?;
     {
-        let mut fat_slice = fat_slice(&mut disk, &boot.bpb);
+        let mut fat_slice = fat_slice::<S, &mut S>(storage, &boot.bpb);
         let sectors_per_fat = boot.bpb.sectors_per_fat();
         let bytes_per_fat = boot.bpb.bytes_from_sectors(sectors_per_fat);
         format_fat(&mut fat_slice, fat_type, boot.bpb.media, bytes_per_fat, boot.bpb.total_clusters())?;
@@ -996,11 +1019,11 @@ pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptio
     let root_dir_first_sector = reserved_sectors + sectors_per_all_fats;
     let root_dir_sectors = boot.bpb.root_dir_sectors();
     let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
-    disk.seek(SeekFrom::Start(root_dir_pos))?;
-    write_zeros(&mut disk, boot.bpb.bytes_from_sectors(root_dir_sectors))?;
+    storage.seek(SeekFrom::Start(root_dir_pos))?;
+    write_zeros(storage, boot.bpb.bytes_from_sectors(root_dir_sectors))?;
     if fat_type == FatType::Fat32 {
         let root_dir_first_cluster = {
-            let mut fat_slice = fat_slice(&mut disk, &boot.bpb);
+            let mut fat_slice = fat_slice::<S, &mut S>(storage, &boot.bpb);
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == boot.bpb.root_dir_first_cluster);
@@ -1008,13 +1031,13 @@ pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptio
         let root_dir_first_sector =
             first_data_sector + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
         let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
-        disk.seek(SeekFrom::Start(root_dir_pos))?;
-        write_zeros(&mut disk, boot.bpb.cluster_size() as u64)?;
+        storage.seek(SeekFrom::Start(root_dir_pos))?;
+        write_zeros(storage, boot.bpb.cluster_size() as u64)?;
     }
 
     // TODO: create volume label dir entry if volume label is set
 
-    disk.seek(SeekFrom::Start(0))?;
+    storage.seek(SeekFrom::Start(0))?;
     trace!("format_volume end");
     Ok(())
 }

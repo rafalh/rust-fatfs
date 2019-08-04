@@ -98,7 +98,7 @@ impl BiosParameterBlock {
         Ok(bpb)
     }
 
-    fn serialize<W: Write>(&self, mut wrt: W) -> io::Result<()> {
+    fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_u16::<LittleEndian>(self.bytes_per_sector)?;
         wrt.write_u8(self.sectors_per_cluster)?;
         wrt.write_u16::<LittleEndian>(self.reserved_sectors)?;

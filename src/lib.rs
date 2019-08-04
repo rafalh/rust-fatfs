@@ -67,6 +67,9 @@ extern crate bitflags;
 #[macro_use]
 extern crate log;
 
+#[cfg(not(feature = "std"))]
+extern crate core;
+
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
 
@@ -77,27 +80,18 @@ mod file;
 mod fs;
 mod table;
 mod time;
+mod io;
 
-#[cfg(not(feature = "std"))]
 mod byteorder_core_io;
 
-#[cfg(feature = "std")]
-use byteorder as byteorder_ext;
-#[cfg(not(feature = "std"))]
 use crate::byteorder_core_io as byteorder_ext;
 
 #[cfg(feature = "std")]
-use std::io;
-#[cfg(not(feature = "std"))]
-use core_io as io;
-
-#[cfg(feature = "std")]
 use std as core;
-#[cfg(not(feature = "std"))]
-use core as core;
 
 pub use crate::dir::*;
 pub use crate::dir_entry::*;
 pub use crate::file::*;
 pub use crate::fs::*;
 pub use crate::time::*;
+pub use crate::io::*;

@@ -1,22 +1,24 @@
 language: rust
 env:
   - RUST_LOG=warn RUST_BACKTRACE=1
+script:
+  - cargo test --verbose
+  - cargo build --no-default-features
+  - cargo build --no-default-features --features lfn
+  - cargo build --no-default-features --features alloc,lfn,unicode
 matrix:
   include:
     # Minimal supported rustc version
     - rust: 1.34.0
       script:
         # Build only the library (examples may fail)
-        - cargo update
         - cargo build
+        - cargo build --no-default-features
+        - cargo build --no-default-features --features lfn
+        - cargo build --no-default-features --features alloc,lfn,unicode
     - rust: stable
     - rust: beta
     - rust: nightly
-    - rust: nightly-2019-07-01
-      script:
-        - cargo build --no-default-features --features core_io
-        - cargo build --no-default-features --features core_io,lfn
-        - cargo build --no-default-features --features core_io,alloc,lfn,unicode
 
   allow_failures:
     - rust: nightly

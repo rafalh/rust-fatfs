@@ -1,6 +1,8 @@
 use byteorder::LittleEndian;
 use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::core::borrow::BorrowMut;
 use crate::core::cmp;
+use crate::core::marker::PhantomData;
 use crate::io;
 
 use crate::fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
@@ -411,16 +413,18 @@ impl FatTrait for Fat32 {
     }
 }
 
-pub(crate) struct ClusterIterator<T: ReadWriteSeek> {
-    fat: T,
+pub(crate) struct ClusterIterator<B, S = B> {
+    fat: B,
     fat_type: FatType,
     cluster: Option<u32>,
     err: bool,
+    // phantom is needed to add type bounds on the storage type
+    phantom: PhantomData<S>,
 }
 
-impl<T: ReadWriteSeek> ClusterIterator<T> {
-    pub(crate) fn new(fat: T, fat_type: FatType, cluster: u32) -> Self {
-        ClusterIterator { fat, fat_type, cluster: Some(cluster), err: false }
+impl<B: BorrowMut<S>, S: ReadWriteSeek> ClusterIterator<B, S> {
+    pub(crate) fn new(fat: B, fat_type: FatType, cluster: u32) -> Self {
+        ClusterIterator { fat, fat_type, cluster: Some(cluster), err: false, phantom: PhantomData }
     }
 
     pub(crate) fn truncate(&mut self) -> io::Result<u32> {
@@ -429,7 +433,7 @@ impl<T: ReadWriteSeek> ClusterIterator<T> {
                 // Move to the next cluster
                 self.next();
                 // Mark previous cluster as end of chain
-                write_fat(&mut self.fat, self.fat_type, n, FatValue::EndOfChain)?;
+                write_fat(self.fat.borrow_mut(), self.fat_type, n, FatValue::EndOfChain)?;
                 // Free rest of chain
                 self.free()
             },
@@ -441,14 +445,14 @@ impl<T: ReadWriteSeek> ClusterIterator<T> {
         let mut num_free = 0;
         while let Some(n) = self.cluster {
             self.next();
-            write_fat(&mut self.fat, self.fat_type, n, FatValue::Free)?;
+            write_fat(self.fat.borrow_mut(), self.fat_type, n, FatValue::Free)?;
             num_free += 1;
         }
         Ok(num_free)
     }
 }
 
-impl<T: ReadWriteSeek> Iterator for ClusterIterator<T> {
+impl<B: BorrowMut<S>, S: ReadWriteSeek> Iterator for ClusterIterator<B, S> {
     type Item = io::Result<u32>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -456,7 +460,7 @@ impl<T: ReadWriteSeek> Iterator for ClusterIterator<T> {
             return None;
         }
         if let Some(current_cluster) = self.cluster {
-            self.cluster = match get_next_cluster(&mut self.fat, self.fat_type, current_cluster) {
+            self.cluster = match get_next_cluster(self.fat.borrow_mut(), self.fat_type, current_cluster) {
                 Ok(next_cluster) => next_cluster,
                 Err(err) => {
                     self.err = true;
@@ -502,12 +506,12 @@ mod tests {
         assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).unwrap(), 3);
         // test reading from iterator
         {
-            let iter = ClusterIterator::new(&mut cur, fat_type, 0x9);
+            let iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
             assert_eq!(iter.map(|r| r.unwrap()).collect::<Vec<_>>(), vec![0xA, 0x14, 0x15, 0x16, 0x19, 0x1A]);
         }
         // test truncating a chain
         {
-            let mut iter = ClusterIterator::new(&mut cur, fat_type, 0x9);
+            let mut iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
             assert_eq!(iter.nth(3).unwrap().unwrap(), 0x16);
             iter.truncate().unwrap();
         }
@@ -516,7 +520,7 @@ mod tests {
         assert_eq!(read_fat(&mut cur, fat_type, 0x1A).unwrap(), FatValue::Free);
         // test freeing a chain
         {
-            let mut iter = ClusterIterator::new(&mut cur, fat_type, 0x9);
+            let mut iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
             iter.free().unwrap();
         }
         assert_eq!(read_fat(&mut cur, fat_type, 0x9).unwrap(), FatValue::Free);

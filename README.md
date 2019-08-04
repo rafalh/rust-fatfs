@@ -5,7 +5,7 @@ Rust FAT FS
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
 [![crates.io](http://meritbadge.herokuapp.com/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
-[![Minimum rustc version](https://img.shields.io/badge/rustc-1.24+-yellow.svg)](https://blog.rust-lang.org/2018/02/15/Rust-1.24.html)
+[![Minimum rustc version](https://img.shields.io/badge/rustc-1.34+-yellow.svg)](https://blog.rust-lang.org/2019/04/11/Rust-1.34.0.html)
 
 A FAT filesystem library implemented in Rust.
 
@@ -26,7 +26,7 @@ Usage
 Add this to your `Cargo.toml`:
 
     [dependencies]
-    fatfs = "0.3"
+    fatfs = "0.4"
 
 and this to your crate root:
 
@@ -40,7 +40,8 @@ You can start using the `fatfs` library now:
     let mut file = root_dir.create_file("hello.txt")?;
     file.write_all(b"Hello World!")?;
 
-Note: it is recommended to wrap the underlying file struct in a buffering/caching object like `BufStream` from `fscommon` crate. For example:
+Note: it is recommended to wrap the underlying file struct in a buffering/caching object like `BufStream` from
+`fscommon` crate. For example:
 
     extern crate fscommon;
     let buf_stream = BufStream::new(img_file);
@@ -54,12 +55,7 @@ no_std usage
 Add this to your `Cargo.toml`:
 
     [dependencies]
-    fatfs = { version = "0.3", features = ["core_io"], default-features = false }
-
-For building in `no_std` mode a Rust compiler version compatible with `core_io` crate is required.
-
-For now `core_io` supports only nightly Rust channel. See a date suffix in latest `core_io` crate version for exact
-compiler version.
+    fatfs = { version = "0.4", default-features = false }
 
 Additional features:
 
