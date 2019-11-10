@@ -1,19 +1,30 @@
 Changelog
 =========
 
-Version 0.3.2
--------------
-Features:
+0.3.3 (2019-11-10)
+------------------
+Bug fixes:
+* Add missing characters to the whitelist for long file name (`^`, `#`, `&`)
+* Fix invalid short file names for `.` and `..` entries when creating a new directory
+* Fix `no_std` build
+
+Misc changes:
+* Fix compiler warnings
+* Improve documentation
+
+0.3.2 (2018-12-29)
+------------------
+New features:
 * Add `format_volume` function for initializing a FAT filesystem on a partition
 * Add more checks of filesystem correctness when mounting
 
-Fixes:
+Bug fixes:
 * Clear directory returned from `create_dir` method - upgrade ASAP if this method is used
 * Fix handling of FSInfo sector on FAT32 volumes with sector size different than 512 - upgrade ASAP if such sector size is used
 * Use `write_all` in `serialize` method for FSInfo sector - previously it could have been improperly updated
 
-Version 0.3.1
--------------
+0.3.1 (2018-10-20)
+------------------
 New features:
 * Increased file creation time resolution from 2s to 1/100s
 * Added oem_cp_converter filesystem option allowing to provide custom short name decoder
@@ -21,7 +32,7 @@ New features:
 * Added marking volume as dirty on first write and not-dirty on unmount
 * Added support for reading volume label from root directory
 
-Fixes:
+Bug fixes:
 * Fixed handling of short names with spaces in the middle - all characters after first space in 8.3 components were
   stripped before
 * Fixed decoding 0xE5 character in first byte of short name - if first character of short name is equal to 0xE5,
