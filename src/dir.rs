@@ -14,7 +14,7 @@ use dir_entry::{SFN_SIZE, SFN_PADDING};
 use file::File;
 use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek};
 
-pub(crate) enum DirRawStream<'a, T: ReadWriteSeek + 'a> {
+pub(crate) enum DirRawStream<'a, T: ReadWriteSeek> {
     File(File<'a, T>),
     Root(DiskSlice<FsIoAdapter<'a, T>>),
 }
@@ -86,7 +86,7 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
     (comp, rest_opt)
 }
 
-enum DirEntryOrShortName<'a, T: ReadWriteSeek + 'a> {
+enum DirEntryOrShortName<'a, T: ReadWriteSeek> {
     DirEntry(DirEntry<'a, T>),
     ShortName([u8; SFN_SIZE]),
 }
@@ -95,7 +95,7 @@ enum DirEntryOrShortName<'a, T: ReadWriteSeek + 'a> {
 ///
 /// This struct is created by the `open_dir` or `create_dir` methods on `Dir`.
 /// The root directory is returned by the `root_dir` method on `FileSystem`.
-pub struct Dir<'a, T: ReadWriteSeek + 'a> {
+pub struct Dir<'a, T: ReadWriteSeek> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,
 }
@@ -473,7 +473,7 @@ impl<'a, T: ReadWriteSeek> Clone for Dir<'a, T> {
 /// An iterator over the directory entries.
 ///
 /// This struct is created by the `iter` method on `Dir`.
-pub struct DirIter<'a, T: ReadWriteSeek + 'a> {
+pub struct DirIter<'a, T: ReadWriteSeek> {
     stream: DirRawStream<'a, T>,
     fs: &'a FileSystem<T>,
     skip_volume: bool,

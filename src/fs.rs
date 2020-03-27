@@ -592,7 +592,7 @@ impl<T: ReadWriteSeek> Drop for FileSystem<T> {
     }
 }
 
-pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek + 'a> {
+pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek> {
     fs: &'a FileSystem<T>,
 }
 

@@ -493,7 +493,7 @@ impl DirEntryEditor {
 ///
 /// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]
-pub struct DirEntry<'a, T: ReadWriteSeek + 'a> {
+pub struct DirEntry<'a, T: ReadWriteSeek> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "lfn")]
