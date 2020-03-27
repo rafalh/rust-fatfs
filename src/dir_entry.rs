@@ -236,7 +236,7 @@ impl DirFileEntryData {
         self.modify_time = date_time.time.encode().0;
     }
 
-    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
@@ -300,7 +300,7 @@ impl DirLfnEntryData {
         lfn_part[11..13].copy_from_slice(&self.name_2);
     }
 
-    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
         wrt.write_u8(self.order)?;
         for ch in self.name_0.iter() {
             wrt.write_u16::<LittleEndian>(*ch)?;
@@ -346,14 +346,14 @@ pub(crate) enum DirEntryData {
 }
 
 impl DirEntryData {
-    pub(crate) fn serialize(&self, wrt: &mut Write) -> io::Result<()> {
+    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
         match self {
             &DirEntryData::File(ref file) => file.serialize(wrt),
             &DirEntryData::Lfn(ref lfn) => lfn.serialize(wrt),
         }
     }
 
-    pub(crate) fn deserialize(rdr: &mut Read) -> io::Result<Self> {
+    pub(crate) fn deserialize<T: Read>(rdr: &mut T) -> io::Result<Self> {
         let mut name = [0; SFN_SIZE];
         match rdr.read_exact(&mut name) {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {

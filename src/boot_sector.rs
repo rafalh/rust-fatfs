@@ -376,10 +376,10 @@ impl BootSector {
         Ok(boot)
     }
 
-    pub(crate) fn serialize<T: Write>(&self, mut wrt: T) -> io::Result<()> {
+    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
         wrt.write_all(&self.bootjmp)?;
         wrt.write_all(&self.oem_name)?;
-        self.bpb.serialize(&mut wrt)?;
+        self.bpb.serialize(&mut *wrt)?;
 
         if self.bpb.is_fat32() {
             wrt.write_all(&self.boot_code[0..420])?;

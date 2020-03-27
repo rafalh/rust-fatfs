@@ -21,7 +21,7 @@ const TEST_STR2: &str = "Rust is cool!\n";
 
 type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
 
-fn call_with_tmp_img(f: &Fn(&str) -> (), filename: &str, test_seq: u32) {
+fn call_with_tmp_img<F: Fn(&str) -> ()>(f: F, filename: &str, test_seq: u32) {
     let _ = env_logger::builder().is_test(true).try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
@@ -38,7 +38,7 @@ fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
     FileSystem::new(buf_file, options).unwrap()
 }
 
-fn call_with_fs(f: &Fn(FileSystem) -> (), filename: &str, test_seq: u32) {
+fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str, test_seq: u32) {
     let callback = |tmp_path: &str| {
         let fs = open_filesystem_rw(tmp_path);
         f(fs);
@@ -59,17 +59,17 @@ fn test_write_short_file(fs: FileSystem) {
 
 #[test]
 fn test_write_file_fat12() {
-    call_with_fs(&test_write_short_file, FAT12_IMG, 1)
+    call_with_fs(test_write_short_file, FAT12_IMG, 1)
 }
 
 #[test]
 fn test_write_file_fat16() {
-    call_with_fs(&test_write_short_file, FAT16_IMG, 1)
+    call_with_fs(test_write_short_file, FAT16_IMG, 1)
 }
 
 #[test]
 fn test_write_file_fat32() {
-    call_with_fs(&test_write_short_file, FAT32_IMG, 1)
+    call_with_fs(test_write_short_file, FAT32_IMG, 1)
 }
 
 fn test_write_long_file(fs: FileSystem) {
@@ -92,17 +92,17 @@ fn test_write_long_file(fs: FileSystem) {
 
 #[test]
 fn test_write_long_file_fat12() {
-    call_with_fs(&test_write_long_file, FAT12_IMG, 2)
+    call_with_fs(test_write_long_file, FAT12_IMG, 2)
 }
 
 #[test]
 fn test_write_long_file_fat16() {
-    call_with_fs(&test_write_long_file, FAT16_IMG, 2)
+    call_with_fs(test_write_long_file, FAT16_IMG, 2)
 }
 
 #[test]
 fn test_write_long_file_fat32() {
-    call_with_fs(&test_write_long_file, FAT32_IMG, 2)
+    call_with_fs(test_write_long_file, FAT32_IMG, 2)
 }
 
 fn test_remove(fs: FileSystem) {
@@ -125,17 +125,17 @@ fn test_remove(fs: FileSystem) {
 
 #[test]
 fn test_remove_fat12() {
-    call_with_fs(&test_remove, FAT12_IMG, 3)
+    call_with_fs(test_remove, FAT12_IMG, 3)
 }
 
 #[test]
 fn test_remove_fat16() {
-    call_with_fs(&test_remove, FAT16_IMG, 3)
+    call_with_fs(test_remove, FAT16_IMG, 3)
 }
 
 #[test]
 fn test_remove_fat32() {
-    call_with_fs(&test_remove, FAT32_IMG, 3)
+    call_with_fs(test_remove, FAT32_IMG, 3)
 }
 
 fn test_create_file(fs: FileSystem) {
@@ -183,17 +183,17 @@ fn test_create_file(fs: FileSystem) {
 
 #[test]
 fn test_create_file_fat12() {
-    call_with_fs(&test_create_file, FAT12_IMG, 4)
+    call_with_fs(test_create_file, FAT12_IMG, 4)
 }
 
 #[test]
 fn test_create_file_fat16() {
-    call_with_fs(&test_create_file, FAT16_IMG, 4)
+    call_with_fs(test_create_file, FAT16_IMG, 4)
 }
 
 #[test]
 fn test_create_file_fat32() {
-    call_with_fs(&test_create_file, FAT32_IMG, 4)
+    call_with_fs(test_create_file, FAT32_IMG, 4)
 }
 
 fn test_create_dir(fs: FileSystem) {
@@ -246,17 +246,17 @@ fn test_create_dir(fs: FileSystem) {
 
 #[test]
 fn test_create_dir_fat12() {
-    call_with_fs(&test_create_dir, FAT12_IMG, 5)
+    call_with_fs(test_create_dir, FAT12_IMG, 5)
 }
 
 #[test]
 fn test_create_dir_fat16() {
-    call_with_fs(&test_create_dir, FAT16_IMG, 5)
+    call_with_fs(test_create_dir, FAT16_IMG, 5)
 }
 
 #[test]
 fn test_create_dir_fat32() {
-    call_with_fs(&test_create_dir, FAT32_IMG, 5)
+    call_with_fs(test_create_dir, FAT32_IMG, 5)
 }
 
 fn test_rename_file(fs: FileSystem) {
@@ -301,17 +301,17 @@ fn test_rename_file(fs: FileSystem) {
 
 #[test]
 fn test_rename_file_fat12() {
-    call_with_fs(&test_rename_file, FAT12_IMG, 6)
+    call_with_fs(test_rename_file, FAT12_IMG, 6)
 }
 
 #[test]
 fn test_rename_file_fat16() {
-    call_with_fs(&test_rename_file, FAT16_IMG, 6)
+    call_with_fs(test_rename_file, FAT16_IMG, 6)
 }
 
 #[test]
 fn test_rename_file_fat32() {
-    call_with_fs(&test_rename_file, FAT32_IMG, 6)
+    call_with_fs(test_rename_file, FAT32_IMG, 6)
 }
 
 fn test_dirty_flag(tmp_path: &str) {
@@ -337,15 +337,15 @@ fn test_dirty_flag(tmp_path: &str) {
 
 #[test]
 fn test_dirty_flag_fat12() {
-    call_with_tmp_img(&test_dirty_flag, FAT12_IMG, 7)
+    call_with_tmp_img(test_dirty_flag, FAT12_IMG, 7)
 }
 
 #[test]
 fn test_dirty_flag_fat16() {
-    call_with_tmp_img(&test_dirty_flag, FAT16_IMG, 7)
+    call_with_tmp_img(test_dirty_flag, FAT16_IMG, 7)
 }
 
 #[test]
 fn test_dirty_flag_fat32() {
-    call_with_tmp_img(&test_dirty_flag, FAT32_IMG, 7)
+    call_with_tmp_img(test_dirty_flag, FAT32_IMG, 7)
 }
