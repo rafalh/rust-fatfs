@@ -129,8 +129,8 @@ pub trait TimeProvider: Debug {
     fn get_current_date_time(&self) -> DateTime;
 }
 
-#[derive(Debug)]
-pub(crate) struct DefaultTimeProvider {
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultTimeProvider {
     _dummy: (),
 }
 

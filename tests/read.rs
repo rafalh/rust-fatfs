@@ -7,7 +7,7 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::str;
 
-use fatfs::{FatType, FsOptions};
+use fatfs::{FatType, FsOptions, DefaultTimeProvider, LossyOemCpConverter};
 use fscommon::BufStream;
 
 const TEST_TEXT: &str = "Rust is cool!\n";
@@ -15,7 +15,7 @@ const FAT12_IMG: &str = "resources/fat12.img";
 const FAT16_IMG: &str = "resources/fat16.img";
 const FAT32_IMG: &str = "resources/fat32.img";
 
-type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
+type FileSystem = fatfs::FileSystem<BufStream<fs::File>, DefaultTimeProvider, LossyOemCpConverter>;
 
 fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str) {
     let _ = env_logger::builder().is_test(true).try_init();

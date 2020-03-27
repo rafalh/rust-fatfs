@@ -15,7 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use dir::{Dir, DirRawStream, LfnBuffer};
 use file::File;
 use fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
-use time::{Date, DateTime};
+use time::{Date, DateTime, TimeProvider};
 
 bitflags! {
     /// A FAT file attributes.
@@ -474,7 +474,7 @@ impl DirEntryEditor {
         }
     }
 
-    pub(crate) fn flush<T: ReadWriteSeek>(&mut self, fs: &FileSystem<T>) -> io::Result<()> {
+    pub(crate) fn flush<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter>(&mut self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
         if self.dirty {
             self.write(fs)?;
             self.dirty = false;
@@ -482,7 +482,7 @@ impl DirEntryEditor {
         Ok(())
     }
 
-    fn write<T: ReadWriteSeek>(&self, fs: &FileSystem<T>) -> io::Result<()> {
+    fn write<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter>(&self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)
@@ -493,23 +493,23 @@ impl DirEntryEditor {
 ///
 /// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]
-pub struct DirEntry<'a, T: ReadWriteSeek> {
+pub struct DirEntry<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "lfn")]
     pub(crate) lfn_utf16: LfnBuffer,
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
-    pub(crate) fs: &'a FileSystem<T>,
+    pub(crate) fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
     /// Returns short file name.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
     #[cfg(feature = "alloc")]
     pub fn short_file_name(&self) -> String {
-        self.short_name.to_string(self.fs.options.oem_cp_converter)
+        self.short_name.to_string(&self.fs.options.oem_cp_converter)
     }
 
     /// Returns short file name as byte array slice.
@@ -542,7 +542,7 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
             }
         }
 
-        self.data.lowercase_name().to_string(self.fs.options.oem_cp_converter)
+        self.data.lowercase_name().to_string(&self.fs.options.oem_cp_converter)
     }
 
     /// Returns file attributes.
@@ -568,14 +568,14 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
-    pub(crate) fn is_same_entry(&self, other: &DirEntry<T>) -> bool {
+    pub(crate) fn is_same_entry(&self, other: &DirEntry<T, TP, OCC>) -> bool {
         self.entry_pos == other.entry_pos
     }
 
     /// Returns `File` struct for this entry.
     ///
     /// Panics if this is not a file.
-    pub fn to_file(&self) -> File<'a, T> {
+    pub fn to_file(&self) -> File<'a, T, TP, OCC> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.editor()), self.fs)
     }
@@ -583,7 +583,7 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
     /// Returns `Dir` struct for this entry.
     ///
     /// Panics if this is not a directory.
-    pub fn to_dir(&self) -> Dir<'a, T> {
+    pub fn to_dir(&self) -> Dir<'a, T, TP, OCC> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
             Some(n) => {
@@ -650,11 +650,11 @@ impl<'a, T: ReadWriteSeek> DirEntry<'a, T> {
             }
         }
 
-        self.short_name.eq_ignore_case(name, self.fs.options.oem_cp_converter)
+        self.short_name.eq_ignore_case(name, &self.fs.options.oem_cp_converter)
     }
 }
 
-impl<'a, T: ReadWriteSeek> fmt::Debug for DirEntry<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> fmt::Debug for DirEntry<'a, T, TP, OCC> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }

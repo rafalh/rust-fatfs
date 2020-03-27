@@ -11,7 +11,7 @@ const KB: u64 = 1024;
 const MB: u64 = KB * 1024;
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 
-type FileSystem = fatfs::FileSystem<BufStream<io::Cursor<Vec<u8>>>>;
+type FileSystem = fatfs::FileSystem<BufStream<io::Cursor<Vec<u8>>>, fatfs::DefaultTimeProvider, fatfs::LossyOemCpConverter>;
 
 fn basic_fs_test(fs: &FileSystem) {
     let stats = fs.stats().expect("stats");

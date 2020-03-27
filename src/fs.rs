@@ -18,7 +18,7 @@ use dir::{Dir, DirRawStream};
 use dir_entry::{SFN_PADDING, SFN_SIZE};
 use file::File;
 use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
-use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
+use time::{TimeProvider, DefaultTimeProvider, DEFAULT_TIME_PROVIDER};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -221,22 +221,24 @@ impl FsInfoSector {
 ///
 /// Options are specified as an argument for `FileSystem::new` method.
 #[derive(Copy, Clone, Debug)]
-pub struct FsOptions {
+pub struct FsOptions<TP: TimeProvider, OCC: OemCpConverter> {
     pub(crate) update_accessed_date: bool,
-    pub(crate) oem_cp_converter: &'static OemCpConverter,
-    pub(crate) time_provider: &'static TimeProvider,
+    pub(crate) oem_cp_converter: OCC,
+    pub(crate) time_provider: TP,
 }
 
-impl FsOptions {
+impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     /// Creates a `FsOptions` struct with default options.
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
-            oem_cp_converter: &LOSSY_OEM_CP_CONVERTER,
-            time_provider: &DEFAULT_TIME_PROVIDER,
+            oem_cp_converter: LOSSY_OEM_CP_CONVERTER,
+            time_provider: DEFAULT_TIME_PROVIDER,
         }
     }
+}
 
+impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     /// If enabled accessed date field in directory entry is updated when reading or writing a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
         self.update_accessed_date = enabled;
@@ -244,15 +246,21 @@ impl FsOptions {
     }
 
     /// Changes default OEM code page encoder-decoder.
-    pub fn oem_cp_converter(mut self, oem_cp_converter: &'static OemCpConverter) -> Self {
-        self.oem_cp_converter = oem_cp_converter;
-        self
+    pub fn oem_cp_converter<OCC2: OemCpConverter>(self, oem_cp_converter: OCC2) -> FsOptions<TP, OCC2> {
+        FsOptions::<TP, OCC2> {
+            update_accessed_date: self.update_accessed_date,
+            oem_cp_converter,
+            time_provider: self.time_provider,
+        }
     }
 
     /// Changes default time provider.
-    pub fn time_provider(mut self, time_provider: &'static TimeProvider) -> Self {
-        self.time_provider = time_provider;
-        self
+    pub fn time_provider<TP2: TimeProvider>(self, time_provider: TP2) -> FsOptions<TP2, OCC> {
+        FsOptions::<TP2, OCC> {
+            update_accessed_date: self.update_accessed_date,
+            oem_cp_converter: self.oem_cp_converter,
+            time_provider,
+        }
     }
 }
 
@@ -284,9 +292,9 @@ impl FileSystemStats {
 /// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
-pub struct FileSystem<T: ReadWriteSeek> {
+pub struct FileSystem<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
     pub(crate) disk: RefCell<T>,
-    pub(crate) options: FsOptions,
+    pub(crate) options: FsOptions<TP, OCC>,
     fat_type: FatType,
     bpb: BiosParameterBlock,
     first_data_sector: u32,
@@ -296,7 +304,7 @@ pub struct FileSystem<T: ReadWriteSeek> {
     current_status_flags: Cell<FsStatusFlags>,
 }
 
-impl<T: ReadWriteSeek> FileSystem<T> {
+impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
@@ -305,7 +313,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause a filesystem corruption.
-    pub fn new(mut disk: T, options: FsOptions) -> io::Result<Self> {
+    pub fn new(mut disk: T, options: FsOptions<TP, OCC>) -> io::Result<Self> {
         // Make sure given image is not seeked
         trace!("FileSystem::new");
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
@@ -421,7 +429,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir<'b>(&'b self) -> Dir<'b, T> {
+    pub fn root_dir<'b>(&'b self) -> Dir<'b, T, TP, OCC> {
         trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
@@ -462,12 +470,12 @@ impl<T: ReadWriteSeek> FileSystem<T> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, T>> {
+    fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, T, TP, OCC>> {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
 
-    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'b, T>>> {
+    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'b, T, TP, OCC>>> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
@@ -584,7 +592,7 @@ impl<T: ReadWriteSeek> FileSystem<T> {
 }
 
 /// `Drop` implementation tries to unmount the filesystem when dropping.
-impl<T: ReadWriteSeek> Drop for FileSystem<T> {
+impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Drop for FileSystem<T, TP, OCC> {
     fn drop(&mut self) {
         if let Err(err) = self.unmount_internal() {
             error!("unmount failed {}", err);
@@ -592,17 +600,17 @@ impl<T: ReadWriteSeek> Drop for FileSystem<T> {
     }
 }
 
-pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek> {
-    fs: &'a FileSystem<T>,
+pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+    fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek> Read for FsIoAdapter<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for FsIoAdapter<'a, T, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.fs.disk.borrow_mut().read(buf)
     }
 }
 
-impl<'a, T: ReadWriteSeek> Write for FsIoAdapter<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for FsIoAdapter<'a, T, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let size = self.fs.disk.borrow_mut().write(buf)?;
         if size > 0 {
@@ -616,14 +624,14 @@ impl<'a, T: ReadWriteSeek> Write for FsIoAdapter<'a, T> {
     }
 }
 
-impl<'a, T: ReadWriteSeek> Seek for FsIoAdapter<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Seek for FsIoAdapter<'a, T, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.fs.disk.borrow_mut().seek(pos)
     }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek> Clone for FsIoAdapter<'a, T> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for FsIoAdapter<'a, T, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
@@ -735,8 +743,8 @@ pub trait OemCpConverter: Debug {
     fn encode(&self, uni_char: char) -> Option<u8>;
 }
 
-#[derive(Debug)]
-pub(crate) struct LossyOemCpConverter {
+#[derive(Debug, Clone, Copy)]
+pub struct LossyOemCpConverter {
     _dummy: (),
 }
 

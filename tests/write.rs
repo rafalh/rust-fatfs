@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use std::mem;
 use std::str;
 
-use fatfs::FsOptions;
+use fatfs::{FsOptions, DefaultTimeProvider, LossyOemCpConverter};
 use fscommon::BufStream;
 
 const FAT12_IMG: &str = "fat12.img";
@@ -19,7 +19,7 @@ const TMP_DIR: &str = "tmp";
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 const TEST_STR2: &str = "Rust is cool!\n";
 
-type FileSystem = fatfs::FileSystem<BufStream<fs::File>>;
+type FileSystem = fatfs::FileSystem<BufStream<fs::File>, DefaultTimeProvider, LossyOemCpConverter>;
 
 fn call_with_tmp_img<F: Fn(&str) -> ()>(f: F, filename: &str, test_seq: u32) {
     let _ = env_logger::builder().is_test(true).try_init();
