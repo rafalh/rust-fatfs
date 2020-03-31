@@ -48,14 +48,14 @@ impl Time {
     pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
         let hour = dos_time >> 11;
         let min = (dos_time >> 5) & 0x3F;
-        let sec = (dos_time & 0x1F) * 2 + (dos_time_hi_res as u16) / 2;
+        let sec = (dos_time & 0x1F) * 2 + (dos_time_hi_res as u16) / 100;
         let millis = (dos_time_hi_res as u16 % 100) * 10;
         Time { hour, min, sec, millis }
     }
 
     pub(crate) fn encode(&self) -> (u16, u8) {
         let dos_time = (self.hour << 11) | (self.min << 5) | (self.sec / 2);
-        let dos_time_hi_res = ((self.millis / 100) + (self.sec % 2) * 100) as u8;
+        let dos_time_hi_res = ((self.millis / 10) + (self.sec % 2) * 100) as u8;
         (dos_time, dos_time_hi_res)
     }
 }
@@ -155,3 +155,42 @@ impl TimeProvider for DefaultTimeProvider {
 }
 
 pub(crate) static DEFAULT_TIME_PROVIDER: DefaultTimeProvider = DefaultTimeProvider { _dummy: () };
+
+#[cfg(test)]
+mod tests {
+    use super::{Date, Time};
+
+    #[test]
+    fn date_encode_decode() {
+        let d = Date {
+            year: 2055,
+            month: 7,
+            day: 23
+        };
+        assert_eq!(d, Date::decode(d.encode()));
+    }
+
+    #[test]
+    fn time_encode_decode() {
+        let t1 = Time {
+            hour: 15,
+            min: 3,
+            sec: 29,
+            millis: 990,
+        };
+        let t2 = Time {
+            sec: 18,
+            .. t1
+        };
+        let t3 = Time {
+            millis: 40,
+            .. t1
+        };
+        let (x1, y1) = t1.encode();
+        let (x2, y2) = t2.encode();
+        let (x3, y3) = t3.encode();
+        assert_eq!(t1, Time::decode(x1, y1));
+        assert_eq!(t2, Time::decode(x2, y2));
+        assert_eq!(t3, Time::decode(x3, y3));
+    }
+}
