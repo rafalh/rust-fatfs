@@ -167,7 +167,9 @@ mod tests {
             month: 7,
             day: 23
         };
-        assert_eq!(d, Date::decode(d.encode()));
+        let x = d.encode();
+        assert_eq!(x, 38647);
+        assert_eq!(d, Date::decode(x));
     }
 
     #[test]
@@ -189,6 +191,9 @@ mod tests {
         let (x1, y1) = t1.encode();
         let (x2, y2) = t2.encode();
         let (x3, y3) = t3.encode();
+        assert_eq!((x1, y1), (30830, 199));
+        assert_eq!((x2, y2), (30825, 99));
+        assert_eq!((x3, y3), (30830, 104));
         assert_eq!(t1, Time::decode(x1, y1));
         assert_eq!(t2, Time::decode(x2, y2));
         assert_eq!(t3, Time::decode(x3, y3));
