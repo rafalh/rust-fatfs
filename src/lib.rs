@@ -92,7 +92,7 @@ mod byteorder_core_io;
 #[cfg(feature = "std")]
 use byteorder as byteorder_ext;
 #[cfg(not(feature = "std"))]
-use byteorder_core_io as byteorder_ext;
+use crate::byteorder_core_io as byteorder_ext;
 #[cfg(not(feature = "std"))]
 use core_io as io;
 #[cfg(feature = "std")]
