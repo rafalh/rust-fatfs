@@ -585,8 +585,8 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     // check if there are only valid characters
     for c in name.chars() {
         match c {
-            'a'...'z' | 'A'...'Z' | '0'...'9' => {},
-            '\u{80}'...'\u{FFFF}' => {},
+            'a'..='z' | 'A'..='Z' | '0'..='9' => {},
+            '\u{80}'..='\u{FFFF}' => {},
             '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
             | ';' | '=' | '[' | ']' | '^' | '#' | '&' => {},
             _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
@@ -960,7 +960,7 @@ impl ShortNameGenerator {
                     continue;
                 },
                 // copy allowed characters
-                'A'...'Z' | 'a'...'z' | '0'...'9' => c,
+                'A'..='Z' | 'a'..='z' | '0'..='9' => c,
                 '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
                 // replace disallowed characters by underscore
                 _ => '_',

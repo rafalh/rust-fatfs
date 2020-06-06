@@ -182,7 +182,7 @@ impl FatTrait for Fat12 {
         Ok(match val {
             0 => FatValue::Free,
             0xFF7 => FatValue::Bad,
-            0xFF8...0xFFF => FatValue::EndOfChain,
+            0xFF8..=0xFFF => FatValue::EndOfChain,
             n => FatValue::Data(n as u32),
         })
     }
@@ -276,7 +276,7 @@ impl FatTrait for Fat16 {
         Ok(match val {
             0 => FatValue::Free,
             0xFFF7 => FatValue::Bad,
-            0xFFF8...0xFFFF => FatValue::EndOfChain,
+            0xFFF8..=0xFFFF => FatValue::EndOfChain,
             n => FatValue::Data(n as u32),
         })
     }
@@ -344,7 +344,7 @@ impl FatTrait for Fat32 {
             },
             0 => FatValue::Free,
             0x0FFFFFF7 => FatValue::Bad,
-            0x0FFFFFF8...0x0FFFFFFF => FatValue::EndOfChain,
+            0x0FFFFFF8..=0x0FFFFFFF => FatValue::EndOfChain,
             n if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
                 let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
                 warn!("cluster number {} is a special value in FAT to indicate {}; hiding potential FAT chain value {} and instead reporting as a bad sector", cluster, tmp, n);
