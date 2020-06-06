@@ -49,7 +49,7 @@ pub(crate) struct BiosParameterBlock {
 }
 
 impl BiosParameterBlock {
-    fn deserialize<T: Read>(rdr: &mut T) -> io::Result<BiosParameterBlock> {
+    fn deserialize<R: Read>(rdr: &mut R) -> io::Result<BiosParameterBlock> {
         let mut bpb: BiosParameterBlock = Default::default();
         bpb.bytes_per_sector = rdr.read_u16::<LittleEndian>()?;
         bpb.sectors_per_cluster = rdr.read_u8()?;
@@ -98,7 +98,7 @@ impl BiosParameterBlock {
         Ok(bpb)
     }
 
-    fn serialize<T: Write>(&self, mut wrt: T) -> io::Result<()> {
+    fn serialize<W: Write>(&self, mut wrt: W) -> io::Result<()> {
         wrt.write_u16::<LittleEndian>(self.bytes_per_sector)?;
         wrt.write_u8(self.sectors_per_cluster)?;
         wrt.write_u16::<LittleEndian>(self.reserved_sectors)?;
@@ -361,7 +361,7 @@ pub(crate) struct BootSector {
 }
 
 impl BootSector {
-    pub(crate) fn deserialize<T: Read>(rdr: &mut T) -> io::Result<BootSector> {
+    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> io::Result<BootSector> {
         let mut boot: BootSector = Default::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
@@ -376,7 +376,7 @@ impl BootSector {
         Ok(boot)
     }
 
-    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_all(&self.bootjmp)?;
         wrt.write_all(&self.oem_name)?;
         self.bpb.serialize(&mut *wrt)?;

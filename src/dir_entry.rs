@@ -236,7 +236,7 @@ impl DirFileEntryData {
         self.modify_time = date_time.time.encode().0;
     }
 
-    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
@@ -300,7 +300,7 @@ impl DirLfnEntryData {
         lfn_part[11..13].copy_from_slice(&self.name_2);
     }
 
-    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_u8(self.order)?;
         for ch in self.name_0.iter() {
             wrt.write_u16::<LittleEndian>(*ch)?;
@@ -346,14 +346,14 @@ pub(crate) enum DirEntryData {
 }
 
 impl DirEntryData {
-    pub(crate) fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         match self {
             &DirEntryData::File(ref file) => file.serialize(wrt),
             &DirEntryData::Lfn(ref lfn) => lfn.serialize(wrt),
         }
     }
 
-    pub(crate) fn deserialize<T: Read>(rdr: &mut T) -> io::Result<Self> {
+    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> io::Result<Self> {
         let mut name = [0; SFN_SIZE];
         match rdr.read_exact(&mut name) {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
@@ -474,7 +474,7 @@ impl DirEntryEditor {
         }
     }
 
-    pub(crate) fn flush<T: ReadWriteSeek, TP, OCC>(&mut self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
+    pub(crate) fn flush<IO: ReadWriteSeek, TP, OCC>(&mut self, fs: &FileSystem<IO, TP, OCC>) -> io::Result<()> {
         if self.dirty {
             self.write(fs)?;
             self.dirty = false;
@@ -482,7 +482,7 @@ impl DirEntryEditor {
         Ok(())
     }
 
-    fn write<T: ReadWriteSeek, TP, OCC>(&self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
+    fn write<IO: ReadWriteSeek, TP, OCC>(&self, fs: &FileSystem<IO, TP, OCC>) -> io::Result<()> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)
@@ -493,17 +493,17 @@ impl DirEntryEditor {
 ///
 /// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]
-pub struct DirEntry<'a, T: ReadWriteSeek, TP, OCC> {
+pub struct DirEntry<'a, IO: ReadWriteSeek, TP, OCC> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "lfn")]
     pub(crate) lfn_utf16: LfnBuffer,
     pub(crate) entry_pos: u64,
     pub(crate) offset_range: (u64, u64),
-    pub(crate) fs: &'a FileSystem<T, TP, OCC>,
+    pub(crate) fs: &'a FileSystem<IO, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns short file name.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
@@ -568,14 +568,14 @@ impl<'a, T: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }
 
-    pub(crate) fn is_same_entry(&self, other: &DirEntry<T, TP, OCC>) -> bool {
+    pub(crate) fn is_same_entry(&self, other: &DirEntry<IO, TP, OCC>) -> bool {
         self.entry_pos == other.entry_pos
     }
 
     /// Returns `File` struct for this entry.
     ///
     /// Panics if this is not a file.
-    pub fn to_file(&self) -> File<'a, T, TP, OCC> {
+    pub fn to_file(&self) -> File<'a, IO, TP, OCC> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.editor()), self.fs)
     }
@@ -583,7 +583,7 @@ impl<'a, T: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
     /// Returns `Dir` struct for this entry.
     ///
     /// Panics if this is not a directory.
-    pub fn to_dir(&self) -> Dir<'a, T, TP, OCC> {
+    pub fn to_dir(&self) -> Dir<'a, IO, TP, OCC> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
             Some(n) => {
@@ -654,7 +654,7 @@ impl<'a, T: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, IO, TP, OCC> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }

@@ -133,7 +133,7 @@ impl FsInfoSector {
     const STRUC_SIG: u32 = 0x61417272;
     const TRAIL_SIG: u32 = 0xAA550000;
 
-    fn deserialize<T: Read>(rdr: &mut T) -> io::Result<FsInfoSector> {
+    fn deserialize<R: Read>(rdr: &mut R) -> io::Result<FsInfoSector> {
         let lead_sig = rdr.read_u32::<LittleEndian>()?;
         if lead_sig != Self::LEAD_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid lead_sig in FsInfo sector"));
@@ -167,7 +167,7 @@ impl FsInfoSector {
         Ok(FsInfoSector { free_cluster_count, next_free_cluster, dirty: false })
     }
 
-    fn serialize<T: Write>(&self, wrt: &mut T) -> io::Result<()> {
+    fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_u32::<LittleEndian>(Self::LEAD_SIG)?;
         let reserved = [0u8; 480];
         wrt.write_all(&reserved)?;
@@ -292,8 +292,8 @@ impl FileSystemStats {
 /// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
-pub struct FileSystem<T: ReadWriteSeek, TP, OCC> {
-    pub(crate) disk: RefCell<T>,
+pub struct FileSystem<IO: ReadWriteSeek, TP, OCC> {
+    pub(crate) disk: RefCell<IO>,
     pub(crate) options: FsOptions<TP, OCC>,
     fat_type: FatType,
     bpb: BiosParameterBlock,
@@ -304,7 +304,7 @@ pub struct FileSystem<T: ReadWriteSeek, TP, OCC> {
     current_status_flags: Cell<FsStatusFlags>,
 }
 
-impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
@@ -313,7 +313,7 @@ impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
     ///
     /// Note: creating multiple filesystem objects with one underlying device/disk image can
     /// cause a filesystem corruption.
-    pub fn new(mut disk: T, options: FsOptions<TP, OCC>) -> io::Result<Self> {
+    pub fn new(mut disk: IO, options: FsOptions<TP, OCC>) -> io::Result<Self> {
         // Make sure given image is not seeked
         trace!("FileSystem::new");
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
@@ -407,12 +407,12 @@ impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, T, TP, OCC>> {
+    fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, IO, TP, OCC>> {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
 
-    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'b, T, TP, OCC>>> {
+    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'b, IO, TP, OCC>>> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
@@ -528,7 +528,7 @@ impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir<'b>(&'b self) -> Dir<'b, T, TP, OCC> {
+    pub fn root_dir<'b>(&'b self) -> Dir<'b, IO, TP, OCC> {
         trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
@@ -546,7 +546,7 @@ impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
     }
 }
 
-impl<T: ReadWriteSeek, TP, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC: OemCpConverter> FileSystem<IO, TP, OCC> {
     /// Returns a volume label from BPB in the Boot Sector as `String`.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
@@ -562,7 +562,7 @@ impl<T: ReadWriteSeek, TP, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
     }
 }
 
-impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP, OCC> {
     /// Returns a volume label from root directory as `String`.
     ///
     /// It finds file with `VOLUME_ID` attribute and returns its short name.
@@ -596,7 +596,7 @@ impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, 
 }
 
 /// `Drop` implementation tries to unmount the filesystem when dropping.
-impl<T: ReadWriteSeek, TP, OCC> Drop for FileSystem<T, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Drop for FileSystem<IO, TP, OCC> {
     fn drop(&mut self) {
         if let Err(err) = self.unmount_internal() {
             error!("unmount failed {}", err);
@@ -604,17 +604,17 @@ impl<T: ReadWriteSeek, TP, OCC> Drop for FileSystem<T, TP, OCC> {
     }
 }
 
-pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek, TP, OCC> {
-    fs: &'a FileSystem<T, TP, OCC>,
+pub(crate) struct FsIoAdapter<'a, IO: ReadWriteSeek, TP, OCC> {
+    fs: &'a FileSystem<IO, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'a, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.fs.disk.borrow_mut().read(buf)
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let size = self.fs.disk.borrow_mut().write(buf)?;
         if size > 0 {
@@ -628,20 +628,20 @@ impl<'a, T: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, T, TP, OCC> {
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'a, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.fs.disk.borrow_mut().seek(pos)
     }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'a, IO, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
 }
 
-fn fat_slice<T: ReadWriteSeek>(io: T, bpb: &BiosParameterBlock) -> DiskSlice<T> {
+fn fat_slice<IO: ReadWriteSeek>(io: IO, bpb: &BiosParameterBlock) -> DiskSlice<IO> {
     let sectors_per_fat = bpb.sectors_per_fat();
     let mirroring_enabled = bpb.mirroring_enabled();
     let (fat_first_sector, mirrors) = if mirroring_enabled {
@@ -654,20 +654,20 @@ fn fat_slice<T: ReadWriteSeek>(io: T, bpb: &BiosParameterBlock) -> DiskSlice<T> 
     DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, bpb, io)
 }
 
-pub(crate) struct DiskSlice<T> {
+pub(crate) struct DiskSlice<IO> {
     begin: u64,
     size: u64,
     offset: u64,
     mirrors: u8,
-    inner: T,
+    inner: IO,
 }
 
-impl<T> DiskSlice<T> {
-    pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: T) -> Self {
+impl<IO> DiskSlice<IO> {
+    pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: IO) -> Self {
         DiskSlice { begin, size, mirrors, inner, offset: 0 }
     }
 
-    fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: T) -> Self {
+    fn from_sectors(first_sector: u32, sector_count: u32, mirrors: u8, bpb: &BiosParameterBlock, inner: IO) -> Self {
         Self::new(bpb.bytes_from_sectors(first_sector), bpb.bytes_from_sectors(sector_count), mirrors, inner)
     }
 
@@ -677,7 +677,7 @@ impl<T> DiskSlice<T> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<T: Clone> Clone for DiskSlice<T> {
+impl<IO: Clone> Clone for DiskSlice<IO> {
     fn clone(&self) -> Self {
         DiskSlice {
             begin: self.begin,
@@ -689,7 +689,7 @@ impl<T: Clone> Clone for DiskSlice<T> {
     }
 }
 
-impl<'a, T: Read + Seek> Read for DiskSlice<T> {
+impl<'a, IO: Read + Seek> Read for DiskSlice<IO> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -700,7 +700,7 @@ impl<'a, T: Read + Seek> Read for DiskSlice<T> {
     }
 }
 
-impl<'a, T: Write + Seek> Write for DiskSlice<T> {
+impl<'a, IO: Write + Seek> Write for DiskSlice<IO> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -721,7 +721,7 @@ impl<'a, T: Write + Seek> Write for DiskSlice<T> {
     }
 }
 
-impl<'a, T> Seek for DiskSlice<T> {
+impl<'a, IO> Seek for DiskSlice<IO> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
@@ -775,7 +775,7 @@ impl OemCpConverter for LossyOemCpConverter {
     }
 }
 
-pub(crate) fn write_zeros<T: ReadWriteSeek>(mut disk: T, mut len: u64) -> io::Result<()> {
+pub(crate) fn write_zeros<IO: ReadWriteSeek>(mut disk: IO, mut len: u64) -> io::Result<()> {
     const ZEROS: [u8; 512] = [0u8; 512];
     while len > 0 {
         let write_size = cmp::min(len, ZEROS.len() as u64) as usize;
@@ -785,7 +785,7 @@ pub(crate) fn write_zeros<T: ReadWriteSeek>(mut disk: T, mut len: u64) -> io::Re
     Ok(())
 }
 
-fn write_zeros_until_end_of_sector<T: ReadWriteSeek>(mut disk: T, bytes_per_sector: u16) -> io::Result<()> {
+fn write_zeros_until_end_of_sector<IO: ReadWriteSeek>(mut disk: IO, bytes_per_sector: u16) -> io::Result<()> {
     let pos = disk.seek(SeekFrom::Current(0))?;
     let total_bytes_to_write = bytes_per_sector as u64 - (pos % bytes_per_sector as u64);
     if total_bytes_to_write != bytes_per_sector as u64 {
@@ -941,7 +941,7 @@ impl FormatVolumeOptions {
 /// Supplied `disk` parameter cannot be seeked (internal pointer must be on position 0).
 /// To format a fragment of a disk image (e.g. partition) library user should wrap the file struct in a struct
 /// limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
-pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions) -> io::Result<()> {
+pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptions) -> io::Result<()> {
     trace!("format_volume");
     debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
