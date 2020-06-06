@@ -265,3 +265,27 @@ fn test_stats_fat32() {
         FAT32_IMG,
     )
 }
+
+#[test]
+fn test_multi_thread() {
+    call_with_fs(
+        |fs| {
+            use std::sync::{Arc, Mutex};
+            use std::thread;
+            let shared_fs = Arc::new(Mutex::new(fs));
+            let mut handles = vec![];
+            for _ in 0..2 {
+                let shared_fs_cloned = Arc::clone(&shared_fs);
+                let handle = thread::spawn(move || {
+                    let fs2 = shared_fs_cloned.lock().unwrap();
+                    assert_eq!(fs2.fat_type(), FatType::Fat32);
+                });
+                handles.push(handle);
+            }
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        },
+        FAT32_IMG,
+    )
+}
