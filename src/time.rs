@@ -121,40 +121,66 @@ impl From<chrono::DateTime<Local>> for DateTime {
 /// A current time and date provider.
 ///
 /// Provides a custom implementation for a time resolution used when updating directory entry time fields.
-/// Default implementation gets time from `chrono` crate if `chrono` feature is enabled.
-/// Otherwise default implementation returns DOS minimal date-time (1980/1/1 0:00:00).
 /// `TimeProvider` is specified by the `time_provider` property in `FsOptions` struct.
 pub trait TimeProvider: Debug {
     fn get_current_date(&self) -> Date;
     fn get_current_date_time(&self) -> DateTime;
 }
 
+/// `TimeProvider` implementation that returns current local time retrieved from `chrono` crate.
+#[cfg(feature = "chrono")]
 #[derive(Debug, Clone, Copy)]
-pub struct DefaultTimeProvider {
+pub struct ChronoTimeProvider {
     _dummy: (),
 }
 
-impl TimeProvider for DefaultTimeProvider {
-    #[cfg(feature = "chrono")]
+#[cfg(feature = "chrono")]
+impl ChronoTimeProvider {
+    pub fn new() -> Self {
+        Self { _dummy: () }
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl TimeProvider for ChronoTimeProvider {
     fn get_current_date(&self) -> Date {
         Date::from(chrono::Local::now().date())
     }
-    #[cfg(not(feature = "chrono"))]
+
+    fn get_current_date_time(&self) -> DateTime {
+        DateTime::from(chrono::Local::now())
+    }
+}
+
+/// `TimeProvider` implementation that always returns DOS minimal date-time (1980-01-01 00:00:00).
+#[derive(Debug, Clone, Copy)]
+pub struct NullTimeProvider {
+    _dummy: (),
+}
+
+impl NullTimeProvider {
+    pub fn new() -> Self {
+        Self { _dummy: () }
+    }
+}
+
+impl TimeProvider for NullTimeProvider {
     fn get_current_date(&self) -> Date {
         Date::decode(0)
     }
 
-    #[cfg(feature = "chrono")]
-    fn get_current_date_time(&self) -> DateTime {
-        DateTime::from(chrono::Local::now())
-    }
-    #[cfg(not(feature = "chrono"))]
     fn get_current_date_time(&self) -> DateTime {
         DateTime::decode(0, 0, 0)
     }
 }
 
-pub(crate) static DEFAULT_TIME_PROVIDER: DefaultTimeProvider = DefaultTimeProvider { _dummy: () };
+/// Default time provider implementation.
+///
+/// Defined as `ChronoTimeProvider` if `chrono` feature is enabled. Otherwise defined as `NullTimeProvider`.
+#[cfg(feature = "chrono")]
+pub type DefaultTimeProvider = ChronoTimeProvider;
+#[cfg(not(feature = "chrono"))]
+pub type DefaultTimeProvider = NullTimeProvider;
 
 #[cfg(test)]
 mod tests {

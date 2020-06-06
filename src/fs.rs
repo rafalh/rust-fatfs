@@ -18,7 +18,7 @@ use dir::{Dir, DirRawStream};
 use dir_entry::{SFN_PADDING, SFN_SIZE};
 use file::File;
 use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
-use time::{TimeProvider, DefaultTimeProvider, DEFAULT_TIME_PROVIDER};
+use time::{TimeProvider, DefaultTimeProvider};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -232,8 +232,8 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     pub fn new() -> Self {
         FsOptions {
             update_accessed_date: false,
-            oem_cp_converter: LOSSY_OEM_CP_CONVERTER,
-            time_provider: DEFAULT_TIME_PROVIDER,
+            oem_cp_converter: LossyOemCpConverter::new(),
+            time_provider: DefaultTimeProvider::new(),
         }
     }
 }
@@ -752,6 +752,12 @@ pub struct LossyOemCpConverter {
     _dummy: (),
 }
 
+impl LossyOemCpConverter {
+    pub fn new() -> Self {
+        Self { _dummy: () }
+    }
+}
+
 impl OemCpConverter for LossyOemCpConverter {
     fn decode(&self, oem_char: u8) -> char {
         if oem_char <= 0x7F {
@@ -768,8 +774,6 @@ impl OemCpConverter for LossyOemCpConverter {
         }
     }
 }
-
-pub(crate) static LOSSY_OEM_CP_CONVERTER: LossyOemCpConverter = LossyOemCpConverter { _dummy: () };
 
 pub(crate) fn write_zeros<T: ReadWriteSeek>(mut disk: T, mut len: u64) -> io::Result<()> {
     const ZEROS: [u8; 512] = [0u8; 512];

@@ -663,37 +663,40 @@ impl<'a, T: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, T, TP, OCC> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs::LOSSY_OEM_CP_CONVERTER;
+    use fs::LossyOemCpConverter;
 
     #[test]
     fn short_name_with_ext() {
-        assert_eq!(ShortName::new(b"FOO     BAR").to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.BAR");
-        assert_eq!(ShortName::new(b"LOOK AT M E").to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT.M E");
+        let oem_cp_conv = LossyOemCpConverter::new();
+        assert_eq!(ShortName::new(b"FOO     BAR").to_string(&oem_cp_conv), "FOO.BAR");
+        assert_eq!(ShortName::new(b"LOOK AT M E").to_string(&oem_cp_conv), "LOOK AT.M E");
         assert_eq!(
-            ShortName::new(b"\x99OOK AT M \x99").to_string(&LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(b"\x99OOK AT M \x99").to_string(&oem_cp_conv),
             "\u{FFFD}OOK AT.M \u{FFFD}"
         );
         assert_eq!(
-            ShortName::new(b"\x99OOK AT M \x99").eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(b"\x99OOK AT M \x99").eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &oem_cp_conv),
             true
         );
     }
 
     #[test]
     fn short_name_without_ext() {
-        assert_eq!(ShortName::new(b"FOO        ").to_string(&LOSSY_OEM_CP_CONVERTER), "FOO");
-        assert_eq!(ShortName::new(&b"LOOK AT    ").to_string(&LOSSY_OEM_CP_CONVERTER), "LOOK AT");
+        let oem_cp_conv = LossyOemCpConverter::new();
+        assert_eq!(ShortName::new(b"FOO        ").to_string(&oem_cp_conv), "FOO");
+        assert_eq!(ShortName::new(&b"LOOK AT    ").to_string(&oem_cp_conv), "LOOK AT");
     }
 
     #[test]
     fn short_name_eq_ignore_case() {
+        let oem_cp_conv = LossyOemCpConverter::new();
         let raw_short_name: &[u8; SFN_SIZE] = b"\x99OOK AT M \x99";
         assert_eq!(
-            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}OOK AT.M \u{FFFD}", &oem_cp_conv),
             true
         );
         assert_eq!(
-            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &LOSSY_OEM_CP_CONVERTER),
+            ShortName::new(raw_short_name).eq_ignore_case("\u{FFFD}ook AT.m \u{FFFD}", &oem_cp_conv),
             true
         );
     }
@@ -709,15 +712,16 @@ mod tests {
 
     #[test]
     fn lowercase_short_name() {
+        let oem_cp_conv = LossyOemCpConverter::new();
         let raw_short_name: &[u8; SFN_SIZE] = b"FOO     RS ";
         let mut raw_entry =
             DirFileEntryData { name: *raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..Default::default() };
-        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.rs");
+        assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "foo.rs");
         raw_entry.reserved_0 = 1 << 3;
-        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "foo.RS");
+        assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "foo.RS");
         raw_entry.reserved_0 = 1 << 4;
-        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.rs");
+        assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "FOO.rs");
         raw_entry.reserved_0 = 0;
-        assert_eq!(raw_entry.lowercase_name().to_string(&LOSSY_OEM_CP_CONVERTER), "FOO.RS");
+        assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "FOO.RS");
     }
 }
