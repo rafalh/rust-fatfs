@@ -15,7 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use dir::{Dir, DirRawStream, LfnBuffer};
 use file::File;
 use fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
-use time::{Date, DateTime, TimeProvider};
+use time::{Date, DateTime};
 
 bitflags! {
     /// A FAT file attributes.
@@ -97,14 +97,14 @@ impl ShortName {
     }
 
     #[cfg(feature = "alloc")]
-    fn to_string(&self, oem_cp_converter: &OemCpConverter) -> String {
+    fn to_string<OCC: OemCpConverter>(&self, oem_cp_converter: &OCC) -> String {
         // Strip non-ascii characters from short name
         let char_iter = self.as_bytes().iter().cloned().map(|c| oem_cp_converter.decode(c));
         // Build string from character iterator
         String::from_iter(char_iter)
     }
 
-    fn eq_ignore_case(&self, name: &str, oem_cp_converter: &OemCpConverter) -> bool {
+    fn eq_ignore_case<OCC: OemCpConverter>(&self, name: &str, oem_cp_converter: &OCC) -> bool {
         // Convert name to UTF-8 character iterator
         let byte_iter = self.as_bytes().iter().cloned();
         let char_iter = byte_iter.map(|c| oem_cp_converter.decode(c));
@@ -474,7 +474,7 @@ impl DirEntryEditor {
         }
     }
 
-    pub(crate) fn flush<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter>(&mut self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
+    pub(crate) fn flush<T: ReadWriteSeek, TP, OCC>(&mut self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
         if self.dirty {
             self.write(fs)?;
             self.dirty = false;
@@ -482,7 +482,7 @@ impl DirEntryEditor {
         Ok(())
     }
 
-    fn write<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter>(&self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
+    fn write<T: ReadWriteSeek, TP, OCC>(&self, fs: &FileSystem<T, TP, OCC>) -> io::Result<()> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)
@@ -493,7 +493,7 @@ impl DirEntryEditor {
 ///
 /// `DirEntry` is returned by `DirIter` when reading a directory.
 #[derive(Clone)]
-pub struct DirEntry<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub struct DirEntry<'a, T: ReadWriteSeek, TP, OCC> {
     pub(crate) data: DirFileEntryData,
     pub(crate) short_name: ShortName,
     #[cfg(feature = "lfn")]
@@ -503,7 +503,7 @@ pub struct DirEntry<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter>
     pub(crate) fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, T, TP, OCC> {
     /// Returns short file name.
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
@@ -654,7 +654,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirEntry<'a, T
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> fmt::Debug for DirEntry<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, T, TP, OCC> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }

@@ -221,7 +221,7 @@ impl FsInfoSector {
 ///
 /// Options are specified as an argument for `FileSystem::new` method.
 #[derive(Copy, Clone, Debug)]
-pub struct FsOptions<TP: TimeProvider, OCC: OemCpConverter> {
+pub struct FsOptions<TP, OCC> {
     pub(crate) update_accessed_date: bool,
     pub(crate) oem_cp_converter: OCC,
     pub(crate) time_provider: TP,
@@ -292,7 +292,7 @@ impl FileSystemStats {
 /// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
-pub struct FileSystem<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub struct FileSystem<T: ReadWriteSeek, TP, OCC> {
     pub(crate) disk: RefCell<T>,
     pub(crate) options: FsOptions<TP, OCC>,
     fat_type: FatType,
@@ -304,7 +304,7 @@ pub struct FileSystem<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
     current_status_flags: Cell<FsStatusFlags>,
 }
 
-impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
+impl<T: ReadWriteSeek, TP, OCC> FileSystem<T, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `disk` parameter cannot be seeked. If there is a need to read a fragment of disk
@@ -372,20 +372,6 @@ impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, 
         self.bpb.volume_id
     }
 
-    /// Returns a volume label from BPB in the Boot Sector as `String`.
-    ///
-    /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
-    /// Note: This function returns label stored in the BPB block. Use `read_volume_label_from_root_dir` to read label
-    /// from the root directory.
-    #[cfg(feature = "alloc")]
-    pub fn volume_label(&self) -> String {
-        // Decode volume label from OEM codepage
-        let volume_label_iter = self.volume_label_as_bytes().iter().cloned();
-        let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
-        // Build string from character iterator
-        String::from_iter(char_iter)
-    }
-
     /// Returns a volume label from BPB in the Boot Sector as byte array slice.
     ///
     /// Label is encoded in the OEM codepage.
@@ -395,55 +381,6 @@ impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, 
         let full_label_slice = &self.bpb.volume_label;
         let len = full_label_slice.iter().rposition(|b| *b != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
         &full_label_slice[..len]
-    }
-
-    /// Returns a volume label from root directory as `String`.
-    ///
-    /// It finds file with `VOLUME_ID` attribute and returns its short name.
-    #[cfg(feature = "alloc")]
-    pub fn read_volume_label_from_root_dir(&self) -> io::Result<Option<String>> {
-        // Note: DirEntry::file_short_name() cannot be used because it interprets name as 8.3
-        // (adds dot before an extension)
-        let volume_label_opt = self.read_volume_label_from_root_dir_as_bytes()?;
-        if let Some(volume_label) = volume_label_opt {
-            // Strip label padding
-            let len = volume_label.iter().rposition(|b| *b != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
-            let label_slice = &volume_label[..len];
-            // Decode volume label from OEM codepage
-            let volume_label_iter = label_slice.iter().cloned();
-            let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
-            // Build string from character iterator
-            Ok(Some(String::from_iter(char_iter)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Returns a volume label from root directory as byte array.
-    ///
-    /// Label is encoded in the OEM codepage.
-    /// It finds file with `VOLUME_ID` attribute and returns its short name.
-    pub fn read_volume_label_from_root_dir_as_bytes(&self) -> io::Result<Option<[u8; SFN_SIZE]>> {
-        let entry_opt = self.root_dir().find_volume_entry()?;
-        Ok(entry_opt.map(|e| *e.raw_short_name()))
-    }
-
-    /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir<'b>(&'b self) -> Dir<'b, T, TP, OCC> {
-        trace!("root_dir");
-        let root_rdr = {
-            match self.fat_type {
-                FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
-                    self.first_data_sector - self.root_dir_sectors,
-                    self.root_dir_sectors,
-                    1,
-                    &self.bpb,
-                    FsIoAdapter { fs: self },
-                )),
-                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
-            }
-        };
-        Dir::new(root_rdr, self)
     }
 
     fn offset_from_sector(&self, sector: u32) -> u64 {
@@ -589,10 +526,77 @@ impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, 
         self.current_status_flags.set(flags);
         Ok(())
     }
+
+    /// Returns a root directory object allowing for futher penetration of a filesystem structure.
+    pub fn root_dir<'b>(&'b self) -> Dir<'b, T, TP, OCC> {
+        trace!("root_dir");
+        let root_rdr = {
+            match self.fat_type {
+                FatType::Fat12 | FatType::Fat16 => DirRawStream::Root(DiskSlice::from_sectors(
+                    self.first_data_sector - self.root_dir_sectors,
+                    self.root_dir_sectors,
+                    1,
+                    &self.bpb,
+                    FsIoAdapter { fs: self },
+                )),
+                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
+            }
+        };
+        Dir::new(root_rdr, self)
+    }
+}
+
+impl<T: ReadWriteSeek, TP, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
+    /// Returns a volume label from BPB in the Boot Sector as `String`.
+    ///
+    /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
+    /// Note: This function returns label stored in the BPB block. Use `read_volume_label_from_root_dir` to read label
+    /// from the root directory.
+    #[cfg(feature = "alloc")]
+    pub fn volume_label(&self) -> String {
+        // Decode volume label from OEM codepage
+        let volume_label_iter = self.volume_label_as_bytes().iter().cloned();
+        let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
+        // Build string from character iterator
+        String::from_iter(char_iter)
+    }
+}
+
+impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<T, TP, OCC> {
+    /// Returns a volume label from root directory as `String`.
+    ///
+    /// It finds file with `VOLUME_ID` attribute and returns its short name.
+    #[cfg(feature = "alloc")]
+    pub fn read_volume_label_from_root_dir(&self) -> io::Result<Option<String>> {
+        // Note: DirEntry::file_short_name() cannot be used because it interprets name as 8.3
+        // (adds dot before an extension)
+        let volume_label_opt = self.read_volume_label_from_root_dir_as_bytes()?;
+        if let Some(volume_label) = volume_label_opt {
+            // Strip label padding
+            let len = volume_label.iter().rposition(|b| *b != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
+            let label_slice = &volume_label[..len];
+            // Decode volume label from OEM codepage
+            let volume_label_iter = label_slice.iter().cloned();
+            let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
+            // Build string from character iterator
+            Ok(Some(String::from_iter(char_iter)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Returns a volume label from root directory as byte array.
+    ///
+    /// Label is encoded in the OEM codepage.
+    /// It finds file with `VOLUME_ID` attribute and returns its short name.
+    pub fn read_volume_label_from_root_dir_as_bytes(&self) -> io::Result<Option<[u8; SFN_SIZE]>> {
+        let entry_opt = self.root_dir().find_volume_entry()?;
+        Ok(entry_opt.map(|e| *e.raw_short_name()))
+    }
 }
 
 /// `Drop` implementation tries to unmount the filesystem when dropping.
-impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Drop for FileSystem<T, TP, OCC> {
+impl<T: ReadWriteSeek, TP, OCC> Drop for FileSystem<T, TP, OCC> {
     fn drop(&mut self) {
         if let Err(err) = self.unmount_internal() {
             error!("unmount failed {}", err);
@@ -600,17 +604,17 @@ impl<T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Drop for FileSyste
     }
 }
 
-pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub(crate) struct FsIoAdapter<'a, T: ReadWriteSeek, TP, OCC> {
     fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'a, T, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.fs.disk.borrow_mut().read(buf)
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, T, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let size = self.fs.disk.borrow_mut().write(buf)?;
         if size > 0 {
@@ -624,14 +628,14 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for FsIo
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Seek for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'a, T, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.fs.disk.borrow_mut().seek(pos)
     }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for FsIoAdapter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'a, T, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }

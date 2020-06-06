@@ -15,12 +15,12 @@ use file::File;
 use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek, OemCpConverter};
 use time::TimeProvider;
 
-pub(crate) enum DirRawStream<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub(crate) enum DirRawStream<'a, T: ReadWriteSeek, TP, OCC> {
     File(File<'a, T, TP, OCC>),
     Root(DiskSlice<FsIoAdapter<'a, T, TP, OCC>>),
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirRawStream<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> DirRawStream<'a, T, TP, OCC> {
     fn abs_pos(&self) -> Option<u64> {
         match self {
             &DirRawStream::File(ref file) => file.abs_pos(),
@@ -37,7 +37,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirRawStream<'
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for DirRawStream<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'a, T, TP, OCC> {
     fn clone(&self) -> Self {
         match self {
             &DirRawStream::File(ref file) => DirRawStream::File(file.clone()),
@@ -46,7 +46,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for DirR
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for DirRawStream<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'a, T, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.read(buf),
@@ -55,7 +55,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for DirRa
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for DirRawStream<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'a, T, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.write(buf),
@@ -70,7 +70,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for DirR
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Seek for DirRawStream<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'a, T, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.seek(pos),
@@ -87,7 +87,7 @@ fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
     (comp, rest_opt)
 }
 
-enum DirEntryOrShortName<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+enum DirEntryOrShortName<'a, T: ReadWriteSeek, TP, OCC> {
     DirEntry(DirEntry<'a, T, TP, OCC>),
     ShortName([u8; SFN_SIZE]),
 }
@@ -96,16 +96,18 @@ enum DirEntryOrShortName<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConve
 ///
 /// This struct is created by the `open_dir` or `create_dir` methods on `Dir`.
 /// The root directory is returned by the `root_dir` method on `FileSystem`.
-pub struct Dir<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub struct Dir<'a, T: ReadWriteSeek, TP, OCC> {
     stream: DirRawStream<'a, T, TP, OCC>,
     fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek + 'a, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek + 'a, TP, OCC> Dir<'a, T, TP, OCC> {
     pub(crate) fn new(stream: DirRawStream<'a, T, TP, OCC>, fs: &'a FileSystem<T, TP, OCC>) -> Self {
         Dir { stream, fs }
     }
+}
 
+impl<'a, T: ReadWriteSeek + 'a, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, T, TP, OCC> {
     /// Creates directory entries iterator.
     pub fn iter(&self) -> DirIter<'a, T, TP, OCC> {
         DirIter::new(self.stream.clone(), self.fs, true)
@@ -474,14 +476,14 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for Dir<
 /// An iterator over the directory entries.
 ///
 /// This struct is created by the `iter` method on `Dir`.
-pub struct DirIter<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub struct DirIter<'a, T: ReadWriteSeek, TP, OCC> {
     stream: DirRawStream<'a, T, TP, OCC>,
     fs: &'a FileSystem<T, TP, OCC>,
     skip_volume: bool,
     err: bool,
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirIter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, T, TP, OCC> {
     fn new(stream: DirRawStream<'a, T, TP, OCC>, fs: &'a FileSystem<T, TP, OCC>, skip_volume: bool) -> Self {
         DirIter { stream, fs, skip_volume, err: false }
     }
@@ -545,13 +547,13 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> DirIter<'a, T,
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for DirIter<'a, T, TP, OCC> {
+impl<T: ReadWriteSeek, TP, OCC> Clone for DirIter<'_, T, TP, OCC> {
     fn clone(&self) -> Self {
         Self { stream: self.stream.clone(), fs: self.fs, err: self.err, skip_volume: self.skip_volume }
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Iterator for DirIter<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> Iterator for DirIter<'a, T, TP, OCC> {
     type Item = io::Result<DirEntry<'a, T, TP, OCC>>;
 
     fn next(&mut self) -> Option<Self::Item> {

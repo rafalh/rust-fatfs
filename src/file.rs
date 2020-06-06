@@ -5,7 +5,7 @@ use io::prelude::*;
 use io::{ErrorKind, SeekFrom};
 
 use dir_entry::DirEntryEditor;
-use fs::{FileSystem, ReadWriteSeek, OemCpConverter};
+use fs::{FileSystem, ReadWriteSeek};
 use time::{Date, DateTime, TimeProvider};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
@@ -13,7 +13,7 @@ const MAX_FILE_SIZE: u32 = core::u32::MAX;
 /// A FAT filesystem file object used for reading and writing data.
 ///
 /// This struct is created by the `open_file` or `create_file` methods on `Dir`.
-pub struct File<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
+pub struct File<'a, T: ReadWriteSeek, TP, OCC> {
     // Note first_cluster is None if file is empty
     first_cluster: Option<u32>,
     // Note: if offset points between clusters current_cluster is the previous cluster
@@ -26,7 +26,7 @@ pub struct File<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> {
     fs: &'a FileSystem<T, TP, OCC>,
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> File<'a, T, TP, OCC> {
     pub(crate) fn new(first_cluster: Option<u32>, entry: Option<DirEntryEditor>, fs: &'a FileSystem<T, TP, OCC>) -> Self {
         File {
             first_cluster,
@@ -34,17 +34,6 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> File<'a, T, TP
             fs,
             current_cluster: None, // cluster before first one
             offset: 0,
-        }
-    }
-
-    fn update_dir_entry_after_write(&mut self) {
-        let offset = self.offset;
-        if let Some(ref mut e) = self.entry {
-            let now = self.fs.options.time_provider.get_current_date_time();
-            e.set_modified(now);
-            if e.inner().size().map_or(false, |s| offset > s) {
-                e.set_size(offset);
-            }
         }
     }
 
@@ -153,9 +142,28 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> File<'a, T, TP
     pub(crate) fn first_cluster(&self) -> Option<u32> {
         self.first_cluster
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flush_dir_entry()?;
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.flush()
+    }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Drop for File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> File<'a, T, TP, OCC> {
+    fn update_dir_entry_after_write(&mut self) {
+        let offset = self.offset;
+        if let Some(ref mut e) = self.entry {
+            let now = self.fs.options.time_provider.get_current_date_time();
+            e.set_modified(now);
+            if e.inner().size().map_or(false, |s| offset > s) {
+                e.set_size(offset);
+            }
+        }
+    }
+}
+
+impl<'a, T: ReadWriteSeek, TP, OCC> Drop for File<'a, T, TP, OCC> {
     fn drop(&mut self) {
         if let Err(err) = self.flush() {
             error!("flush failed {}", err);
@@ -164,7 +172,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Drop for File<
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Clone for File<'a, T, TP, OCC> {
     fn clone(&self) -> Self {
         File {
             first_cluster: self.first_cluster,
@@ -176,7 +184,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for File
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'a, T, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let current_cluster_opt = if self.offset % cluster_size == 0 {
@@ -229,7 +237,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Read for File<
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'a, T, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let offset_in_cluster = self.offset % cluster_size;
@@ -294,13 +302,11 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Write for File
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.flush_dir_entry()?;
-        let mut disk = self.fs.disk.borrow_mut();
-        disk.flush()
+        Self::flush(self)
     }
 }
 
-impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Seek for File<'a, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Seek for File<'a, T, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,
