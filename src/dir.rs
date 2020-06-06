@@ -547,7 +547,7 @@ impl<'a, T: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, T, TP, OCC> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<T: ReadWriteSeek, TP, OCC> Clone for DirIter<'_, T, TP, OCC> {
+impl<'a, T: ReadWriteSeek, TP, OCC> Clone for DirIter<'a, T, TP, OCC> {
     fn clone(&self) -> Self {
         Self { stream: self.stream.clone(), fs: self.fs, err: self.err, skip_volume: self.skip_volume }
     }
