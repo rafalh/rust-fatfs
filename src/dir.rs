@@ -1,19 +1,19 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::vec::Vec;
-use core::{char, cmp, num, str};
+use crate::core::{char, cmp, num, str};
 #[cfg(feature = "lfn")]
-use core::{iter, slice};
-use io;
-use io::prelude::*;
-use io::{ErrorKind, SeekFrom};
+use crate::core::{iter, slice};
+use crate::io;
+use crate::io::prelude::*;
+use crate::io::{ErrorKind, SeekFrom};
 
-use dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
+use crate::dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 #[cfg(feature = "lfn")]
-use dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
-use dir_entry::{SFN_SIZE, SFN_PADDING};
-use file::File;
-use fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek, OemCpConverter};
-use time::TimeProvider;
+use crate::dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
+use crate::dir_entry::{SFN_SIZE, SFN_PADDING};
+use crate::file::File;
+use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek, OemCpConverter};
+use crate::time::TimeProvider;
 
 pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
     File(File<'a, IO, TP, OCC>),

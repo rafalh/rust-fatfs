@@ -1,12 +1,12 @@
-use core;
-use core::cmp;
-use io;
-use io::prelude::*;
-use io::{ErrorKind, SeekFrom};
+use crate::core;
+use crate::core::cmp;
+use crate::io;
+use crate::io::prelude::*;
+use crate::io::{ErrorKind, SeekFrom};
 
-use dir_entry::DirEntryEditor;
-use fs::{FileSystem, ReadWriteSeek};
-use time::{Date, DateTime, TimeProvider};
+use crate::dir_entry::DirEntryEditor;
+use crate::fs::{FileSystem, ReadWriteSeek};
+use crate::time::{Date, DateTime, TimeProvider};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
 

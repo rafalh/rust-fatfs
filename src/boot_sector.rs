@@ -1,16 +1,16 @@
-use core::cmp;
-use core::u16;
-use core::u8;
-use io;
-use io::prelude::*;
-use io::{Error, ErrorKind};
+use crate::core::cmp;
+use crate::core::u16;
+use crate::core::u8;
+use crate::io;
+use crate::io::prelude::*;
+use crate::io::{Error, ErrorKind};
 
 use byteorder::LittleEndian;
-use byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use dir_entry::DIR_ENTRY_SIZE;
-use fs::{FatType, FormatVolumeOptions, FsStatusFlags};
-use table::RESERVED_FAT_ENTRIES;
+use crate::dir_entry::DIR_ENTRY_SIZE;
+use crate::fs::{FatType, FormatVolumeOptions, FsStatusFlags};
+use crate::table::RESERVED_FAT_ENTRIES;
 
 const BITS_PER_BYTE: u32 = 8;
 const KB: u64 = 1024;
@@ -717,7 +717,7 @@ pub(crate) fn format_boot_sector(
 mod tests {
     use super::*;
     extern crate env_logger;
-    use core::u32;
+    use crate::core::u32;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();

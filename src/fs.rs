@@ -1,24 +1,24 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
-use core::cell::{Cell, RefCell};
-use core::char;
-use core::cmp;
-use core::fmt::Debug;
-use core::iter::FromIterator;
-use core::u32;
-use io;
-use io::prelude::*;
-use io::{Error, ErrorKind, SeekFrom};
+use crate::core::cell::{Cell, RefCell};
+use crate::core::char;
+use crate::core::cmp;
+use crate::core::fmt::Debug;
+use crate::core::iter::FromIterator;
+use crate::core::u32;
+use crate::io;
+use crate::io::prelude::*;
+use crate::io::{Error, ErrorKind, SeekFrom};
 
 use byteorder::LittleEndian;
-use byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
-use dir::{Dir, DirRawStream};
-use dir_entry::{SFN_PADDING, SFN_SIZE};
-use file::File;
-use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
-use time::{TimeProvider, DefaultTimeProvider};
+use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
+use crate::dir::{Dir, DirRawStream};
+use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
+use crate::file::File;
+use crate::table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
+use crate::time::{TimeProvider, DefaultTimeProvider};
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT

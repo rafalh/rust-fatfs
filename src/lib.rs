@@ -105,8 +105,8 @@ use std as core;
 #[cfg(feature = "std")]
 use std::io;
 
-pub use dir::*;
-pub use dir_entry::*;
-pub use file::*;
-pub use fs::*;
-pub use time::*;
+pub use crate::dir::*;
+pub use crate::dir_entry::*;
+pub use crate::file::*;
+pub use crate::fs::*;
+pub use crate::time::*;

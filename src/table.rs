@@ -1,9 +1,9 @@
 use byteorder::LittleEndian;
-use byteorder_ext::{ReadBytesExt, WriteBytesExt};
-use core::cmp;
-use io;
+use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::core::cmp;
+use crate::io;
 
-use fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
+use crate::fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
 
 struct Fat<T> {
     #[allow(dead_code)]

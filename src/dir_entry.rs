@@ -1,21 +1,21 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
-use core::char;
+use crate::core::char;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
-use core::iter::FromIterator;
-use core::{fmt, str};
-use io;
-use io::prelude::*;
-use io::Cursor;
+use crate::core::iter::FromIterator;
+use crate::core::{fmt, str};
+use crate::io;
+use crate::io::prelude::*;
+use crate::io::Cursor;
 
 use byteorder::LittleEndian;
-use byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use dir::{Dir, DirRawStream, LfnBuffer};
-use file::File;
-use fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
-use time::{Date, DateTime};
+use crate::dir::{Dir, DirRawStream, LfnBuffer};
+use crate::file::File;
+use crate::fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
+use crate::time::{Date, DateTime};
 
 bitflags! {
     /// A FAT file attributes.
@@ -663,7 +663,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, IO, TP, OCC> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs::LossyOemCpConverter;
+    use crate::fs::LossyOemCpConverter;
 
     #[test]
     fn short_name_with_ext() {
