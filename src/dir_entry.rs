@@ -351,8 +351,8 @@ pub(crate) enum DirEntryData {
 impl DirEntryData {
     pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         match self {
-            &DirEntryData::File(ref file) => file.serialize(wrt),
-            &DirEntryData::Lfn(ref lfn) => lfn.serialize(wrt),
+            DirEntryData::File(file) => file.serialize(wrt),
+            DirEntryData::Lfn(lfn) => lfn.serialize(wrt),
         }
     }
 
@@ -403,22 +403,22 @@ impl DirEntryData {
 
     pub(crate) fn is_deleted(&self) -> bool {
         match self {
-            &DirEntryData::File(ref file) => file.is_deleted(),
-            &DirEntryData::Lfn(ref lfn) => lfn.is_deleted(),
+            DirEntryData::File(file) => file.is_deleted(),
+            DirEntryData::Lfn(lfn) => lfn.is_deleted(),
         }
     }
 
     pub(crate) fn set_deleted(&mut self) {
         match self {
-            &mut DirEntryData::File(ref mut file) => file.set_deleted(),
-            &mut DirEntryData::Lfn(ref mut lfn) => lfn.set_deleted(),
+            DirEntryData::File(file) => file.set_deleted(),
+            DirEntryData::Lfn(lfn) => lfn.set_deleted(),
         }
     }
 
     pub(crate) fn is_end(&self) -> bool {
         match self {
-            &DirEntryData::File(ref file) => file.is_end(),
-            &DirEntryData::Lfn(ref lfn) => lfn.is_end(),
+            DirEntryData::File(file) => file.is_end(),
+            DirEntryData::Lfn(lfn) => lfn.is_end(),
         }
     }
 }

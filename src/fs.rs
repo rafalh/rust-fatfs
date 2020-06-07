@@ -54,25 +54,25 @@ impl FatType {
 
     pub(crate) fn bits_per_fat_entry(&self) -> u32 {
         match self {
-            &FatType::Fat12 => 12,
-            &FatType::Fat16 => 16,
-            &FatType::Fat32 => 32,
+            FatType::Fat12 => 12,
+            FatType::Fat16 => 16,
+            FatType::Fat32 => 32,
         }
     }
 
     pub(crate) fn min_clusters(&self) -> u32 {
         match self {
-            &FatType::Fat12 => 0,
-            &FatType::Fat16 => Self::FAT16_MIN_CLUSTERS,
-            &FatType::Fat32 => Self::FAT32_MIN_CLUSTERS,
+            FatType::Fat12 => 0,
+            FatType::Fat16 => Self::FAT16_MIN_CLUSTERS,
+            FatType::Fat32 => Self::FAT32_MIN_CLUSTERS,
         }
     }
 
     pub(crate) fn max_clusters(&self) -> u32 {
         match self {
-            &FatType::Fat12 => Self::FAT16_MIN_CLUSTERS - 1,
-            &FatType::Fat16 => Self::FAT32_MIN_CLUSTERS - 1,
-            &FatType::Fat32 => Self::FAT32_MAX_CLUSTERS,
+            FatType::Fat12 => Self::FAT16_MIN_CLUSTERS - 1,
+            FatType::Fat16 => Self::FAT32_MIN_CLUSTERS - 1,
+            FatType::Fat32 => Self::FAT32_MAX_CLUSTERS,
         }
     }
 }

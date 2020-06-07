@@ -23,15 +23,15 @@ pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
 impl<IO: ReadWriteSeek, TP, OCC> DirRawStream<'_, IO, TP, OCC> {
     fn abs_pos(&self) -> Option<u64> {
         match self {
-            &DirRawStream::File(ref file) => file.abs_pos(),
-            &DirRawStream::Root(ref slice) => Some(slice.abs_pos()),
+            DirRawStream::File(file) => file.abs_pos(),
+            DirRawStream::Root(slice) => Some(slice.abs_pos()),
         }
     }
 
     fn first_cluster(&self) -> Option<u32> {
         match self {
-            &DirRawStream::File(ref file) => file.first_cluster(),
-            &DirRawStream::Root(_) => None,
+            DirRawStream::File(file) => file.first_cluster(),
+            DirRawStream::Root(_) => None,
         }
     }
 }
@@ -40,8 +40,8 @@ impl<IO: ReadWriteSeek, TP, OCC> DirRawStream<'_, IO, TP, OCC> {
 impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         match self {
-            &DirRawStream::File(ref file) => DirRawStream::File(file.clone()),
-            &DirRawStream::Root(ref raw) => DirRawStream::Root(raw.clone()),
+            DirRawStream::File(file) => DirRawStream::File(file.clone()),
+            DirRawStream::Root(raw) => DirRawStream::Root(raw.clone()),
         }
     }
 }
@@ -49,8 +49,8 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            &mut DirRawStream::File(ref mut file) => file.read(buf),
-            &mut DirRawStream::Root(ref mut raw) => raw.read(buf),
+            DirRawStream::File(file) => file.read(buf),
+            DirRawStream::Root(raw) => raw.read(buf),
         }
     }
 }
@@ -58,14 +58,14 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP,
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
-            &mut DirRawStream::File(ref mut file) => file.write(buf),
-            &mut DirRawStream::Root(ref mut raw) => raw.write(buf),
+            DirRawStream::File(file) => file.write(buf),
+            DirRawStream::Root(raw) => raw.write(buf),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
         match self {
-            &mut DirRawStream::File(ref mut file) => file.flush(),
-            &mut DirRawStream::Root(ref mut raw) => raw.flush(),
+            DirRawStream::File(file) => file.flush(),
+            DirRawStream::Root(raw) => raw.flush(),
         }
     }
 }
@@ -73,8 +73,8 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP
 impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
-            &mut DirRawStream::File(ref mut file) => file.seek(pos),
-            &mut DirRawStream::Root(ref mut raw) => raw.seek(pos),
+            DirRawStream::File(file) => file.seek(pos),
+            DirRawStream::Root(raw) => raw.seek(pos),
         }
     }
 }
@@ -495,7 +495,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
             return true;
         }
         match raw_entry {
-            &DirEntryData::File(ref sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
+            DirEntryData::File(sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
             _ => false,
         }
     }
