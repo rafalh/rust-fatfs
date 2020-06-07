@@ -12,7 +12,9 @@ use crate::io::Cursor;
 use byteorder::LittleEndian;
 use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
-use crate::dir::{Dir, DirRawStream, LfnBuffer};
+use crate::dir::{Dir, DirRawStream};
+#[cfg(feature = "lfn")]
+use crate::dir::LfnBuffer;
 use crate::file::File;
 use crate::fs::{FatType, FileSystem, OemCpConverter, ReadWriteSeek};
 use crate::time::{Date, DateTime};
@@ -49,6 +51,7 @@ pub(crate) const SFN_PADDING: u8 = b' ';
 pub(crate) const LFN_PART_LEN: usize = 13;
 
 // Bit used in order field to mark last LFN entry
+#[cfg(feature = "lfn")]
 pub(crate) const LFN_ENTRY_LAST_FLAG: u8 = 0x40;
 
 // Character to upper case conversion which supports Unicode only if `unicode` feature is enabled

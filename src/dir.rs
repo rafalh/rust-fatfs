@@ -1,4 +1,4 @@
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
+#[cfg(all(not(feature = "std"), feature = "alloc", feature = "lfn"))]
 use alloc::vec::Vec;
 use crate::core::{char, cmp, num, str};
 #[cfg(feature = "lfn")]

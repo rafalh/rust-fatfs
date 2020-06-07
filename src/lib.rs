@@ -57,23 +57,15 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(all(not(feature = "std"), feature = "alloc"), feature(alloc))]
 // Disable warnings to not clutter code with cfg too much
-#![cfg_attr(not(feature = "alloc"), allow(dead_code, unused_imports))]
+#![cfg_attr(not(all(feature = "alloc", feature = "lfn")), allow(dead_code, unused_imports))]
 // `alloc` compiler feature is needed in Rust before 1.36
 #![cfg_attr(all(not(feature = "std"), feature = "alloc"), allow(stable_features))]
-
-extern crate byteorder;
 
 #[macro_use]
 extern crate bitflags;
 
 #[macro_use]
 extern crate log;
-
-#[cfg(feature = "chrono")]
-extern crate chrono;
-
-#[cfg(not(feature = "std"))]
-extern crate core_io;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
@@ -93,13 +85,16 @@ mod byteorder_core_io;
 use byteorder as byteorder_ext;
 #[cfg(not(feature = "std"))]
 use crate::byteorder_core_io as byteorder_ext;
-#[cfg(not(feature = "std"))]
-use core_io as io;
-#[cfg(feature = "std")]
-use std as core;
 
 #[cfg(feature = "std")]
 use std::io;
+#[cfg(not(feature = "std"))]
+use core_io as io;
+
+#[cfg(feature = "std")]
+use std as core;
+#[cfg(not(feature = "std"))]
+use core as core;
 
 pub use crate::dir::*;
 pub use crate::dir_entry::*;
