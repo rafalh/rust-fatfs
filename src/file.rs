@@ -150,7 +150,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> File<'_, IO, TP, OCC> {
     fn update_dir_entry_after_write(&mut self) {
         let offset = self.offset;
         if let Some(ref mut e) = self.entry {
@@ -163,7 +163,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> File<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Drop for File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Drop for File<'_, IO, TP, OCC> {
     fn drop(&mut self) {
         if let Err(err) = self.flush() {
             error!("flush failed {}", err);
@@ -172,7 +172,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Drop for File<'a, IO, TP, OCC> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Clone for File<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         File {
             first_cluster: self.first_cluster,
@@ -184,7 +184,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for File<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let current_cluster_opt = if self.offset % cluster_size == 0 {
@@ -237,7 +237,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'a, IO, TP, OCC
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let cluster_size = self.fs.cluster_size();
         let offset_in_cluster = self.offset % cluster_size;
@@ -306,7 +306,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'a, IO, TP, OC
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Seek for File<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let mut new_pos = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

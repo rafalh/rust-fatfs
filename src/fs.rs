@@ -407,12 +407,12 @@ impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice<'b>(&'b self) -> DiskSlice<FsIoAdapter<'b, IO, TP, OCC>> {
+    fn fat_slice<'a>(&'a self) -> DiskSlice<FsIoAdapter<'a, IO, TP, OCC>> {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
 
-    pub(crate) fn cluster_iter<'b>(&'b self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'b, IO, TP, OCC>>> {
+    pub(crate) fn cluster_iter<'a>(&'a self, cluster: u32) -> ClusterIterator<DiskSlice<FsIoAdapter<'a, IO, TP, OCC>>> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
@@ -528,7 +528,7 @@ impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir<'b>(&'b self) -> Dir<'b, IO, TP, OCC> {
+    pub fn root_dir<'a>(&'a self) -> Dir<'a, IO, TP, OCC> {
         trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
@@ -608,13 +608,13 @@ pub(crate) struct FsIoAdapter<'a, IO: ReadWriteSeek, TP, OCC> {
     fs: &'a FileSystem<IO, TP, OCC>,
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.fs.disk.borrow_mut().read(buf)
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let size = self.fs.disk.borrow_mut().write(buf)?;
         if size > 0 {
@@ -628,14 +628,14 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.fs.disk.borrow_mut().seek(pos)
     }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
@@ -689,7 +689,7 @@ impl<IO: Clone> Clone for DiskSlice<IO> {
     }
 }
 
-impl<'a, IO: Read + Seek> Read for DiskSlice<IO> {
+impl<IO: Read + Seek> Read for DiskSlice<IO> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -700,7 +700,7 @@ impl<'a, IO: Read + Seek> Read for DiskSlice<IO> {
     }
 }
 
-impl<'a, IO: Write + Seek> Write for DiskSlice<IO> {
+impl<IO: Write + Seek> Write for DiskSlice<IO> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
@@ -721,7 +721,7 @@ impl<'a, IO: Write + Seek> Write for DiskSlice<IO> {
     }
 }
 
-impl<'a, IO> Seek for DiskSlice<IO> {
+impl<IO> Seek for DiskSlice<IO> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_offset = match pos {
             SeekFrom::Current(x) => self.offset as i64 + x,

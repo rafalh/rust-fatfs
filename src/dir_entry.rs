@@ -657,7 +657,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> fmt::Debug for DirEntry<'_, IO, TP, OCC> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.data.fmt(f)
     }

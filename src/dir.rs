@@ -20,7 +20,7 @@ pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
     Root(DiskSlice<FsIoAdapter<'a, IO, TP, OCC>>),
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> DirRawStream<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> DirRawStream<'_, IO, TP, OCC> {
     fn abs_pos(&self) -> Option<u64> {
         match self {
             &DirRawStream::File(ref file) => file.abs_pos(),
@@ -37,7 +37,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> DirRawStream<'a, IO, TP, OCC> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         match self {
             &DirRawStream::File(ref file) => DirRawStream::File(file.clone()),
@@ -46,7 +46,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.read(buf),
@@ -55,7 +55,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'a, IO,
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.write(buf),
@@ -70,7 +70,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'a, IO
     }
 }
 
-impl<'a, IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match self {
             &mut DirRawStream::File(ref mut file) => file.seek(pos),
@@ -79,7 +79,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'a, IO, TP, OCC> {
     }
 }
 
-fn split_path<'c>(path: &'c str) -> (&'c str, Option<&'c str>) {
+fn split_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
     // remove trailing slash and split into 2 components - top-most parent and rest
     let mut path_split = path.trim_matches('/').splitn(2, '/');
     let comp = path_split.next().unwrap(); // SAFE: splitn always returns at least one element
@@ -101,7 +101,7 @@ pub struct Dir<'a, IO: ReadWriteSeek, TP, OCC> {
     fs: &'a FileSystem<IO, TP, OCC>,
 }
 
-impl<'a, IO: ReadWriteSeek + 'a, TP, OCC> Dir<'a, IO, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP, OCC> Dir<'a, IO, TP, OCC> {
     pub(crate) fn new(stream: DirRawStream<'a, IO, TP, OCC>, fs: &'a FileSystem<IO, TP, OCC>) -> Self {
         Dir { stream, fs }
     }
@@ -112,7 +112,7 @@ impl<'a, IO: ReadWriteSeek + 'a, TP, OCC> Dir<'a, IO, TP, OCC> {
     }
 }
 
-impl<'a, IO: ReadWriteSeek + 'a, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, TP, OCC> {
+impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, TP, OCC> {
     fn find_entry(
         &self,
         name: &str,
@@ -467,7 +467,7 @@ impl<'a, IO: ReadWriteSeek + 'a, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, 
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for Dir<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for Dir<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         Self { stream: self.stream.clone(), fs: self.fs }
     }
@@ -549,7 +549,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<'a, IO: ReadWriteSeek, TP, OCC> Clone for DirIter<'a, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> Clone for DirIter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         Self { stream: self.stream.clone(), fs: self.fs, err: self.err, skip_volume: self.skip_volume }
     }
@@ -819,7 +819,7 @@ impl<'a> LfnEntriesGenerator<'a> {
 }
 
 #[cfg(feature = "lfn")]
-impl<'a> Iterator for LfnEntriesGenerator<'a> {
+impl Iterator for LfnEntriesGenerator<'_> {
     type Item = DirLfnEntryData;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -866,7 +866,7 @@ impl<'a> Iterator for LfnEntriesGenerator<'a> {
 
 // name_parts_iter is ExactSizeIterator so size_hint returns one limit
 #[cfg(feature = "lfn")]
-impl<'a> ExactSizeIterator for LfnEntriesGenerator<'a> {}
+impl ExactSizeIterator for LfnEntriesGenerator<'_> {}
 
 // Dummy implementation for non-alloc build
 #[cfg(not(feature = "lfn"))]
