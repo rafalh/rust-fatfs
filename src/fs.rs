@@ -946,7 +946,9 @@ pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptio
     debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
     let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
-    let total_sectors = if options.total_sectors.is_none() {
+    let total_sectors = if let Some(total_sectors) = options.total_sectors {
+        total_sectors
+    } else {
         let total_bytes: u64 = disk.seek(SeekFrom::End(0))?;
         let total_sectors_64 = total_bytes / u64::from(bytes_per_sector);
         disk.seek(SeekFrom::Start(0))?;
@@ -954,8 +956,6 @@ pub fn format_volume<IO: ReadWriteSeek>(mut disk: IO, options: FormatVolumeOptio
             return Err(Error::new(ErrorKind::Other, "Volume has too many sectors"));
         }
         total_sectors_64 as u32
-    } else {
-        options.total_sectors.unwrap() // SAFE: checked above
     };
 
     // Create boot sector, validate and write to storage device

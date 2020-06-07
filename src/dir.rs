@@ -981,27 +981,32 @@ impl ShortNameGenerator {
             self.exact_match = true;
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
-        let prefix_len = cmp::min(self.basename_len, 6) as usize;
-        let num_suffix =
-            if short_name[prefix_len] == b'~' { (short_name[prefix_len + 1] as char).to_digit(10) } else { None };
+        let long_prefix_len = cmp::min(self.basename_len, 6) as usize;
+        let num_suffix = if short_name[long_prefix_len] == b'~' {
+            (short_name[long_prefix_len + 1] as char).to_digit(10)
+        } else {
+            None
+        };
+        let long_prefix_matches = short_name[..long_prefix_len] == self.short_name[..long_prefix_len];
         let ext_matches = short_name[8..] == self.short_name[8..];
-        if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
-            let num = num_suffix.unwrap(); // SAFE
+        if long_prefix_matches && num_suffix.is_some() && ext_matches {
+            let num = num_suffix.unwrap(); // SAFE: checked in if condition
             self.long_prefix_bitmap |= 1 << num;
         }
 
         // check for short prefix + checksum form collision (TE021F~1.TXT)
-        let prefix_len = cmp::min(self.basename_len, 2) as usize;
-        let num_suffix = if short_name[prefix_len + 4] == b'~' {
-            (short_name[prefix_len + 4 + 1] as char).to_digit(10)
+        let short_prefix_len = cmp::min(self.basename_len, 2) as usize;
+        let num_suffix = if short_name[short_prefix_len + 4] == b'~' {
+            (short_name[short_prefix_len + 4 + 1] as char).to_digit(10)
         } else {
             None
         };
-        if short_name[..prefix_len] == self.short_name[..prefix_len] && num_suffix.is_some() && ext_matches {
-            let chksum_res =
-                str::from_utf8(&short_name[prefix_len..prefix_len + 4]).map(|s| u16::from_str_radix(s, 16));
+        let short_prefix_matches = short_name[..short_prefix_len] == self.short_name[..short_prefix_len];
+        if short_prefix_matches && num_suffix.is_some() && ext_matches {
+            let chksum_res = str::from_utf8(&short_name[short_prefix_len..short_prefix_len + 4])
+                .map(|s| u16::from_str_radix(s, 16));
             if chksum_res == Ok(Ok(self.chksum)) {
-                let num = num_suffix.unwrap(); // SAFE
+                let num = num_suffix.unwrap(); // SAFE: checked in if condition
                 self.prefix_chksum_bitmap |= 1 << num;
             }
         }
