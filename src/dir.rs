@@ -316,15 +316,15 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     pub fn rename(&self, src_path: &str, dst_dir: &Dir<IO, TP, OCC>, dst_path: &str) -> io::Result<()> {
         trace!("rename {} {}", src_path, dst_path);
         // traverse source path
-        let (name, rest_opt) = split_path(src_path);
-        if let Some(rest) = rest_opt {
-            let e = self.find_entry(name, Some(true), None)?;
+        let (src_name, src_rest_opt) = split_path(src_path);
+        if let Some(rest) = src_rest_opt {
+            let e = self.find_entry(src_name, Some(true), None)?;
             return e.to_dir().rename(rest, dst_dir, dst_path);
         }
         // traverse destination path
-        let (name, rest_opt) = split_path(dst_path);
-        if let Some(rest) = rest_opt {
-            let e = dst_dir.find_entry(name, Some(true), None)?;
+        let (dst_name, dst_rest_opt) = split_path(dst_path);
+        if let Some(rest) = dst_rest_opt {
+            let e = dst_dir.find_entry(dst_name, Some(true), None)?;
             return self.rename(src_path, &e.to_dir(), rest);
         }
         // move/rename file
@@ -586,9 +586,9 @@ fn validate_long_name(name: &str) -> io::Result<()> {
     // check if there are only valid characters
     for c in name.chars() {
         match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' => {},
-            '\u{80}'..='\u{FFFF}' => {},
-            '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
+            'a'..='z' | 'A'..='Z' | '0'..='9'
+            | '\u{80}'..='\u{FFFF}'
+            | '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
             | ';' | '=' | '[' | ']' | '^' | '#' | '&' => {},
             _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
         }
@@ -597,7 +597,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
 }
 
 fn lfn_checksum(short_name: &[u8; SFN_SIZE]) -> u8 {
-    let mut chksum = num::Wrapping(0u8);
+    let mut chksum = num::Wrapping(0_u8);
     for b in short_name {
         chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(*b);
     }
@@ -623,12 +623,11 @@ pub(crate) struct LfnBuffer {
 #[cfg(all(feature = "lfn", feature = "alloc"))]
 impl LfnBuffer {
     fn new() -> Self {
-        LfnBuffer { ucs2_units: Vec::<u16>::new() }
+        Self { ucs2_units: Vec::<u16>::new() }
     }
 
-    fn from_ucs2_units<I>(usc2_units: I) -> Self
-    where I: Iterator<Item = u16> {
-        LfnBuffer { ucs2_units: usc2_units.collect() }
+    fn from_ucs2_units<I: Iterator<Item = u16>>(usc2_units: I) -> Self {
+        Self { ucs2_units: usc2_units.collect() }
     }
 
     fn clear(&mut self) {
@@ -640,7 +639,7 @@ impl LfnBuffer {
     }
 
     fn set_len(&mut self, len: usize) {
-        self.ucs2_units.resize(len, 0u16);
+        self.ucs2_units.resize(len, 0_u16);
     }
 
     pub(crate) fn as_ucs2_units(&self) -> &[u16] {
@@ -651,12 +650,11 @@ impl LfnBuffer {
 #[cfg(all(feature = "lfn", not(feature = "alloc")))]
 impl LfnBuffer {
     fn new() -> Self {
-        LfnBuffer { ucs2_units: [0u16; MAX_LFN_LEN], len: 0 }
+        Self { ucs2_units: [0_u16; MAX_LFN_LEN], len: 0 }
     }
 
-    fn from_ucs2_units<I>(usc2_units: I) -> Self
-    where I: Iterator<Item = u16> {
-        let mut lfn = LfnBuffer { ucs2_units: [0u16; MAX_LFN_LEN], len: 0 };
+    fn from_ucs2_units<I: Iterator<Item = u16>>(usc2_units: I) -> Self {
+        let mut lfn = Self { ucs2_units: [0_u16; MAX_LFN_LEN], len: 0 };
         for (i, usc2_unit) in usc2_units.enumerate() {
             lfn.ucs2_units[i] = usc2_unit;
         }
@@ -664,7 +662,7 @@ impl LfnBuffer {
     }
 
     fn clear(&mut self) {
-        self.ucs2_units = [0u16; MAX_LFN_LEN];
+        self.ucs2_units = [0_u16; MAX_LFN_LEN];
         self.len = 0;
     }
 
@@ -702,7 +700,7 @@ struct LongNameBuilder {
 #[cfg(feature = "lfn")]
 impl LongNameBuilder {
     fn new() -> Self {
-        LongNameBuilder { buf: LfnBuffer::new(), chksum: 0, index: 0 }
+        Self { buf: LfnBuffer::new(), chksum: 0, index: 0 }
     }
 
     fn clear(&mut self) {
@@ -829,34 +827,31 @@ impl Iterator for LfnEntriesGenerator<'_> {
         }
 
         // get next part from reverse iterator
-        match self.name_parts_iter.next() {
-            Some(ref name_part) => {
-                let lfn_index = self.num - self.index;
-                let mut order = lfn_index as u8;
-                if self.index == 0 {
-                    // this is last name part (written as first)
-                    order |= LFN_ENTRY_LAST_FLAG;
-                }
-                debug_assert!(order > 0);
-                // name is padded with ' '
-                const LFN_PADDING: u16 = 0xFFFF;
-                let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
-                lfn_part[..name_part.len()].copy_from_slice(&name_part);
-                if name_part.len() < LFN_PART_LEN {
-                    // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
-                    lfn_part[name_part.len()] = 0;
-                }
-                // create and return new LFN entry
-                let mut lfn_entry = DirLfnEntryData::new(order, self.checksum);
-                lfn_entry.copy_name_from_slice(&lfn_part);
-                self.index += 1;
-                Some(lfn_entry)
-            },
-            None => {
-                // end of name
-                self.ended = true;
-                None
-            },
+        if let Some(ref name_part) = self.name_parts_iter.next() {
+            let lfn_index = self.num - self.index;
+            let mut order = lfn_index as u8;
+            if self.index == 0 {
+                // this is last name part (written as first)
+                order |= LFN_ENTRY_LAST_FLAG;
+            }
+            debug_assert!(order > 0);
+            // name is padded with ' '
+            const LFN_PADDING: u16 = 0xFFFF;
+            let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
+            lfn_part[..name_part.len()].copy_from_slice(&name_part);
+            if name_part.len() < LFN_PART_LEN {
+                // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
+                lfn_part[name_part.len()] = 0;
+            }
+            // create and return new LFN entry
+            let mut lfn_entry = DirLfnEntryData::new(order, self.checksum);
+            lfn_entry.copy_name_from_slice(&lfn_part);
+            self.index += 1;
+            Some(lfn_entry)
+        } else {
+            // end of name
+            self.ended = true;
+            None
         }
     }
 
@@ -911,25 +906,22 @@ impl ShortNameGenerator {
         let mut short_name = [SFN_PADDING; SFN_SIZE];
         // find extension after last dot
         // Note: short file name cannot start with the extension
-        let (basename_len, name_fits, lossy_conv) = match name[1..].rfind('.') {
-            Some(index) => {
-                // extension found - copy parts before and after dot
-                let dot_index = index + 1;
-                let (basename_len, basename_fits, basename_lossy) =
-                    Self::copy_short_name_part(&mut short_name[0..8], &name[..dot_index]);
-                let (_, ext_fits, ext_lossy) =
-                    Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
-                (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
-            },
-            _ => {
-                // no extension - copy name and leave extension empty
-                let (basename_len, basename_fits, basename_lossy) =
-                    Self::copy_short_name_part(&mut short_name[0..8], &name);
-                (basename_len, basename_fits, basename_lossy)
-            },
+        let (basename_len, name_fits, lossy_conv) = if let Some(index) = name[1..].rfind('.') {
+            // extension found - copy parts before and after dot
+            let dot_index = index + 1;
+            let (basename_len, basename_fits, basename_lossy) =
+                Self::copy_short_name_part(&mut short_name[0..8], &name[..dot_index]);
+            let (_, ext_fits, ext_lossy) =
+                Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
+            (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
+        } else {
+            // no extension - copy name and leave extension empty
+            let (basename_len, basename_fits, basename_lossy) =
+                Self::copy_short_name_part(&mut short_name[0..8], &name);
+            (basename_len, basename_fits, basename_lossy)
         };
         let chksum = Self::checksum(name);
-        Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Default::default() }
+        Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Self::default() }
     }
 
     fn generate_dot() -> [u8; SFN_SIZE] {
@@ -961,8 +953,8 @@ impl ShortNameGenerator {
                     continue;
                 },
                 // copy allowed characters
-                'A'..='Z' | 'a'..='z' | '0'..='9' => c,
-                '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
+                'A'..='Z' | 'a'..='z' | '0'..='9'
+                | '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => c,
                 // replace disallowed characters by underscore
                 _ => '_',
             };
@@ -1015,7 +1007,7 @@ impl ShortNameGenerator {
 
     fn checksum(name: &str) -> u16 {
         // BSD checksum algorithm
-        let mut chksum = num::Wrapping(0u16);
+        let mut chksum = num::Wrapping(0_u16);
         for c in name.chars() {
             chksum = (chksum >> 1) + (chksum << 15) + num::Wrapping(c as u16);
         }
@@ -1108,7 +1100,7 @@ mod tests {
 
     #[test]
     fn test_lfn_checksum_overflow() {
-        lfn_checksum(&[0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]);
+        lfn_checksum(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub struct Error {
 
 impl Error {
     pub fn new(kind: ErrorKind, msg: &'static str) -> Self {
-        Error { kind, msg }
+        Self { kind, msg }
     }
     pub fn kind(&self) -> ErrorKind {
         self.kind
@@ -48,10 +48,10 @@ pub trait Read {
                 Err(e) => return Err(e),
             }
         }
-        if !buf.is_empty() {
-            Err(Error::new(ErrorKind::UnexpectedEof, "failed to fill whole buffer"))
-        } else {
+        if buf.is_empty() {
             Ok(())
+        } else {
+            Err(Error::new(ErrorKind::UnexpectedEof, "failed to fill whole buffer"))
         }
     }
 }
@@ -88,13 +88,13 @@ pub trait Seek {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         match error.kind() {
-            std::io::ErrorKind::Other => Error::new(ErrorKind::Other, "other"),
-            std::io::ErrorKind::InvalidInput => Error::new(ErrorKind::InvalidInput, "invalid input"),
-            std::io::ErrorKind::UnexpectedEof => Error::new(ErrorKind::UnexpectedEof, "unexpected eof"),
-            std::io::ErrorKind::NotFound => Error::new(ErrorKind::NotFound, "not found"),
-            std::io::ErrorKind::AlreadyExists => Error::new(ErrorKind::AlreadyExists, "already exists"),
-            std::io::ErrorKind::WriteZero => Error::new(ErrorKind::WriteZero, "write zero"),
-            _ => Error::new(ErrorKind::Other, "unknown"),
+            std::io::ErrorKind::Other => Self::new(ErrorKind::Other, "other"),
+            std::io::ErrorKind::InvalidInput => Self::new(ErrorKind::InvalidInput, "invalid input"),
+            std::io::ErrorKind::UnexpectedEof => Self::new(ErrorKind::UnexpectedEof, "unexpected eof"),
+            std::io::ErrorKind::NotFound => Self::new(ErrorKind::NotFound, "not found"),
+            std::io::ErrorKind::AlreadyExists => Self::new(ErrorKind::AlreadyExists, "already exists"),
+            std::io::ErrorKind::WriteZero => Self::new(ErrorKind::WriteZero, "write zero"),
+            _ => Self::new(ErrorKind::Other, "unknown"),
         }
     }
 }
@@ -103,18 +103,18 @@ impl From<std::io::Error> for Error {
 impl From<Error> for std::io::Error {
     fn from(error: Error) -> Self {
         match error.kind() {
-            ErrorKind::Other => std::io::Error::new(std::io::ErrorKind::Other, "other"),
-            ErrorKind::InvalidInput => std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid input"),
-            ErrorKind::UnexpectedEof => std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof"),
-            ErrorKind::NotFound => std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
-            ErrorKind::AlreadyExists => std::io::Error::new(std::io::ErrorKind::AlreadyExists, "already exists"),
-            ErrorKind::WriteZero => std::io::Error::new(std::io::ErrorKind::WriteZero, "write zero"),
+            ErrorKind::Other => Self::new(std::io::ErrorKind::Other, "other"),
+            ErrorKind::InvalidInput => Self::new(std::io::ErrorKind::InvalidInput, "invalid input"),
+            ErrorKind::UnexpectedEof => Self::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof"),
+            ErrorKind::NotFound => Self::new(std::io::ErrorKind::NotFound, "not found"),
+            ErrorKind::AlreadyExists => Self::new(std::io::ErrorKind::AlreadyExists, "already exists"),
+            ErrorKind::WriteZero => Self::new(std::io::ErrorKind::WriteZero, "write zero"),
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl Into<std::io::SeekFrom> for SeekFrom {
+impl Into<std::io::SeekFrom> for SeekFrom { // FIXME: why implementing Into instead of From?
     fn into(self) -> std::io::SeekFrom {
         match self {
             SeekFrom::Start(n) => std::io::SeekFrom::Start(n),
@@ -143,7 +143,7 @@ pub struct StdIoWrapper<T> {
 #[cfg(feature = "std")]
 impl<T> StdIoWrapper<T> {
     pub fn new(inner: T) -> Self {
-        StdIoWrapper { inner }
+        Self { inner }
     }
 }
 
@@ -183,7 +183,7 @@ impl<T: std::io::Seek> Seek for StdIoWrapper<T> {
 #[cfg(feature = "std")]
 impl<T> From<T> for StdIoWrapper<T> {
     fn from(from: T) -> Self {
-        StdIoWrapper::new(from)
+        Self::new(from)
     }
 }
 
@@ -272,19 +272,19 @@ pub(crate) trait ReadLeExt {
 
 impl<T: Read> ReadLeExt for T {
     fn read_u8(&mut self) -> Result<u8> {
-        let mut buf = [0u8; 1];
+        let mut buf = [0_u8; 1];
         self.read_exact(&mut buf)?;
         Ok(buf[0])
     }
 
     fn read_u16_le(&mut self) -> Result<u16> {
-        let mut buf = [0u8; 2];
+        let mut buf = [0_u8; 2];
         self.read_exact(&mut buf)?;
         Ok(u16::from_le_bytes(buf))
     }
 
     fn read_u32_le(&mut self) -> Result<u32> {
-        let mut buf = [0u8; 4];
+        let mut buf = [0_u8; 4];
         self.read_exact(&mut buf)?;
         Ok(u32::from_le_bytes(buf))
     }

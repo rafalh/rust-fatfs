@@ -269,17 +269,16 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
                     }
                 },
             };
-            match next_cluster {
-                Some(n) => n,
-                None => {
-                    // end of chain reached - allocate new cluster
-                    let new_cluster = self.fs.alloc_cluster(self.current_cluster, self.is_dir())?;
-                    trace!("allocated cluser {}", new_cluster);
-                    if self.first_cluster.is_none() {
-                        self.set_first_cluster(new_cluster);
-                    }
-                    new_cluster
-                },
+            if let Some(n) = next_cluster {
+                n
+            } else {
+                // end of chain reached - allocate new cluster
+                let new_cluster = self.fs.alloc_cluster(self.current_cluster, self.is_dir())?;
+                trace!("allocated cluser {}", new_cluster);
+                if self.first_cluster.is_none() {
+                    self.set_first_cluster(new_cluster);
+                }
+                new_cluster
             }
         } else {
             // self.current_cluster should be a valid cluster
@@ -357,29 +356,23 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
             None
         } else if cluster_count == old_cluster_count {
             self.current_cluster
-        } else {
-            match self.first_cluster {
-                Some(n) => {
-                    let mut cluster = n;
-                    let mut iter = self.fs.cluster_iter(n);
-                    for i in 0..cluster_count {
-                        cluster = match iter.next() {
-                            Some(r) => r?,
-                            None => {
-                                // chain ends before new position - seek to end of last cluster
-                                new_pos = self.fs.bytes_from_clusters((i + 1) as u32) as u32;
-                                break;
-                            },
-                        };
-                    }
-                    Some(cluster)
-                },
-                None => {
-                    // empty file - always seek to 0
-                    new_pos = 0;
-                    None
-                },
+        } else if let Some(n) = self.first_cluster {
+            let mut cluster = n;
+            let mut iter = self.fs.cluster_iter(n);
+            for i in 0..cluster_count {
+                cluster = if let Some(r) = iter.next() {
+                    r?
+                } else {
+                    // chain ends before new position - seek to end of last cluster
+                    new_pos = self.fs.bytes_from_clusters((i + 1) as u32) as u32;
+                    break;
+                };
             }
+            Some(cluster)
+        } else {
+            // empty file - always seek to 0
+            new_pos = 0;
+            None
         };
         self.offset = new_pos;
         self.current_cluster = new_cluster;

@@ -70,8 +70,8 @@ pub(crate) struct ShortName {
 impl ShortName {
     pub(crate) fn new(raw_name: &[u8; SFN_SIZE]) -> Self {
         // get name components length by looking for space character
-        let name_len = raw_name[0..8].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
-        let ext_len = raw_name[8..11].iter().rposition(|x| *x != SFN_PADDING).map(|p| p + 1).unwrap_or(0);
+        let name_len = raw_name[0..8].iter().rposition(|x| *x != SFN_PADDING).map_or(0, |p| p + 1);
+        let ext_len = raw_name[8..11].iter().rposition(|x| *x != SFN_PADDING).map_or(0, |p| p + 1);
         let mut name = [SFN_PADDING; 12];
         name[..name_len].copy_from_slice(&raw_name[..name_len]);
         let total_len = if ext_len > 0 {
@@ -88,7 +88,7 @@ impl ShortName {
             name[0] = 0xE5;
         }
         // Short names in FAT filesystem are encoded in OEM code-page
-        ShortName { name, len: total_len as u8 }
+        Self { name, len: total_len as u8 }
     }
 
     fn as_bytes(&self) -> &[u8] {
@@ -132,7 +132,7 @@ pub(crate) struct DirFileEntryData {
 
 impl DirFileEntryData {
     pub(crate) fn new(name: [u8; SFN_SIZE], attrs: FileAttributes) -> Self {
-        DirFileEntryData { name, attrs, ..Default::default() }
+        Self { name, attrs, ..Self::default() }
     }
 
     pub(crate) fn renamed(&self, new_name: [u8; SFN_SIZE]) -> Self {
@@ -283,7 +283,7 @@ pub(crate) struct DirLfnEntryData {
 
 impl DirLfnEntryData {
     pub(crate) fn new(order: u8, checksum: u8) -> Self {
-        DirLfnEntryData { order, checksum, attrs: FileAttributes::LFN, ..Default::default() }
+        Self { order, checksum, attrs: FileAttributes::LFN, ..Self::default() }
     }
 
     pub(crate) fn copy_name_from_slice(&mut self, lfn_part: &[u16; LFN_PART_LEN]) {
@@ -301,17 +301,17 @@ impl DirLfnEntryData {
 
     pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_u8(self.order)?;
-        for ch in self.name_0.iter() {
+        for ch in &self.name_0 {
             wrt.write_u16_le(*ch)?;
         }
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.entry_type)?;
         wrt.write_u8(self.checksum)?;
-        for ch in self.name_1.iter() {
+        for ch in &self.name_1 {
             wrt.write_u16_le(*ch)?;
         }
         wrt.write_u16_le(self.reserved_0)?;
-        for ch in self.name_2.iter() {
+        for ch in &self.name_2 {
             wrt.write_u16_le(*ch)?;
         }
         Ok(())
@@ -358,7 +358,7 @@ impl DirEntryData {
             Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
                 // entries can occupy all clusters of directory so there is no zero entry at the end
                 // handle it here by returning non-existing empty entry
-                return Ok(DirEntryData::File(DirFileEntryData { ..Default::default() }));
+                return Ok(DirEntryData::File(DirFileEntryData::default()));
             },
             Err(err) => return Err(err),
             _ => {},
@@ -366,20 +366,20 @@ impl DirEntryData {
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             // read long name entry
-            let mut data = DirLfnEntryData { attrs, ..Default::default() };
+            let mut data = DirLfnEntryData { attrs, ..DirLfnEntryData::default() };
             // use cursor to divide name into order and LFN name_0
             let mut cur = Cursor::new(&name);
             data.order = cur.read_u8()?;
-            for x in data.name_0.iter_mut() {
+            for x in &mut data.name_0 {
                 *x = cur.read_u16_le()?;
             }
             data.entry_type = rdr.read_u8()?;
             data.checksum = rdr.read_u8()?;
-            for x in data.name_1.iter_mut() {
+            for x in &mut data.name_1 {
                 *x = rdr.read_u16_le()?;
             }
             data.reserved_0 = rdr.read_u16_le()?;
-            for x in data.name_2.iter_mut() {
+            for x in &mut data.name_2 {
                 *x = rdr.read_u16_le()?;
             }
             Ok(DirEntryData::Lfn(data))
@@ -434,7 +434,7 @@ pub(crate) struct DirEntryEditor {
 
 impl DirEntryEditor {
     fn new(data: DirFileEntryData, pos: u64) -> Self {
-        DirEntryEditor { data, pos, dirty: false }
+        Self { data, pos, dirty: false }
     }
 
     pub(crate) fn inner(&self) -> &DirFileEntryData {
@@ -637,7 +637,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
             }
             // Convert both names to uppercase character iterators to achieve case insensitive comparsion
             let self_name_uppercase_iter = char::decode_utf16(lfn.iter().cloned())
-                .map(|r| r.unwrap())
+                .map(Result::unwrap)
                 .flat_map(char_to_uppercase);
             let other_name_uppercase_iter = name.chars().flat_map(char_to_uppercase);
             // Compare two iterators
@@ -721,7 +721,7 @@ mod tests {
         let oem_cp_conv = LossyOemCpConverter::new();
         let raw_short_name: &[u8; SFN_SIZE] = b"FOO     RS ";
         let mut raw_entry =
-            DirFileEntryData { name: *raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..Default::default() };
+            DirFileEntryData { name: *raw_short_name, reserved_0: (1 << 3) | (1 << 4), ..DirFileEntryData::default() };
         assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "foo.rs");
         raw_entry.reserved_0 = 1 << 3;
         assert_eq!(raw_entry.lowercase_name().to_string(&oem_cp_conv), "foo.RS");

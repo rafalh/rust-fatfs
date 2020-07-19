@@ -227,12 +227,11 @@ impl FatTrait for Fat12 {
             if cluster == end_cluster {
                 return Err(io::Error::new(io::ErrorKind::Other, "No space left on device"));
             }
-            packed_val = match cluster & 1 {
-                0 => fat.read_u16_le()?,
-                _ => {
-                    let next_byte = fat.read_u8()?;
-                    (packed_val >> 8) | (u16::from(next_byte) << 8)
-                },
+            packed_val = if cluster & 1 == 0 {
+                fat.read_u16_le()?
+            } else {
+                let next_byte = fat.read_u8()?;
+                (packed_val >> 8) | (u16::from(next_byte) << 8)
             };
         }
     }
@@ -241,7 +240,7 @@ impl FatTrait for Fat12 {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start(u64::from(cluster * 3 / 2)))?;
-        let mut prev_packed_val = 0u16;
+        let mut prev_packed_val = 0_u16;
         while cluster < end_cluster {
             let res = match cluster & 1 {
                 0 => fat.read_u16_le(),
@@ -422,20 +421,19 @@ pub(crate) struct ClusterIterator<B, S = B> {
 
 impl<B: BorrowMut<S>, S: ReadWriteSeek> ClusterIterator<B, S> {
     pub(crate) fn new(fat: B, fat_type: FatType, cluster: u32) -> Self {
-        ClusterIterator { fat, fat_type, cluster: Some(cluster), err: false, phantom: PhantomData }
+        Self { fat, fat_type, cluster: Some(cluster), err: false, phantom: PhantomData }
     }
 
     pub(crate) fn truncate(&mut self) -> io::Result<u32> {
-        match self.cluster {
-            Some(n) => {
-                // Move to the next cluster
-                self.next();
-                // Mark previous cluster as end of chain
-                write_fat(self.fat.borrow_mut(), self.fat_type, n, FatValue::EndOfChain)?;
-                // Free rest of chain
-                self.free()
-            },
-            None => Ok(0),
+        if let Some(n) = self.cluster {
+            // Move to the next cluster
+            self.next();
+            // Mark previous cluster as end of chain
+            write_fat(self.fat.borrow_mut(), self.fat_type, n, FatValue::EndOfChain)?;
+            // Free rest of chain
+            self.free()
+        } else {
+            Ok(0)
         }
     }
 
@@ -506,7 +504,7 @@ mod tests {
         // test reading from iterator
         {
             let iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
-            assert_eq!(iter.map(|r| r.unwrap()).collect::<Vec<_>>(), vec![0xA, 0x14, 0x15, 0x16, 0x19, 0x1A]);
+            assert_eq!(iter.map(Result::unwrap).collect::<Vec<_>>(), vec![0xA, 0x14, 0x15, 0x16, 0x19, 0x1A]);
         }
         // test truncating a chain
         {

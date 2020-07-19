@@ -19,7 +19,7 @@ pub struct Date {
 impl Date {
     pub(crate) fn decode(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        Date { year, month, day }
+        Self { year, month, day }
     }
 
     pub(crate) fn encode(self) -> u16 {
@@ -48,7 +48,7 @@ impl Time {
         let min = (dos_time >> 5) & 0x3F;
         let sec = (dos_time & 0x1F) * 2 + u16::from(dos_time_hi_res / 100);
         let millis = u16::from(dos_time_hi_res % 100) * 10;
-        Time { hour, min, sec, millis }
+        Self { hour, min, sec, millis }
     }
 
     pub(crate) fn encode(self) -> (u16, u8) {
@@ -71,7 +71,7 @@ pub struct DateTime {
 
 impl DateTime {
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
-        DateTime { date: Date::decode(dos_date), time: Time::decode(dos_time, dos_time_hi_res) }
+        Self { date: Date::decode(dos_date), time: Time::decode(dos_time, dos_time_hi_res) }
     }
 }
 
@@ -97,14 +97,14 @@ impl From<DateTime> for chrono::DateTime<Local> {
 #[cfg(feature = "chrono")]
 impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
-        Date { year: date.year() as u16, month: date.month() as u16, day: date.day() as u16 }
+        Self { year: date.year() as u16, month: date.month() as u16, day: date.day() as u16 }
     }
 }
 
 #[cfg(feature = "chrono")]
 impl From<chrono::DateTime<Local>> for DateTime {
     fn from(date_time: chrono::DateTime<Local>) -> Self {
-        DateTime {
+        Self {
             date: Date::from(date_time.date()),
             time: Time {
                 hour: date_time.hour() as u16,

@@ -44,8 +44,8 @@ pub(crate) struct BiosParameterBlock {
 }
 
 impl BiosParameterBlock {
-    fn deserialize<R: Read>(rdr: &mut R) -> io::Result<BiosParameterBlock> {
-        let mut bpb: BiosParameterBlock = Default::default();
+    fn deserialize<R: Read>(rdr: &mut R) -> io::Result<Self> {
+        let mut bpb = Self::default();
         bpb.bytes_per_sector = rdr.read_u16_le()?;
         bpb.sectors_per_cluster = rdr.read_u8()?;
         bpb.reserved_sectors = rdr.read_u16_le()?;
@@ -356,8 +356,8 @@ pub(crate) struct BootSector {
 }
 
 impl BootSector {
-    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> io::Result<BootSector> {
-        let mut boot: BootSector = Default::default();
+    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> io::Result<Self> {
+        let mut boot = Self::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
         boot.bpb = BiosParameterBlock::deserialize(rdr)?;
@@ -398,11 +398,11 @@ impl BootSector {
 }
 
 impl Default for BootSector {
-    fn default() -> BootSector {
-        BootSector {
+    fn default() -> Self {
+        Self {
             bootjmp: Default::default(),
             oem_name: Default::default(),
-            bpb: Default::default(),
+            bpb: BiosParameterBlock::default(),
             boot_code: [0; 448],
             boot_sig: Default::default(),
         }
@@ -421,6 +421,8 @@ pub(crate) fn estimate_fat_type(total_bytes: u64) -> FatType {
 }
 
 fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type: Option<FatType>) -> u32 {
+    const MAX_CLUSTER_SIZE: u32 = 32 * KB as u32;
+
     let fat_type = fat_type.unwrap_or_else(|| estimate_fat_type(total_bytes));
     let bytes_per_cluster = match fat_type {
         FatType::Fat12 => (total_bytes.next_power_of_two() / MB * 512) as u32,
@@ -443,7 +445,6 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
             }
         },
     };
-    const MAX_CLUSTER_SIZE: u32 = 32 * KB as u32;
     debug_assert!(bytes_per_cluster.is_power_of_two());
     cmp::min(cmp::max(bytes_per_cluster, u32::from(bytes_per_sector)), MAX_CLUSTER_SIZE)
 }
@@ -592,7 +593,7 @@ fn format_bpb(
     assert!(sectors_per_cluster <= u32::from(u8::MAX));
     let sectors_per_cluster = sectors_per_cluster as u8;
 
-    let fats = options.fats.unwrap_or(2u8);
+    let fats = options.fats.unwrap_or(2_u8);
     let root_dir_entries = options.max_root_dir_entries.unwrap_or(512);
     let (fat_type, reserved_sectors, sectors_per_fat) =
         determine_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, root_dir_entries, fats)?;
@@ -601,10 +602,10 @@ fn format_bpb(
     let drive_num = options.drive_num.unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
     // reserved_0 is always zero
-    let reserved_0 = [0u8; 12];
+    let reserved_0 = [0_u8; 12];
 
     // setup volume label
-    let mut volume_label = [0u8; 11];
+    let mut volume_label = [0_u8; 11];
     if let Some(volume_label_from_opts) = options.volume_label {
         volume_label.copy_from_slice(&volume_label_from_opts);
     } else {
@@ -612,7 +613,7 @@ fn format_bpb(
     }
 
     // setup fs_type_label field
-    let mut fs_type_label = [0u8; 8];
+    let mut fs_type_label = [0_u8; 8];
     let fs_type_label_str = match fat_type {
         FatType::Fat12 => b"FAT12   ",
         FatType::Fat16 => b"FAT16   ",
@@ -674,7 +675,7 @@ pub(crate) fn format_boot_sector(
     total_sectors: u32,
     bytes_per_sector: u16,
 ) -> io::Result<(BootSector, FatType)> {
-    let mut boot: BootSector = Default::default();
+    let mut boot = BootSector::default();
     let (bpb, fat_type) = format_bpb(options, total_sectors, bytes_per_sector)?;
     boot.bpb = bpb;
     boot.oem_name.copy_from_slice(b"MSWIN4.1");
@@ -696,11 +697,11 @@ pub(crate) fn format_boot_sector(
     // fix offsets in bootjmp and boot code for non-FAT32 filesystems (bootcode is on a different offset)
     if fat_type != FatType::Fat32 {
         // offset of boot code
-        let boot_code_offset: u8 = 0x36 + 8;
-        boot.bootjmp[1] = boot_code_offset - 2;
+        const BOOT_CODE_OFFSET: u8 = 0x36 + 8;
         // offset of message
         const MESSAGE_OFFSET: u16 = 29;
-        let message_offset_in_sector = u16::from(boot_code_offset) + MESSAGE_OFFSET + 0x7c00;
+        boot.bootjmp[1] = BOOT_CODE_OFFSET - 2;
+        let message_offset_in_sector = u16::from(BOOT_CODE_OFFSET) + MESSAGE_OFFSET + 0x7c00;
         boot.boot_code[3] = (message_offset_in_sector & 0xff) as u8;
         boot.boot_code[4] = (message_offset_in_sector >> 8) as u8;
     }
@@ -868,7 +869,7 @@ mod tests {
     fn test_format_boot_sector() {
         init();
 
-        let bytes_per_sector = 512u16;
+        let bytes_per_sector = 512_u16;
         // test all partition sizes from 1MB to 2TB (u32::MAX sectors is 2TB - 1 for 512 byte sectors)
         let mut total_sectors_vec = Vec::new();
         let mut size = MB;
