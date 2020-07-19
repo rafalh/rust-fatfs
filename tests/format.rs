@@ -71,7 +71,7 @@ fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSys
 
 #[test]
 fn test_format_1mb() {
-    let total_bytes = 1 * MB;
+    let total_bytes = MB;
     let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat12);
@@ -94,7 +94,7 @@ fn test_format_50mb() {
 }
 
 #[test]
-fn test_format_512mb_512sec() {
+fn test_format_2gb_512sec() {
     let total_bytes = 2 * 1024 * MB;
     let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
@@ -102,8 +102,8 @@ fn test_format_512mb_512sec() {
 }
 
 #[test]
-fn test_format_512mb_4096sec() {
-    let total_bytes = 1 * 1024 * MB;
+fn test_format_1gb_4096sec() {
+    let total_bytes = 1024 * MB;
     let opts = fatfs::FormatVolumeOptions::new().bytes_per_sector(4096);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);

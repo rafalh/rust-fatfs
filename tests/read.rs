@@ -185,7 +185,7 @@ fn test_get_file_by_path_fat32() {
 }
 
 fn test_volume_metadata(fs: FileSystem, fat_type: FatType) {
-    assert_eq!(fs.volume_id(), 0x12345678);
+    assert_eq!(fs.volume_id(), 0x1234_5678);
     assert_eq!(fs.volume_label(), "Test!");
     assert_eq!(&fs.read_volume_label_from_root_dir().unwrap().unwrap(), "Test!");
     assert_eq!(fs.fat_type(), fat_type);
@@ -214,17 +214,17 @@ fn test_status_flags(fs: FileSystem) {
 
 #[test]
 fn test_status_flags_fat12() {
-    call_with_fs(|fs| test_status_flags(fs), FAT12_IMG)
+    call_with_fs(test_status_flags, FAT12_IMG)
 }
 
 #[test]
 fn test_status_flags_fat16() {
-    call_with_fs(|fs| test_status_flags(fs), FAT16_IMG)
+    call_with_fs(test_status_flags, FAT16_IMG)
 }
 
 #[test]
 fn test_status_flags_fat32() {
-    call_with_fs(|fs| test_status_flags(fs), FAT32_IMG)
+    call_with_fs(test_status_flags, FAT32_IMG)
 }
 
 #[test]

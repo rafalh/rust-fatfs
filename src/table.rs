@@ -474,6 +474,7 @@ impl<B: BorrowMut<S>, S: ReadWriteSeek> Iterator for ClusterIterator<B, S> {
 mod tests {
     use super::*;
 
+    #[allow(clippy::cognitive_complexity)]
     fn test_fat<T: ReadWriteSeek>(fat_type: FatType, mut cur: T) {
         // based on cluster maps from Wikipedia:
         // https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#Cluster_map
