@@ -11,6 +11,9 @@ const BITS_PER_BYTE: u32 = 8;
 const KB: u64 = 1024;
 const MB: u64 = KB * 1024;
 const GB: u64 = MB * 1024;
+const KB_64: u64 = 1024;
+const MB_64: u64 = KB_64 * 1024;
+const GB_64: u64 = MB_64 * 1024;
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct BiosParameterBlock {
@@ -191,7 +194,7 @@ impl BiosParameterBlock {
             return Err(Error::new(ErrorKind::Other, "Empty root directory region defined in FAT12/FAT16 BPB"));
         }
 
-        if (u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32) % u32::from(self.bytes_per_sector) != 0 {
+        if (u32::from(self.root_entries) * DIR_ENTRY_SIZE) % u32::from(self.bytes_per_sector) != 0 {
             warn!("Root entries should fill sectors fully");
         }
 
@@ -411,9 +414,9 @@ impl Default for BootSector {
 
 pub(crate) fn estimate_fat_type(total_bytes: u64) -> FatType {
     // Used only to select cluster size if FAT type has not been overriden in options
-    if total_bytes < 4 * MB {
+    if total_bytes < 4 * MB_64 {
         FatType::Fat12
-    } else if total_bytes < 512 * MB {
+    } else if total_bytes < 512 * MB_64 {
         FatType::Fat16
     } else {
         FatType::Fat32
@@ -819,8 +822,8 @@ mod tests {
     ) {
         let mut bytes_per_cluster = u32::from(bytes_per_sector);
         while bytes_per_cluster <= 64 * KB as u32 {
-            let mut size = MB;
-            while size < 2048 * GB {
+            let mut size: u64 = MB_64;
+            while size < 2048 * GB_64 {
                 test_determine_sectors_per_fat_single(
                     size,
                     bytes_per_sector,
@@ -832,7 +835,7 @@ mod tests {
                 );
                 size = size + size / 7;
             }
-            size = 2048 * GB - 1;
+            size = 2048 * GB_64 - 1;
             test_determine_sectors_per_fat_single(
                 size,
                 bytes_per_sector,
@@ -872,8 +875,8 @@ mod tests {
         let bytes_per_sector = 512_u16;
         // test all partition sizes from 1MB to 2TB (u32::MAX sectors is 2TB - 1 for 512 byte sectors)
         let mut total_sectors_vec = Vec::new();
-        let mut size = MB;
-        while size < 2048 * GB {
+        let mut size = MB_64;
+        while size < 2048 * GB_64 {
             total_sectors_vec.push((size / u64::from(bytes_per_sector)) as u32);
             size = size + size / 7;
         }

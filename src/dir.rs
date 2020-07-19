@@ -300,7 +300,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing dir entry {:?}", data);
             data.set_deleted();
-            stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
+            stream.seek(SeekFrom::Current(-i64::from(DIR_ENTRY_SIZE)))?;
             data.serialize(&mut stream)?;
         }
         Ok(())
@@ -355,7 +355,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing LFN entry {:?}", data);
             data.set_deleted();
-            stream.seek(SeekFrom::Current(-(DIR_ENTRY_SIZE as i64)))?;
+            stream.seek(SeekFrom::Current(-i64::from(DIR_ENTRY_SIZE)))?;
             data.serialize(&mut stream)?;
         }
         // save new directory entry
@@ -364,11 +364,11 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok(())
     }
 
-    fn find_free_entries(&self, num_entries: usize) -> io::Result<DirRawStream<'a, IO, TP, OCC>> {
+    fn find_free_entries(&self, num_entries: u32) -> io::Result<DirRawStream<'a, IO, TP, OCC>> {
         let mut stream = self.stream.clone();
-        let mut first_free = 0;
-        let mut num_free = 0;
-        let mut i = 0;
+        let mut first_free: u32 = 0;
+        let mut num_free: u32 = 0;
+        let mut i: u32 = 0;
         loop {
             let raw_entry = DirEntryData::deserialize(&mut stream)?;
             if raw_entry.is_end() {
@@ -376,7 +376,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 if num_free == 0 {
                     first_free = i;
                 }
-                stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
+                let pos = u64::from(first_free * DIR_ENTRY_SIZE);
+                stream.seek(io::SeekFrom::Start(pos))?;
                 return Ok(stream);
             } else if raw_entry.is_deleted() {
                 // free entry - calculate number of free entries in a row
@@ -386,7 +387,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 num_free += 1;
                 if num_free == num_entries {
                     // enough space for new file
-                    stream.seek(io::SeekFrom::Start(first_free as u64 * DIR_ENTRY_SIZE))?;
+                    let pos = u64::from(first_free * DIR_ENTRY_SIZE);
+                    stream.seek(io::SeekFrom::Start(pos))?;
                     return Ok(stream);
                 }
             } else {
@@ -431,7 +433,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // create LFN entries generator
         let lfn_iter = LfnEntriesGenerator::new(lfn_utf16.as_ucs2_units(), lfn_chsum);
         // find space for new entries (multiple LFN entries and 1 SFN entry)
-        let num_entries = lfn_iter.len() + 1;
+        let num_entries = lfn_iter.len() as u32 + 1;
         let mut stream = self.find_free_entries(num_entries)?;
         let start_pos = stream.seek(io::SeekFrom::Current(0))?;
         // write LFN entries before SFN entry
@@ -452,7 +454,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // write short name entry
         raw_entry.serialize(&mut stream)?;
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
-        let abs_pos = stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
+        let abs_pos = stream.abs_pos().map(|p| p - u64::from(DIR_ENTRY_SIZE));
         // return new logical entry descriptor
         let short_name = ShortName::new(raw_entry.name());
         Ok(DirEntry {
@@ -508,7 +510,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
         let mut begin_offset = offset;
         loop {
             let raw_entry = DirEntryData::deserialize(&mut self.stream)?;
-            offset += DIR_ENTRY_SIZE;
+            offset += u64::from(DIR_ENTRY_SIZE);
             // Check if this is end of dir
             if raw_entry.is_end() {
                 return Ok(None);
@@ -523,7 +525,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
             match raw_entry {
                 DirEntryData::File(data) => {
                     // Get entry position on volume
-                    let abs_pos = self.stream.abs_pos().map(|p| p - DIR_ENTRY_SIZE);
+                    let abs_pos = self.stream.abs_pos().map(|p| p - u64::from(DIR_ENTRY_SIZE));
                     // Check if LFN checksum is valid
                     lfn_builder.validate_chksum(data.name());
                     // Return directory entry

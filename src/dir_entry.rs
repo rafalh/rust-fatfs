@@ -31,7 +31,7 @@ bitflags! {
 }
 
 // Size of single directory entry in bytes
-pub(crate) const DIR_ENTRY_SIZE: u64 = 32;
+pub(crate) const DIR_ENTRY_SIZE: u32 = 32;
 
 // Directory entry flags available in first byte of the short name
 pub(crate) const DIR_ENTRY_DELETED_FLAG: u8 = 0xE5;
