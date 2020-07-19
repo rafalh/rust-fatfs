@@ -19,6 +19,7 @@ New features:
   public structs and require owned time provider and oem CP converter instead of a reference with a static lifetime in
   `FsOptions` (BREAKING CHANGE). This change allows `FileSystem` usage in multi-threaded environment (e.g. wrapped in a
   `Mutex`).
+* Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.36.0.
 * Build the crate using 2018 edition.
 

@@ -10,10 +10,7 @@ use crate::core::marker::PhantomData;
 use crate::core::u32;
 use crate::io;
 use crate::io::prelude::*;
-use crate::io::{Error, ErrorKind, SeekFrom};
-
-use byteorder::LittleEndian;
-use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
+use crate::io::{Error, ErrorKind, SeekFrom, ReadLeExt, WriteLeExt};
 
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use crate::dir::{Dir, DirRawStream};
@@ -136,22 +133,22 @@ impl FsInfoSector {
     const TRAIL_SIG: u32 = 0xAA550000;
 
     fn deserialize<R: Read>(rdr: &mut R) -> io::Result<FsInfoSector> {
-        let lead_sig = rdr.read_u32::<LittleEndian>()?;
+        let lead_sig = rdr.read_u32_le()?;
         if lead_sig != Self::LEAD_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid lead_sig in FsInfo sector"));
         }
         let mut reserved = [0u8; 480];
         rdr.read_exact(&mut reserved)?;
-        let struc_sig = rdr.read_u32::<LittleEndian>()?;
+        let struc_sig = rdr.read_u32_le()?;
         if struc_sig != Self::STRUC_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid struc_sig in FsInfo sector"));
         }
-        let free_cluster_count = match rdr.read_u32::<LittleEndian>()? {
+        let free_cluster_count = match rdr.read_u32_le()? {
             0xFFFFFFFF => None,
             // Note: value is validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
-        let next_free_cluster = match rdr.read_u32::<LittleEndian>()? {
+        let next_free_cluster = match rdr.read_u32_le()? {
             0xFFFFFFFF => None,
             0 | 1 => {
                 warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
@@ -162,7 +159,7 @@ impl FsInfoSector {
         };
         let mut reserved2 = [0u8; 12];
         rdr.read_exact(&mut reserved2)?;
-        let trail_sig = rdr.read_u32::<LittleEndian>()?;
+        let trail_sig = rdr.read_u32_le()?;
         if trail_sig != Self::TRAIL_SIG {
             return Err(Error::new(ErrorKind::Other, "invalid trail_sig in FsInfo sector"));
         }
@@ -170,15 +167,15 @@ impl FsInfoSector {
     }
 
     fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
-        wrt.write_u32::<LittleEndian>(Self::LEAD_SIG)?;
+        wrt.write_u32_le(Self::LEAD_SIG)?;
         let reserved = [0u8; 480];
         wrt.write_all(&reserved)?;
-        wrt.write_u32::<LittleEndian>(Self::STRUC_SIG)?;
-        wrt.write_u32::<LittleEndian>(self.free_cluster_count.unwrap_or(0xFFFFFFFF))?;
-        wrt.write_u32::<LittleEndian>(self.next_free_cluster.unwrap_or(0xFFFFFFFF))?;
+        wrt.write_u32_le(Self::STRUC_SIG)?;
+        wrt.write_u32_le(self.free_cluster_count.unwrap_or(0xFFFFFFFF))?;
+        wrt.write_u32_le(self.next_free_cluster.unwrap_or(0xFFFFFFFF))?;
         let reserved2 = [0u8; 12];
         wrt.write_all(&reserved2)?;
-        wrt.write_u32::<LittleEndian>(Self::TRAIL_SIG)?;
+        wrt.write_u32_le(Self::TRAIL_SIG)?;
         Ok(())
     }
 

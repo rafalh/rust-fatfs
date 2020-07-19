@@ -79,10 +79,6 @@ mod table;
 mod time;
 mod io;
 
-mod byteorder_core_io;
-
-use crate::byteorder_core_io as byteorder_ext;
-
 #[cfg(feature = "std")]
 use std as core;
 

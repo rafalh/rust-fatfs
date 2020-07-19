@@ -1,9 +1,8 @@
-use byteorder::LittleEndian;
-use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
 use crate::core::borrow::BorrowMut;
 use crate::core::cmp;
 use crate::core::marker::PhantomData;
 use crate::io;
+use crate::io::{ReadLeExt, WriteLeExt};
 
 use crate::fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
 
@@ -140,15 +139,15 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(
     match fat_type {
         FatType::Fat12 => {
             fat.write_u8(media)?;
-            fat.write_u16::<LittleEndian>(0xFFFF)?;
+            fat.write_u16_le(0xFFFF)?;
         },
         FatType::Fat16 => {
-            fat.write_u16::<LittleEndian>(media as u16 | 0xFF00)?;
-            fat.write_u16::<LittleEndian>(0xFFFF)?;
+            fat.write_u16_le(media as u16 | 0xFF00)?;
+            fat.write_u16_le(0xFFFF)?;
         },
         FatType::Fat32 => {
-            fat.write_u32::<LittleEndian>(media as u32 | 0xFFFFF00)?;
-            fat.write_u32::<LittleEndian>(0xFFFFFFFF)?;
+            fat.write_u32_le(media as u32 | 0xFFFFF00)?;
+            fat.write_u32_le(0xFFFFFFFF)?;
         },
     };
     // mark entries at the end of FAT as used (after FAT but before sector end)
@@ -172,7 +171,7 @@ impl FatTrait for Fat12 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
-        let packed_val = fat.read_u16::<LittleEndian>()?;
+        let packed_val = fat.read_u16_le()?;
         Ok(match cluster & 1 {
             0 => packed_val & 0x0FFF,
             _ => packed_val >> 4,
@@ -202,13 +201,13 @@ impl FatTrait for Fat12 {
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_val: u32) -> io::Result<()> {
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
-        let old_packed = fat.read_u16::<LittleEndian>()?;
+        let old_packed = fat.read_u16_le()?;
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
         let new_packed = match cluster & 1 {
             0 => (old_packed & 0xF000) | raw_val as u16,
             _ => (old_packed & 0x000F) | ((raw_val as u16) << 4),
         };
-        fat.write_u16::<LittleEndian>(new_packed)?;
+        fat.write_u16_le(new_packed)?;
         Ok(())
     }
 
@@ -216,7 +215,7 @@ impl FatTrait for Fat12 {
         let mut cluster = start_cluster;
         let fat_offset = cluster + (cluster / 2);
         fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
-        let mut packed_val = fat.read_u16::<LittleEndian>()?;
+        let mut packed_val = fat.read_u16_le()?;
         loop {
             let val = match cluster & 1 {
                 0 => packed_val & 0x0FFF,
@@ -230,7 +229,7 @@ impl FatTrait for Fat12 {
                 return Err(io::Error::new(io::ErrorKind::Other, "No space left on device"));
             }
             packed_val = match cluster & 1 {
-                0 => fat.read_u16::<LittleEndian>()?,
+                0 => fat.read_u16_le()?,
                 _ => {
                     let next_byte = fat.read_u8()? as u16;
                     (packed_val >> 8) | (next_byte << 8)
@@ -246,7 +245,7 @@ impl FatTrait for Fat12 {
         let mut prev_packed_val = 0u16;
         while cluster < end_cluster {
             let res = match cluster & 1 {
-                0 => fat.read_u16::<LittleEndian>(),
+                0 => fat.read_u16_le(),
                 _ => fat.read_u8().map(|n| n as u16),
             };
             let packed_val = match res {
@@ -270,7 +269,7 @@ impl FatTrait for Fat12 {
 impl FatTrait for Fat16 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
-        Ok(fat.read_u16::<LittleEndian>()? as u32)
+        Ok(fat.read_u16_le()? as u32)
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
@@ -285,7 +284,7 @@ impl FatTrait for Fat16 {
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
-        fat.write_u16::<LittleEndian>(raw_value as u16)?;
+        fat.write_u16_le(raw_value as u16)?;
         Ok(())
     }
 
@@ -303,7 +302,7 @@ impl FatTrait for Fat16 {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
         while cluster < end_cluster {
-            let val = fat.read_u16::<LittleEndian>()?;
+            let val = fat.read_u16_le()?;
             if val == 0 {
                 return Ok(cluster);
             }
@@ -317,7 +316,7 @@ impl FatTrait for Fat16 {
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
         while cluster < end_cluster {
-            let val = fat.read_u16::<LittleEndian>()?;
+            let val = fat.read_u16_le()?;
             if val == 0 {
                 count += 1;
             }
@@ -330,7 +329,7 @@ impl FatTrait for Fat16 {
 impl FatTrait for Fat32 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
-        Ok(fat.read_u32::<LittleEndian>()?)
+        Ok(fat.read_u32_le()?)
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
@@ -358,7 +357,7 @@ impl FatTrait for Fat32 {
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
-        fat.write_u32::<LittleEndian>(raw_value)?;
+        fat.write_u32_le(raw_value)?;
         Ok(())
     }
 
@@ -389,7 +388,7 @@ impl FatTrait for Fat32 {
         let mut cluster = start_cluster;
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
         while cluster < end_cluster {
-            let val = fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF;
+            let val = fat.read_u32_le()? & 0x0FFFFFFF;
             if val == 0 {
                 return Ok(cluster);
             }
@@ -403,7 +402,7 @@ impl FatTrait for Fat32 {
         let mut cluster = RESERVED_FAT_ENTRIES;
         fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
         while cluster < end_cluster {
-            let val = fat.read_u32::<LittleEndian>()? & 0x0FFFFFFF;
+            let val = fat.read_u32_le()? & 0x0FFFFFFF;
             if val == 0 {
                 count += 1;
             }

@@ -7,11 +7,7 @@ use crate::core::iter::FromIterator;
 use crate::core::{fmt, str};
 use crate::io;
 use crate::io::prelude::*;
-use crate::io::Cursor;
-
-use byteorder::LittleEndian;
-use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
-
+use crate::io::{Cursor, ReadLeExt, WriteLeExt};
 use crate::dir::{Dir, DirRawStream};
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
@@ -244,14 +240,14 @@ impl DirFileEntryData {
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
         wrt.write_u8(self.create_time_0)?;
-        wrt.write_u16::<LittleEndian>(self.create_time_1)?;
-        wrt.write_u16::<LittleEndian>(self.create_date)?;
-        wrt.write_u16::<LittleEndian>(self.access_date)?;
-        wrt.write_u16::<LittleEndian>(self.first_cluster_hi)?;
-        wrt.write_u16::<LittleEndian>(self.modify_time)?;
-        wrt.write_u16::<LittleEndian>(self.modify_date)?;
-        wrt.write_u16::<LittleEndian>(self.first_cluster_lo)?;
-        wrt.write_u32::<LittleEndian>(self.size)?;
+        wrt.write_u16_le(self.create_time_1)?;
+        wrt.write_u16_le(self.create_date)?;
+        wrt.write_u16_le(self.access_date)?;
+        wrt.write_u16_le(self.first_cluster_hi)?;
+        wrt.write_u16_le(self.modify_time)?;
+        wrt.write_u16_le(self.modify_date)?;
+        wrt.write_u16_le(self.first_cluster_lo)?;
+        wrt.write_u32_le(self.size)?;
         Ok(())
     }
 
@@ -306,17 +302,17 @@ impl DirLfnEntryData {
     pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
         wrt.write_u8(self.order)?;
         for ch in self.name_0.iter() {
-            wrt.write_u16::<LittleEndian>(*ch)?;
+            wrt.write_u16_le(*ch)?;
         }
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.entry_type)?;
         wrt.write_u8(self.checksum)?;
         for ch in self.name_1.iter() {
-            wrt.write_u16::<LittleEndian>(*ch)?;
+            wrt.write_u16_le(*ch)?;
         }
-        wrt.write_u16::<LittleEndian>(self.reserved_0)?;
+        wrt.write_u16_le(self.reserved_0)?;
         for ch in self.name_2.iter() {
-            wrt.write_u16::<LittleEndian>(*ch)?;
+            wrt.write_u16_le(*ch)?;
         }
         Ok(())
     }
@@ -374,12 +370,18 @@ impl DirEntryData {
             // use cursor to divide name into order and LFN name_0
             let mut cur = Cursor::new(&name);
             data.order = cur.read_u8()?;
-            cur.read_u16_into::<LittleEndian>(&mut data.name_0)?;
+            for x in data.name_0.iter_mut() {
+                *x = cur.read_u16_le()?;
+            }
             data.entry_type = rdr.read_u8()?;
             data.checksum = rdr.read_u8()?;
-            rdr.read_u16_into::<LittleEndian>(&mut data.name_1)?;
-            data.reserved_0 = rdr.read_u16::<LittleEndian>()?;
-            rdr.read_u16_into::<LittleEndian>(&mut data.name_2)?;
+            for x in data.name_1.iter_mut() {
+                *x = rdr.read_u16_le()?;
+            }
+            data.reserved_0 = rdr.read_u16_le()?;
+            for x in data.name_2.iter_mut() {
+                *x = rdr.read_u16_le()?;
+            }
             Ok(DirEntryData::Lfn(data))
         } else {
             // read short name entry
@@ -388,14 +390,14 @@ impl DirEntryData {
                 attrs,
                 reserved_0: rdr.read_u8()?,
                 create_time_0: rdr.read_u8()?,
-                create_time_1: rdr.read_u16::<LittleEndian>()?,
-                create_date: rdr.read_u16::<LittleEndian>()?,
-                access_date: rdr.read_u16::<LittleEndian>()?,
-                first_cluster_hi: rdr.read_u16::<LittleEndian>()?,
-                modify_time: rdr.read_u16::<LittleEndian>()?,
-                modify_date: rdr.read_u16::<LittleEndian>()?,
-                first_cluster_lo: rdr.read_u16::<LittleEndian>()?,
-                size: rdr.read_u32::<LittleEndian>()?,
+                create_time_1: rdr.read_u16_le()?,
+                create_date: rdr.read_u16_le()?,
+                access_date: rdr.read_u16_le()?,
+                first_cluster_hi: rdr.read_u16_le()?,
+                modify_time: rdr.read_u16_le()?,
+                modify_date: rdr.read_u16_le()?,
+                first_cluster_lo: rdr.read_u16_le()?,
+                size: rdr.read_u32_le()?,
             };
             Ok(DirEntryData::File(data))
         }

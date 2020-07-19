@@ -20,7 +20,7 @@ travis-ci = { repository = "rafalh/rust-fatfs" }
 
 [features]
 # Use Rust std library
-std = ["byteorder/std"]
+std = []
 # LFN (Long File Name) support
 lfn = []
 # Use dynamic allocation. When used without std please enable core_io/collections
@@ -31,7 +31,6 @@ unicode = []
 default = ["chrono", "std", "alloc", "lfn", "unicode"]
 
 [dependencies]
-byteorder = { version = "1", default-features = false }
 bitflags = "1.0"
 log = "0.4"
 chrono = { version = "0.4", optional = true }

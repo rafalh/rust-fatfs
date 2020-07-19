@@ -264,6 +264,52 @@ impl<T> Seek for Cursor<T> where T: AsRef<[u8]> {
     }
 }
 
+pub(crate) trait ReadLeExt {
+    fn read_u8(&mut self) -> Result<u8>;
+    fn read_u16_le(&mut self) -> Result<u16>;
+    fn read_u32_le(&mut self) -> Result<u32>;
+}
+
+impl<T: Read> ReadLeExt for T {
+    fn read_u8(&mut self) -> Result<u8> {
+        let mut buf = [0u8; 1];
+        self.read_exact(&mut buf)?;
+        Ok(buf[0])
+    }
+
+    fn read_u16_le(&mut self) -> Result<u16> {
+        let mut buf = [0u8; 2];
+        self.read_exact(&mut buf)?;
+        Ok(u16::from_le_bytes(buf))
+    }
+
+    fn read_u32_le(&mut self) -> Result<u32> {
+        let mut buf = [0u8; 4];
+        self.read_exact(&mut buf)?;
+        Ok(u32::from_le_bytes(buf))
+    }
+}
+
+pub(crate) trait WriteLeExt {
+    fn write_u8(&mut self, n: u8) -> Result<()>;
+    fn write_u16_le(&mut self, n: u16) -> Result<()>;
+    fn write_u32_le(&mut self, n: u32) -> Result<()>;
+}
+
+impl<T: Write> WriteLeExt for T {
+    fn write_u8(&mut self, n: u8) -> Result<()> {
+        self.write_all(&[n])
+    }
+
+    fn write_u16_le(&mut self, n: u16) -> Result<()> {
+        self.write_all(&n.to_le_bytes())
+    }
+
+    fn write_u32_le(&mut self, n: u32) -> Result<()> {
+        self.write_all(&n.to_le_bytes())
+    }
+}
+
 pub mod prelude {
     pub use super::{Read, Write, Seek};
 }

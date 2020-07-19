@@ -3,11 +3,7 @@ use crate::core::u16;
 use crate::core::u8;
 use crate::io;
 use crate::io::prelude::*;
-use crate::io::{Error, ErrorKind};
-
-use byteorder::LittleEndian;
-use crate::byteorder_ext::{ReadBytesExt, WriteBytesExt};
-
+use crate::io::{Error, ErrorKind, ReadLeExt, WriteLeExt};
 use crate::dir_entry::DIR_ENTRY_SIZE;
 use crate::fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use crate::table::RESERVED_FAT_ENTRIES;
@@ -51,38 +47,38 @@ pub(crate) struct BiosParameterBlock {
 impl BiosParameterBlock {
     fn deserialize<R: Read>(rdr: &mut R) -> io::Result<BiosParameterBlock> {
         let mut bpb: BiosParameterBlock = Default::default();
-        bpb.bytes_per_sector = rdr.read_u16::<LittleEndian>()?;
+        bpb.bytes_per_sector = rdr.read_u16_le()?;
         bpb.sectors_per_cluster = rdr.read_u8()?;
-        bpb.reserved_sectors = rdr.read_u16::<LittleEndian>()?;
+        bpb.reserved_sectors = rdr.read_u16_le()?;
         bpb.fats = rdr.read_u8()?;
-        bpb.root_entries = rdr.read_u16::<LittleEndian>()?;
-        bpb.total_sectors_16 = rdr.read_u16::<LittleEndian>()?;
+        bpb.root_entries = rdr.read_u16_le()?;
+        bpb.total_sectors_16 = rdr.read_u16_le()?;
         bpb.media = rdr.read_u8()?;
-        bpb.sectors_per_fat_16 = rdr.read_u16::<LittleEndian>()?;
-        bpb.sectors_per_track = rdr.read_u16::<LittleEndian>()?;
-        bpb.heads = rdr.read_u16::<LittleEndian>()?;
-        bpb.hidden_sectors = rdr.read_u32::<LittleEndian>()?;
-        bpb.total_sectors_32 = rdr.read_u32::<LittleEndian>()?;
+        bpb.sectors_per_fat_16 = rdr.read_u16_le()?;
+        bpb.sectors_per_track = rdr.read_u16_le()?;
+        bpb.heads = rdr.read_u16_le()?;
+        bpb.hidden_sectors = rdr.read_u32_le()?;
+        bpb.total_sectors_32 = rdr.read_u32_le()?;
 
         if bpb.is_fat32() {
-            bpb.sectors_per_fat_32 = rdr.read_u32::<LittleEndian>()?;
-            bpb.extended_flags = rdr.read_u16::<LittleEndian>()?;
-            bpb.fs_version = rdr.read_u16::<LittleEndian>()?;
-            bpb.root_dir_first_cluster = rdr.read_u32::<LittleEndian>()?;
-            bpb.fs_info_sector = rdr.read_u16::<LittleEndian>()?;
-            bpb.backup_boot_sector = rdr.read_u16::<LittleEndian>()?;
+            bpb.sectors_per_fat_32 = rdr.read_u32_le()?;
+            bpb.extended_flags = rdr.read_u16_le()?;
+            bpb.fs_version = rdr.read_u16_le()?;
+            bpb.root_dir_first_cluster = rdr.read_u32_le()?;
+            bpb.fs_info_sector = rdr.read_u16_le()?;
+            bpb.backup_boot_sector = rdr.read_u16_le()?;
             rdr.read_exact(&mut bpb.reserved_0)?;
             bpb.drive_num = rdr.read_u8()?;
             bpb.reserved_1 = rdr.read_u8()?;
             bpb.ext_sig = rdr.read_u8()?; // 0x29
-            bpb.volume_id = rdr.read_u32::<LittleEndian>()?;
+            bpb.volume_id = rdr.read_u32_le()?;
             rdr.read_exact(&mut bpb.volume_label)?;
             rdr.read_exact(&mut bpb.fs_type_label)?;
         } else {
             bpb.drive_num = rdr.read_u8()?;
             bpb.reserved_1 = rdr.read_u8()?;
             bpb.ext_sig = rdr.read_u8()?; // 0x29
-            bpb.volume_id = rdr.read_u32::<LittleEndian>()?;
+            bpb.volume_id = rdr.read_u32_le()?;
             rdr.read_exact(&mut bpb.volume_label)?;
             rdr.read_exact(&mut bpb.fs_type_label)?;
         }
@@ -99,38 +95,38 @@ impl BiosParameterBlock {
     }
 
     fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
-        wrt.write_u16::<LittleEndian>(self.bytes_per_sector)?;
+        wrt.write_u16_le(self.bytes_per_sector)?;
         wrt.write_u8(self.sectors_per_cluster)?;
-        wrt.write_u16::<LittleEndian>(self.reserved_sectors)?;
+        wrt.write_u16_le(self.reserved_sectors)?;
         wrt.write_u8(self.fats)?;
-        wrt.write_u16::<LittleEndian>(self.root_entries)?;
-        wrt.write_u16::<LittleEndian>(self.total_sectors_16)?;
+        wrt.write_u16_le(self.root_entries)?;
+        wrt.write_u16_le(self.total_sectors_16)?;
         wrt.write_u8(self.media)?;
-        wrt.write_u16::<LittleEndian>(self.sectors_per_fat_16)?;
-        wrt.write_u16::<LittleEndian>(self.sectors_per_track)?;
-        wrt.write_u16::<LittleEndian>(self.heads)?;
-        wrt.write_u32::<LittleEndian>(self.hidden_sectors)?;
-        wrt.write_u32::<LittleEndian>(self.total_sectors_32)?;
+        wrt.write_u16_le(self.sectors_per_fat_16)?;
+        wrt.write_u16_le(self.sectors_per_track)?;
+        wrt.write_u16_le(self.heads)?;
+        wrt.write_u32_le(self.hidden_sectors)?;
+        wrt.write_u32_le(self.total_sectors_32)?;
 
         if self.is_fat32() {
-            wrt.write_u32::<LittleEndian>(self.sectors_per_fat_32)?;
-            wrt.write_u16::<LittleEndian>(self.extended_flags)?;
-            wrt.write_u16::<LittleEndian>(self.fs_version)?;
-            wrt.write_u32::<LittleEndian>(self.root_dir_first_cluster)?;
-            wrt.write_u16::<LittleEndian>(self.fs_info_sector)?;
-            wrt.write_u16::<LittleEndian>(self.backup_boot_sector)?;
+            wrt.write_u32_le(self.sectors_per_fat_32)?;
+            wrt.write_u16_le(self.extended_flags)?;
+            wrt.write_u16_le(self.fs_version)?;
+            wrt.write_u32_le(self.root_dir_first_cluster)?;
+            wrt.write_u16_le(self.fs_info_sector)?;
+            wrt.write_u16_le(self.backup_boot_sector)?;
             wrt.write_all(&self.reserved_0)?;
             wrt.write_u8(self.drive_num)?;
             wrt.write_u8(self.reserved_1)?;
             wrt.write_u8(self.ext_sig)?; // 0x29
-            wrt.write_u32::<LittleEndian>(self.volume_id)?;
+            wrt.write_u32_le(self.volume_id)?;
             wrt.write_all(&self.volume_label)?;
             wrt.write_all(&self.fs_type_label)?;
         } else {
             wrt.write_u8(self.drive_num)?;
             wrt.write_u8(self.reserved_1)?;
             wrt.write_u8(self.ext_sig)?; // 0x29
-            wrt.write_u32::<LittleEndian>(self.volume_id)?;
+            wrt.write_u32_le(self.volume_id)?;
             wrt.write_all(&self.volume_label)?;
             wrt.write_all(&self.fs_type_label)?;
         }
