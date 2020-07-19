@@ -127,7 +127,7 @@ pub trait TimeProvider: Debug {
 
 /// `TimeProvider` implementation that returns current local time retrieved from `chrono` crate.
 #[cfg(feature = "chrono")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ChronoTimeProvider {
     _dummy: (),
 }
@@ -151,7 +151,7 @@ impl TimeProvider for ChronoTimeProvider {
 }
 
 /// `TimeProvider` implementation that always returns DOS minimal date-time (1980-01-01 00:00:00).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NullTimeProvider {
     _dummy: (),
 }

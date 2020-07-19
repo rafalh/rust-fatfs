@@ -80,7 +80,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
     }
 }
 
-fn split_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
+fn split_path(path: &str) -> (&str, Option<&str>) {
     // remove trailing slash and split into 2 components - top-most parent and rest
     let mut path_split = path.trim_matches('/').splitn(2, '/');
     let comp = path_split.next().unwrap(); // SAFE: splitn always returns at least one element

@@ -219,7 +219,7 @@ impl FsInfoSector {
 /// A FAT filesystem mount options.
 ///
 /// Options are specified as an argument for `FileSystem::new` method.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct FsOptions<TP, OCC> {
     pub(crate) update_accessed_date: bool,
     pub(crate) oem_cp_converter: OCC,
@@ -546,7 +546,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir<'a>(&'a self) -> Dir<'a, IO, TP, OCC> {
+    pub fn root_dir(&self) -> Dir<IO, TP, OCC> {
         trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
@@ -768,7 +768,7 @@ pub trait OemCpConverter: Debug {
 }
 
 /// Default implementation of `OemCpConverter` that changes all non-ASCII characters to the replacement character (U+FFFD).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct LossyOemCpConverter {
     _dummy: (),
 }
