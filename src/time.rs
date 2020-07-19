@@ -53,6 +53,7 @@ impl Time {
 
     pub(crate) fn encode(self) -> (u16, u8) {
         let dos_time = (self.hour << 11) | (self.min << 5) | (self.sec / 2);
+        // safe cast: value in range [0, 199]
         let dos_time_hi_res = ((self.millis / 10) + (self.sec % 2) * 100) as u8;
         (dos_time, dos_time_hi_res)
     }
@@ -97,7 +98,11 @@ impl From<DateTime> for chrono::DateTime<Local> {
 #[cfg(feature = "chrono")]
 impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
-        Self { year: date.year() as u16, month: date.month() as u16, day: date.day() as u16 }
+        Self {
+            year: date.year() as u16, // safe cast unless it is after year 65,536
+            month: date.month() as u16, // safe cast: value in range [1, 12]
+            day: date.day() as u16, // safe cast: value in range [1, 31]
+        }
     }
 }
 
@@ -107,10 +112,10 @@ impl From<chrono::DateTime<Local>> for DateTime {
         Self {
             date: Date::from(date_time.date()),
             time: Time {
-                hour: date_time.hour() as u16,
-                min: date_time.minute() as u16,
-                sec: date_time.second() as u16,
-                millis: (date_time.nanosecond() / 1_000_000) as u16,
+                hour: date_time.hour() as u16, // safe cast: value in range [0, 23]
+                min: date_time.minute() as u16, // safe cast: value in range [0, 59]
+                sec: date_time.second() as u16, // safe cast: value in range [0, 59]
+                millis: (date_time.nanosecond() / 1_000_000) as u16, // safe cast: value in range [0, 999]
             },
         }
     }

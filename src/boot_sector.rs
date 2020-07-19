@@ -8,9 +8,7 @@ use crate::fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use crate::table::RESERVED_FAT_ENTRIES;
 
 const BITS_PER_BYTE: u32 = 8;
-const KB: u64 = 1024;
-const MB: u64 = KB * 1024;
-const GB: u64 = MB * 1024;
+const KB_32: u32 = 1024;
 const KB_64: u64 = 1024;
 const MB_64: u64 = KB_64 * 1024;
 const GB_64: u64 = MB_64 * 1024;
@@ -301,7 +299,7 @@ impl BiosParameterBlock {
     }
 
     pub(crate) fn root_dir_sectors(&self) -> u32 {
-        let root_dir_bytes = u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32;
+        let root_dir_bytes = u32::from(self.root_entries) * DIR_ENTRY_SIZE;
         (root_dir_bytes + u32::from(self.bytes_per_sector) - 1) / u32::from(self.bytes_per_sector)
     }
 
@@ -337,8 +335,8 @@ impl BiosParameterBlock {
     }
 
     pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {
-        let cluster_size = i64::from(self.cluster_size());
-        ((bytes as i64 + cluster_size - 1) / cluster_size) as u32
+        let cluster_size = u64::from(self.cluster_size());
+        ((bytes + cluster_size - 1) / cluster_size) as u32
     }
 
     pub(crate) fn fs_info_sector(&self) -> u32 {
@@ -424,27 +422,27 @@ pub(crate) fn estimate_fat_type(total_bytes: u64) -> FatType {
 }
 
 fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type: Option<FatType>) -> u32 {
-    const MAX_CLUSTER_SIZE: u32 = 32 * KB as u32;
+    const MAX_CLUSTER_SIZE: u32 = 32 * KB_32;
 
     let fat_type = fat_type.unwrap_or_else(|| estimate_fat_type(total_bytes));
     let bytes_per_cluster = match fat_type {
-        FatType::Fat12 => (total_bytes.next_power_of_two() / MB * 512) as u32,
+        FatType::Fat12 => (total_bytes.next_power_of_two() / MB_64 * 512) as u32,
         FatType::Fat16 => {
-            if total_bytes <= 16 * MB {
-                KB as u32
-            } else if total_bytes <= 128 * MB {
-                2 * KB as u32
+            if total_bytes <= 16 * MB_64 {
+                KB_32
+            } else if total_bytes <= 128 * MB_64 {
+                2 * KB_32
             } else {
-                (total_bytes.next_power_of_two() / (64 * MB) * KB) as u32
+                ((total_bytes.next_power_of_two() / (64 * MB_64)) as u32) * KB_32
             }
         },
         FatType::Fat32 => {
-            if total_bytes <= 260 * MB {
+            if total_bytes <= 260 * MB_64 {
                 512
-            } else if total_bytes <= 8 * GB {
-                4 * KB as u32
+            } else if total_bytes <= 8 * GB_64 {
+                4 * KB_32
             } else {
-                (total_bytes.next_power_of_two() / (2 * GB) * KB) as u32
+                ((total_bytes.next_power_of_two() / (2 * GB_64)) as u32) * KB_32
             }
         },
     };
@@ -724,48 +722,48 @@ mod tests {
 
     #[test]
     fn test_estimate_fat_type() {
-        assert_eq!(estimate_fat_type(3 * MB), FatType::Fat12);
-        assert_eq!(estimate_fat_type(4 * MB), FatType::Fat16);
-        assert_eq!(estimate_fat_type(511 * MB), FatType::Fat16);
-        assert_eq!(estimate_fat_type(512 * MB), FatType::Fat32);
+        assert_eq!(estimate_fat_type(3 * MB_64), FatType::Fat12);
+        assert_eq!(estimate_fat_type(4 * MB_64), FatType::Fat16);
+        assert_eq!(estimate_fat_type(511 * MB_64), FatType::Fat16);
+        assert_eq!(estimate_fat_type(512 * MB_64), FatType::Fat32);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat12() {
-        assert_eq!(determine_bytes_per_cluster(MB, 512, Some(FatType::Fat12)), 512);
-        assert_eq!(determine_bytes_per_cluster(MB + 1, 512, Some(FatType::Fat12)), 1024);
-        assert_eq!(determine_bytes_per_cluster(MB, 4096, Some(FatType::Fat12)), 4096);
+        assert_eq!(determine_bytes_per_cluster(MB_64, 512, Some(FatType::Fat12)), 512);
+        assert_eq!(determine_bytes_per_cluster(MB_64 + 1, 512, Some(FatType::Fat12)), 1024);
+        assert_eq!(determine_bytes_per_cluster(MB_64, 4096, Some(FatType::Fat12)), 4096);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat16() {
-        assert_eq!(determine_bytes_per_cluster(MB,            512, Some(FatType::Fat16)), KB as u32);
-        assert_eq!(determine_bytes_per_cluster(MB,            4 * KB as u16, Some(FatType::Fat16)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * MB,       512, Some(FatType::Fat16)), KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16 * MB + 1,   512, Some(FatType::Fat16)), 2 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(128 * MB,      512, Some(FatType::Fat16)), 2 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(128 * MB + 1,  512, Some(FatType::Fat16)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(256 * MB,      512, Some(FatType::Fat16)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(256 * MB + 1,  512, Some(FatType::Fat16)), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(512 * MB,      512, Some(FatType::Fat16)), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(512 * MB + 1,  512, Some(FatType::Fat16)), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(1024 * MB,     512, Some(FatType::Fat16)), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(1024 * MB + 1, 512, Some(FatType::Fat16)), 32 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(99999 * MB,    512, Some(FatType::Fat16)), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(MB_64,            512, Some(FatType::Fat16)), KB_32);
+        assert_eq!(determine_bytes_per_cluster(MB_64,            4096, Some(FatType::Fat16)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(16 * MB_64,       512, Some(FatType::Fat16)), KB_32);
+        assert_eq!(determine_bytes_per_cluster(16 * MB_64 + 1,   512, Some(FatType::Fat16)), 2 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(128 * MB_64,      512, Some(FatType::Fat16)), 2 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(128 * MB_64 + 1,  512, Some(FatType::Fat16)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(256 * MB_64,      512, Some(FatType::Fat16)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(256 * MB_64 + 1,  512, Some(FatType::Fat16)), 8 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(512 * MB_64,      512, Some(FatType::Fat16)), 8 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(512 * MB_64 + 1,  512, Some(FatType::Fat16)), 16 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(1024 * MB_64,     512, Some(FatType::Fat16)), 16 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(1024 * MB_64 + 1, 512, Some(FatType::Fat16)), 32 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(99999 * MB_64,    512, Some(FatType::Fat16)), 32 * KB_32);
     }
 
     #[test]
     fn test_determine_bytes_per_cluster_fat32() {
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64,     512, Some(FatType::Fat32)), 512);
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64,     4 * KB as u16, Some(FatType::Fat32)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(260 * MB as u64 + 1, 512, Some(FatType::Fat32)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(8   * GB as u64,     512, Some(FatType::Fat32)), 4 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(8   * GB as u64 + 1, 512, Some(FatType::Fat32)), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16  * GB as u64,     512, Some(FatType::Fat32)), 8 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(16  * GB as u64 + 1, 512, Some(FatType::Fat32)), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(32  * GB as u64,     512, Some(FatType::Fat32)), 16 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(32  * GB as u64 + 1, 512, Some(FatType::Fat32)), 32 * KB as u32);
-        assert_eq!(determine_bytes_per_cluster(999 * GB as u64,     512, Some(FatType::Fat32)), 32 * KB as u32);
+        assert_eq!(determine_bytes_per_cluster(260 * MB_64,     512, Some(FatType::Fat32)), 512);
+        assert_eq!(determine_bytes_per_cluster(260 * MB_64,     4096, Some(FatType::Fat32)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(260 * MB_64 + 1, 512, Some(FatType::Fat32)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(8   * GB_64,     512, Some(FatType::Fat32)), 4 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(8   * GB_64 + 1, 512, Some(FatType::Fat32)), 8 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(16  * GB_64,     512, Some(FatType::Fat32)), 8 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(16  * GB_64 + 1, 512, Some(FatType::Fat32)), 16 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(32  * GB_64,     512, Some(FatType::Fat32)), 16 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(32  * GB_64 + 1, 512, Some(FatType::Fat32)), 32 * KB_32);
+        assert_eq!(determine_bytes_per_cluster(999 * GB_64,     512, Some(FatType::Fat32)), 32 * KB_32);
     }
 
     fn test_determine_sectors_per_fat_single(
@@ -821,7 +819,7 @@ mod tests {
         root_dir_entries: u32,
     ) {
         let mut bytes_per_cluster = u32::from(bytes_per_sector);
-        while bytes_per_cluster <= 64 * KB as u32 {
+        while bytes_per_cluster <= 64 * KB_32 {
             let mut size: u64 = MB_64;
             while size < 2048 * GB_64 {
                 test_determine_sectors_per_fat_single(

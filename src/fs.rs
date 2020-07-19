@@ -198,9 +198,9 @@ impl FsInfoSector {
         }
     }
 
-    fn add_free_clusters(&mut self, free_clusters: i32) {
+    fn map_free_clusters(&mut self, map_fn: impl Fn(u32) -> u32) {
         if let Some(n) = self.free_cluster_count {
-            self.free_cluster_count = Some((n as i32 + free_clusters) as u32);
+            self.free_cluster_count = Some(map_fn(n));
             self.dirty = true;
         }
     }
@@ -439,7 +439,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         let mut iter = self.cluster_iter(cluster);
         let num_free = iter.truncate()?;
         let mut fs_info = self.fs_info.borrow_mut();
-        fs_info.add_free_clusters(num_free as i32);
+        fs_info.map_free_clusters(|n| n + num_free);
         Ok(())
     }
 
@@ -447,7 +447,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         let mut iter = self.cluster_iter(cluster);
         let num_free = iter.free()?;
         let mut fs_info = self.fs_info.borrow_mut();
-        fs_info.add_free_clusters(num_free as i32);
+        fs_info.map_free_clusters(|n| n + num_free);
         Ok(())
     }
 
@@ -465,7 +465,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         }
         let mut fs_info = self.fs_info.borrow_mut();
         fs_info.set_next_free_cluster(cluster + 1);
-        fs_info.add_free_clusters(-1);
+        fs_info.map_free_clusters(|n| n - 1);
         Ok(cluster)
     }
 
@@ -714,7 +714,7 @@ impl<B: Clone, S> Clone for DiskSlice<B, S> {
 impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
-        let read_size = cmp::min((self.size - self.offset) as usize, buf.len());
+        let read_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
         self.inner.borrow_mut().seek(SeekFrom::Start(offset))?;
         let size = self.inner.borrow_mut().read(&mut buf[..read_size])?;
         self.offset += size as u64;
@@ -725,7 +725,7 @@ impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
 impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let offset = self.begin + self.offset;
-        let write_size = cmp::min((self.size - self.offset) as usize, buf.len());
+        let write_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
         if write_size == 0 {
             return Ok(0);
         }
@@ -783,14 +783,14 @@ impl LossyOemCpConverter {
 impl OemCpConverter for LossyOemCpConverter {
     fn decode(&self, oem_char: u8) -> char {
         if oem_char <= 0x7F {
-            oem_char as char
+            char::from(oem_char)
         } else {
             '\u{FFFD}'
         }
     }
     fn encode(&self, uni_char: char) -> Option<u8> {
         if uni_char <= '\x7F' {
-            Some(uni_char as u8)
+            Some(uni_char as u8) // safe cast: value is in range [0, 0x7F]
         } else {
             None
         }
@@ -978,7 +978,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
         if total_sectors_64 > u64::from(u32::MAX) {
             return Err(Error::new(ErrorKind::Other, "Volume has too many sectors"));
         }
-        total_sectors_64 as u32
+        total_sectors_64 as u32 // safe case: possible overflow is handled up from here
     };
 
     // Create boot sector, validate and write to storage device

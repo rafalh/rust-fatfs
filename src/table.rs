@@ -134,6 +134,7 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(
     bytes_per_fat: u64,
     total_clusters: u32,
 ) -> io::Result<()> {
+    const BITS_PER_BYTE: u64 = 8;
     // init first two reserved entries to FAT ID
     match fat_type {
         FatType::Fat12 => {
@@ -150,7 +151,6 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(
         },
     };
     // mark entries at the end of FAT as used (after FAT but before sector end)
-    const BITS_PER_BYTE: u64 = 8;
     let start_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     let end_cluster = (bytes_per_fat * BITS_PER_BYTE / u64::from(fat_type.bits_per_fat_entry())) as u32;
     for cluster in start_cluster..end_cluster {
@@ -192,9 +192,9 @@ impl FatTrait for Fat12 {
             FatValue::Free => 0,
             FatValue::Bad => 0xFF7,
             FatValue::EndOfChain => 0xFFF,
-            FatValue::Data(n) => n as u16,
+            FatValue::Data(n) => n,
         };
-        Self::set_raw(fat, cluster, u32::from(raw_val))
+        Self::set_raw(fat, cluster, raw_val)
     }
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_val: u32) -> io::Result<()> {
@@ -291,9 +291,9 @@ impl FatTrait for Fat16 {
             FatValue::Free => 0,
             FatValue::Bad => 0xFFF7,
             FatValue::EndOfChain => 0xFFFF,
-            FatValue::Data(n) => n as u16,
+            FatValue::Data(n) => n,
         };
-        Self::set_raw(fat, cluster, u32::from(raw_value))
+        Self::set_raw(fat, cluster, raw_value)
     }
 
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {

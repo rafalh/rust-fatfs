@@ -295,7 +295,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // free long and short name entries
         let mut stream = self.stream.clone();
         stream.seek(SeekFrom::Start(e.offset_range.0))?;
-        let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
+        let num = ((e.offset_range.1 - e.offset_range.0) / u64::from(DIR_ENTRY_SIZE)) as usize;
         for _ in 0..num {
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing dir entry {:?}", data);
@@ -349,8 +349,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         };
         // free long and short name entries
         let mut stream = self.stream.clone();
-        stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
-        let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
+        stream.seek(SeekFrom::Start(e.offset_range.0))?;
+        let num = ((e.offset_range.1 - e.offset_range.0) / u64::from(DIR_ENTRY_SIZE)) as usize;
         for _ in 0..num {
             let mut data = DirEntryData::deserialize(&mut stream)?;
             trace!("removing LFN entry {:?}", data);
@@ -898,7 +898,7 @@ struct ShortNameGenerator {
     name_fits: bool,
     lossy_conv: bool,
     exact_match: bool,
-    basename_len: u8,
+    basename_len: usize,
     short_name: [u8; SFN_SIZE],
 }
 
@@ -923,7 +923,7 @@ impl ShortNameGenerator {
             (basename_len, basename_fits, basename_lossy)
         };
         let chksum = Self::checksum(name);
-        Self { short_name, chksum, name_fits, lossy_conv, basename_len: basename_len as u8, ..Self::default() }
+        Self { short_name, chksum, name_fits, lossy_conv, basename_len, ..Self::default() }
     }
 
     fn generate_dot() -> [u8; SFN_SIZE] {
@@ -976,7 +976,7 @@ impl ShortNameGenerator {
             self.exact_match = true;
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
-        let long_prefix_len = cmp::min(self.basename_len, 6) as usize;
+        let long_prefix_len = cmp::min(self.basename_len, 6);
         let num_suffix = if short_name[long_prefix_len] == b'~' {
             (short_name[long_prefix_len + 1] as char).to_digit(10)
         } else {
@@ -990,9 +990,9 @@ impl ShortNameGenerator {
         }
 
         // check for short prefix + checksum form collision (TE021F~1.TXT)
-        let short_prefix_len = cmp::min(self.basename_len, 2) as usize;
+        let short_prefix_len = cmp::min(self.basename_len, 2);
         let num_suffix = if short_name[short_prefix_len + 4] == b'~' {
-            (short_name[short_prefix_len + 4 + 1] as char).to_digit(10)
+            char::from(short_name[short_prefix_len + 4 + 1]).to_digit(10)
         } else {
             None
         };
@@ -1049,12 +1049,12 @@ impl ShortNameGenerator {
     fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; SFN_SIZE] {
         let mut buf = [SFN_PADDING; SFN_SIZE];
         let prefix_len = if with_chksum {
-            let prefix_len = cmp::min(self.basename_len as usize, 2);
+            let prefix_len = cmp::min(self.basename_len, 2);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
             buf[prefix_len..prefix_len + 4].copy_from_slice(&Self::u16_to_hex(self.chksum));
             prefix_len + 4
         } else {
-            let prefix_len = cmp::min(self.basename_len as usize, 6);
+            let prefix_len = cmp::min(self.basename_len, 6);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
             prefix_len
         };
