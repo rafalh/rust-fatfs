@@ -1,17 +1,15 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
-use crate::core::borrow::BorrowMut;
-use crate::core::cell::{Cell, RefCell};
-use crate::core::char;
-use crate::core::cmp;
-use crate::core::fmt::Debug;
-use crate::core::iter::FromIterator;
-use crate::core::marker::PhantomData;
-use crate::core::u32;
-use crate::io;
-use crate::io::prelude::*;
-use crate::io::{Error, ErrorKind, SeekFrom, ReadLeExt, WriteLeExt};
+use core::borrow::BorrowMut;
+use core::cell::{Cell, RefCell};
+use core::char;
+use core::cmp;
+use core::fmt::Debug;
+use core::iter::FromIterator;
+use core::marker::PhantomData;
+use core::u32;
 
+use crate::io::{self, Read, Write, Seek, Error, ErrorKind, SeekFrom, ReadLeExt, WriteLeExt};
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use crate::dir::{Dir, DirRawStream};
 use crate::dir_entry::{SFN_PADDING, SFN_SIZE};

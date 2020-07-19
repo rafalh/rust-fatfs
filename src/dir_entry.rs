@@ -1,13 +1,13 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
-use crate::core::char;
+use core::char;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
-use crate::core::iter::FromIterator;
-use crate::core::{fmt, str};
-use crate::io;
-use crate::io::prelude::*;
-use crate::io::{Cursor, ReadLeExt, WriteLeExt};
+use core::iter::FromIterator;
+use core::fmt;
+use core::str;
+
+use crate::io::{self, Read, Write, Cursor, ReadLeExt, WriteLeExt};
 use crate::dir::{Dir, DirRawStream};
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;

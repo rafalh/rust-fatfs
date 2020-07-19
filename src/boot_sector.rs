@@ -1,9 +1,8 @@
-use crate::core::cmp;
-use crate::core::u16;
-use crate::core::u8;
-use crate::io;
-use crate::io::prelude::*;
-use crate::io::{Error, ErrorKind, ReadLeExt, WriteLeExt};
+use core::cmp;
+use core::u16;
+use core::u8;
+
+use crate::io::{self, Read, Write, Error, ErrorKind, ReadLeExt, WriteLeExt};
 use crate::dir_entry::DIR_ENTRY_SIZE;
 use crate::fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use crate::table::RESERVED_FAT_ENTRIES;

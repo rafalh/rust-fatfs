@@ -7,7 +7,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! fatfs = "0.3"
+//! fatfs = "0.4"
 //! ```
 //!
 //! And this in your crate root:
@@ -64,7 +64,6 @@ extern crate bitflags;
 #[macro_use]
 extern crate log;
 
-#[cfg(not(feature = "std"))]
 extern crate core;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
@@ -78,9 +77,6 @@ mod fs;
 mod table;
 mod time;
 mod io;
-
-#[cfg(feature = "std")]
-use std as core;
 
 pub use crate::dir::*;
 pub use crate::dir_entry::*;

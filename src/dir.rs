@@ -1,12 +1,13 @@
 #[cfg(all(not(feature = "std"), feature = "alloc", feature = "lfn"))]
 use alloc::vec::Vec;
-use crate::core::{char, cmp, num, str};
+use core::char;
+use core::cmp;
+use core::num;
+use core::str;
 #[cfg(feature = "lfn")]
-use crate::core::{iter, slice};
-use crate::io;
-use crate::io::prelude::*;
-use crate::io::{ErrorKind, SeekFrom};
+use core::{iter, slice};
 
+use crate::io::{self, Read, Write, Seek, ErrorKind, SeekFrom};
 use crate::dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 #[cfg(feature = "lfn")]
 use crate::dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};

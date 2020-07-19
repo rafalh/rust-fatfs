@@ -1,9 +1,8 @@
-use crate::core::borrow::BorrowMut;
-use crate::core::cmp;
-use crate::core::marker::PhantomData;
-use crate::io;
-use crate::io::{ReadLeExt, WriteLeExt};
+use core::borrow::BorrowMut;
+use core::cmp;
+use core::marker::PhantomData;
 
+use crate::io::{self, ReadLeExt, WriteLeExt};
 use crate::fs::{FatType, FsStatusFlags, ReadSeek, ReadWriteSeek};
 
 struct Fat<T> {

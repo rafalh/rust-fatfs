@@ -1,9 +1,6 @@
-use crate::core;
-use crate::core::cmp;
-use crate::io;
-use crate::io::prelude::*;
-use crate::io::{ErrorKind, SeekFrom};
+use core::cmp;
 
+use crate::io::{self, Read, Write, Seek, ErrorKind, SeekFrom};
 use crate::dir_entry::DirEntryEditor;
 use crate::fs::{FileSystem, ReadWriteSeek};
 use crate::time::{Date, DateTime, TimeProvider};

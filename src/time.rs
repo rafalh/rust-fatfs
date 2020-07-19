@@ -1,9 +1,7 @@
-use crate::core::fmt::Debug;
+use core::fmt::Debug;
 
 #[cfg(feature = "chrono")]
-use chrono;
-#[cfg(feature = "chrono")]
-use chrono::{Datelike, Local, TimeZone, Timelike};
+use chrono::{self, Datelike, Local, TimeZone, Timelike};
 
 /// A DOS compatible date.
 ///

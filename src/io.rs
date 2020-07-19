@@ -309,7 +309,3 @@ impl<T: Write> WriteLeExt for T {
         self.write_all(&n.to_le_bytes())
     }
 }
-
-pub mod prelude {
-    pub use super::{Read, Write, Seek};
-}
