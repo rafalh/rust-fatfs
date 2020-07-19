@@ -294,7 +294,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         }
         // free long and short name entries
         let mut stream = self.stream.clone();
-        stream.seek(SeekFrom::Start(e.offset_range.0 as u64))?;
+        stream.seek(SeekFrom::Start(e.offset_range.0))?;
         let num = (e.offset_range.1 - e.offset_range.0) as usize / DIR_ENTRY_SIZE as usize;
         for _ in 0..num {
             let mut data = DirEntryData::deserialize(&mut stream)?;
@@ -1057,7 +1057,7 @@ impl ShortNameGenerator {
         let prefix_len = if with_chksum {
             let prefix_len = cmp::min(self.basename_len as usize, 2);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
-            buf[prefix_len..prefix_len + 4].copy_from_slice(&Self::u16_to_u8_array(self.chksum));
+            buf[prefix_len..prefix_len + 4].copy_from_slice(&Self::u16_to_hex(self.chksum));
             prefix_len + 4
         } else {
             let prefix_len = cmp::min(self.basename_len as usize, 6);
@@ -1070,11 +1070,11 @@ impl ShortNameGenerator {
         buf
     }
 
-    fn u16_to_u8_array(x: u16) -> [u8; 4] {
-        let c1 = char::from_digit((x as u32 >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        let c2 = char::from_digit((x as u32 >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        let c3 = char::from_digit((x as u32 >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        let c4 = char::from_digit((x as u32 >> 0) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+    fn u16_to_hex(x: u16) -> [u8; 4] {
+        let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c4 = char::from_digit((u32::from(x)) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         [c1, c2, c3, c4]
     }
 }

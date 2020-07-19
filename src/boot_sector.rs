@@ -151,7 +151,7 @@ impl BiosParameterBlock {
         }
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
-        let bytes_per_cluster = self.bytes_per_sector as u32 * self.sectors_per_cluster as u32;
+        let bytes_per_cluster = u32::from(self.bytes_per_sector) * u32::from(self.sectors_per_cluster);
         let maximum_compatibility_bytes_per_cluster: u32 = 32 * 1024;
 
         if bytes_per_cluster > maximum_compatibility_bytes_per_cluster {
@@ -245,7 +245,7 @@ impl BiosParameterBlock {
         }
 
         let bits_per_fat_entry = fat_type.bits_per_fat_entry();
-        let total_fat_entries = self.sectors_per_fat() * self.bytes_per_sector as u32 * 8 / bits_per_fat_entry as u32;
+        let total_fat_entries = self.sectors_per_fat() * u32::from(self.bytes_per_sector) * 8 / bits_per_fat_entry;
         if total_fat_entries - RESERVED_FAT_ENTRIES < total_clusters {
             warn!("FAT is too small compared to total number of clusters");
         }
@@ -281,7 +281,7 @@ impl BiosParameterBlock {
         if self.is_fat32() {
             self.sectors_per_fat_32
         } else {
-            self.sectors_per_fat_16 as u32
+            u32::from(self.sectors_per_fat_16)
         }
     }
 
@@ -289,21 +289,21 @@ impl BiosParameterBlock {
         if self.total_sectors_16 == 0 {
             self.total_sectors_32
         } else {
-            self.total_sectors_16 as u32
+            u32::from(self.total_sectors_16)
         }
     }
 
     pub(crate) fn reserved_sectors(&self) -> u32 {
-        self.reserved_sectors as u32
+        u32::from(self.reserved_sectors)
     }
 
     pub(crate) fn root_dir_sectors(&self) -> u32 {
-        let root_dir_bytes = self.root_entries as u32 * DIR_ENTRY_SIZE as u32;
-        (root_dir_bytes + self.bytes_per_sector as u32 - 1) / self.bytes_per_sector as u32
+        let root_dir_bytes = u32::from(self.root_entries) * DIR_ENTRY_SIZE as u32;
+        (root_dir_bytes + u32::from(self.bytes_per_sector) - 1) / u32::from(self.bytes_per_sector)
     }
 
     pub(crate) fn sectors_per_all_fats(&self) -> u32 {
-        self.fats as u32 * self.sectors_per_fat()
+        u32::from(self.fats) * self.sectors_per_fat()
     }
 
     pub(crate) fn first_data_sector(&self) -> u32 {
@@ -316,34 +316,34 @@ impl BiosParameterBlock {
         let total_sectors = self.total_sectors();
         let first_data_sector = self.first_data_sector();
         let data_sectors = total_sectors - first_data_sector;
-        data_sectors / self.sectors_per_cluster as u32
+        data_sectors / u32::from(self.sectors_per_cluster)
     }
 
     pub(crate) fn bytes_from_sectors(&self, sectors: u32) -> u64 {
         // Note: total number of sectors is a 32 bit number so offsets have to be 64 bit
-        (sectors as u64) * self.bytes_per_sector as u64
+        u64::from(sectors) * u64::from(self.bytes_per_sector)
     }
 
     pub(crate) fn sectors_from_clusters(&self, clusters: u32) -> u32 {
         // Note: total number of sectors is a 32 bit number so it should not overflow
-        clusters * (self.sectors_per_cluster as u32)
+        clusters * u32::from(self.sectors_per_cluster)
     }
 
     pub(crate) fn cluster_size(&self) -> u32 {
-        self.sectors_per_cluster as u32 * self.bytes_per_sector as u32
+        u32::from(self.sectors_per_cluster) * u32::from(self.bytes_per_sector)
     }
 
     pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {
-        let cluster_size = self.cluster_size() as i64;
+        let cluster_size = i64::from(self.cluster_size());
         ((bytes as i64 + cluster_size - 1) / cluster_size) as u32
     }
 
     pub(crate) fn fs_info_sector(&self) -> u32 {
-        self.fs_info_sector as u32
+        u32::from(self.fs_info_sector)
     }
 
     pub(crate) fn backup_boot_sector(&self) -> u32 {
-        self.backup_boot_sector as u32
+        u32::from(self.backup_boot_sector)
     }
 }
 
@@ -426,7 +426,7 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
         FatType::Fat12 => (total_bytes.next_power_of_two() / MB * 512) as u32,
         FatType::Fat16 => {
             if total_bytes <= 16 * MB {
-                1 * KB as u32
+                KB as u32
             } else if total_bytes <= 128 * MB {
                 2 * KB as u32
             } else {
@@ -445,7 +445,7 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
     };
     const MAX_CLUSTER_SIZE: u32 = 32 * KB as u32;
     debug_assert!(bytes_per_cluster.is_power_of_two());
-    cmp::min(cmp::max(bytes_per_cluster, bytes_per_sector as u32), MAX_CLUSTER_SIZE)
+    cmp::min(cmp::max(bytes_per_cluster, u32::from(bytes_per_sector)), MAX_CLUSTER_SIZE)
 }
 
 fn determine_sectors_per_fat(
@@ -498,7 +498,7 @@ fn determine_sectors_per_fat(
     let t0: u32 = total_sectors - u32::from(reserved_sectors) - root_dir_sectors;
     let t1: u64 = u64::from(t0) + u64::from(2 * u32::from(sectors_per_cluster));
     let bits_per_cluster = u32::from(sectors_per_cluster) * u32::from(bytes_per_sector) * BITS_PER_BYTE;
-    let t2 = u64::from(bits_per_cluster / u32::from(fat_type.bits_per_fat_entry()) + u32::from(fats));
+    let t2 = u64::from(bits_per_cluster / fat_type.bits_per_fat_entry() + u32::from(fats));
     let sectors_per_fat = (t1 + t2 - 1) / t2;
     // Note: casting is safe here because number of sectors per FAT cannot be bigger than total sectors number
     sectors_per_fat as u32
@@ -519,7 +519,7 @@ fn try_fs_geometry(
 
     // Check if volume has enough space to accomodate reserved sectors, FAT, root directory and some data space
     // Having less than 8 sectors for FAT and data would make a little sense
-    if total_sectors <= u32::from(reserved_sectors) + u32::from(root_dir_sectors) + 8 {
+    if total_sectors <= u32::from(reserved_sectors) + root_dir_sectors + 8 {
         return Err(Error::new(ErrorKind::Other, "Volume is too small"));
     }
 
@@ -535,7 +535,7 @@ fn try_fs_geometry(
     );
 
     let data_sectors =
-        total_sectors - u32::from(reserved_sectors) - u32::from(root_dir_sectors) - sectors_per_fat * u32::from(fats);
+        total_sectors - u32::from(reserved_sectors) - root_dir_sectors - sectors_per_fat * u32::from(fats);
     let total_clusters = data_sectors / u32::from(sectors_per_cluster);
     if fat_type != FatType::from_clusters(total_clusters) {
         return Err(Error::new(ErrorKind::Other, "Invalid FAT type"));
@@ -546,7 +546,7 @@ fn try_fs_geometry(
         return Err(Error::new(ErrorKind::Other, "Too many clusters"));
     }
 
-    return Ok((reserved_sectors, sectors_per_fat));
+    Ok((reserved_sectors, sectors_per_fat))
 }
 
 fn determine_root_dir_sectors(root_dir_entries: u16, bytes_per_sector: u16, fat_type: FatType) -> u32 {
@@ -575,7 +575,7 @@ fn determine_fs_geometry(
         }
     }
 
-    return Err(Error::new(ErrorKind::Other, "Cannot select FAT type - unfortunate disk size"));
+    Err(Error::new(ErrorKind::Other, "Cannot select FAT type - unfortunate disk size"))
 }
 
 fn format_bpb(
@@ -653,7 +653,7 @@ fn format_bpb(
         drive_num,
         reserved_1: 0,
         ext_sig: 0x29,
-        volume_id: options.volume_id.unwrap_or(0x12345678),
+        volume_id: options.volume_id.unwrap_or(0x1234_5678),
         volume_label,
         fs_type_label,
     };

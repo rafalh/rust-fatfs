@@ -63,7 +63,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
             Some(n) => {
                 let cluster_size = self.fs.cluster_size();
                 let offset_in_cluster = self.offset % cluster_size;
-                let offset_in_fs = self.fs.offset_from_cluster(n) + (offset_in_cluster as u64);
+                let offset_in_fs = self.fs.offset_from_cluster(n) + u64::from(offset_in_cluster);
                 Some(offset_in_fs)
             },
             None => None,
@@ -212,7 +212,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
             return Ok(0);
         }
         trace!("read {} bytes in cluster {}", read_size, current_cluster);
-        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
+        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + u64::from(offset_in_cluster);
         let read_bytes = {
             let mut disk = self.fs.disk.borrow_mut();
             disk.seek(SeekFrom::Start(offset_in_fs))?;
@@ -289,7 +289,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
             }
         };
         trace!("write {} bytes in cluster {}", write_size, current_cluster);
-        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + (offset_in_cluster as u64);
+        let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + u64::from(offset_in_cluster);
         let written_bytes = {
             let mut disk = self.fs.disk.borrow_mut();
             disk.seek(SeekFrom::Start(offset_in_fs))?;
@@ -328,10 +328,10 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> std::io::Write for File<'_, IO, T
 impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let mut new_pos = match pos {
-            SeekFrom::Current(x) => self.offset as i64 + x,
+            SeekFrom::Current(x) => i64::from(self.offset) + x,
             SeekFrom::Start(x) => x as i64,
             SeekFrom::End(x) => {
-                let size = self.size().expect("cannot seek from end if size is unknown") as i64;
+                let size = i64::from(self.size().expect("cannot seek from end if size is unknown"));
                 size + x
             },
         };
@@ -339,20 +339,20 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
             return Err(io::Error::new(ErrorKind::InvalidInput, "Seek to a negative offset"));
         }
         if let Some(s) = self.size() {
-            if new_pos > s as i64 {
+            if new_pos > i64::from(s) {
                 info!("seek beyond end of file");
-                new_pos = s as i64;
+                new_pos = i64::from(s);
             }
         }
         let mut new_pos = new_pos as u32;
         trace!("file seek {} -> {} - entry {:?}", self.offset, new_pos, self.entry);
         if new_pos == self.offset {
             // position is the same - nothing to do
-            return Ok(self.offset as u64);
+            return Ok(u64::from(self.offset));
         }
         // get number of clusters to seek (favoring previous cluster in corner case)
-        let cluster_count = (self.fs.clusters_from_bytes(new_pos as u64) as i32 - 1) as isize;
-        let old_cluster_count = (self.fs.clusters_from_bytes(self.offset as u64) as i32 - 1) as isize;
+        let cluster_count = (self.fs.clusters_from_bytes(u64::from(new_pos)) as i32 - 1) as isize;
+        let old_cluster_count = (self.fs.clusters_from_bytes(u64::from(self.offset)) as i32 - 1) as isize;
         let new_cluster = if new_pos == 0 {
             None
         } else if cluster_count == old_cluster_count {
@@ -381,9 +381,9 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
                 },
             }
         };
-        self.offset = new_pos as u32;
+        self.offset = new_pos;
         self.current_cluster = new_cluster;
-        Ok(self.offset as u64)
+        Ok(u64::from(self.offset))
     }
 }
 

@@ -22,7 +22,7 @@ impl Date {
         Date { year, month, day }
     }
 
-    pub(crate) fn encode(&self) -> u16 {
+    pub(crate) fn encode(self) -> u16 {
         ((self.year - 1980) << 9) | (self.month << 5) | self.day
     }
 }
@@ -46,12 +46,12 @@ impl Time {
     pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
         let hour = dos_time >> 11;
         let min = (dos_time >> 5) & 0x3F;
-        let sec = (dos_time & 0x1F) * 2 + (dos_time_hi_res as u16) / 100;
-        let millis = (dos_time_hi_res as u16 % 100) * 10;
+        let sec = (dos_time & 0x1F) * 2 + u16::from(dos_time_hi_res / 100);
+        let millis = u16::from(dos_time_hi_res % 100) * 10;
         Time { hour, min, sec, millis }
     }
 
-    pub(crate) fn encode(&self) -> (u16, u8) {
+    pub(crate) fn encode(self) -> (u16, u8) {
         let dos_time = (self.hour << 11) | (self.min << 5) | (self.sec / 2);
         let dos_time_hi_res = ((self.millis / 10) + (self.sec % 2) * 100) as u8;
         (dos_time, dos_time_hi_res)
@@ -78,7 +78,7 @@ impl DateTime {
 #[cfg(feature = "chrono")]
 impl From<Date> for chrono::Date<Local> {
     fn from(date: Date) -> Self {
-        Local.ymd(date.year as i32, date.month as u32, date.day as u32)
+        Local.ymd(i32::from(date.year), u32::from(date.month), u32::from(date.day))
     }
 }
 
@@ -86,10 +86,10 @@ impl From<Date> for chrono::Date<Local> {
 impl From<DateTime> for chrono::DateTime<Local> {
     fn from(date_time: DateTime) -> Self {
         chrono::Date::<Local>::from(date_time.date).and_hms_milli(
-            date_time.time.hour as u32,
-            date_time.time.min as u32,
-            date_time.time.sec as u32,
-            date_time.time.millis as u32,
+            u32::from(date_time.time.hour),
+            u32::from(date_time.time.min),
+            u32::from(date_time.time.sec),
+            u32::from(date_time.time.millis),
         )
     }
 }

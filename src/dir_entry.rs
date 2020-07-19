@@ -163,7 +163,7 @@ impl DirFileEntryData {
 
     pub(crate) fn first_cluster(&self, fat_type: FatType) -> Option<u32> {
         let first_cluster_hi = if fat_type == FatType::Fat32 { self.first_cluster_hi } else { 0 };
-        let n = ((first_cluster_hi as u32) << 16) | self.first_cluster_lo as u32;
+        let n = (u32::from(first_cluster_hi) << 16) | u32::from(self.first_cluster_lo);
         if n == 0 {
             None
         } else {
@@ -508,6 +508,7 @@ pub struct DirEntry<'a, IO: ReadWriteSeek, TP, OCC> {
     pub(crate) fs: &'a FileSystem<IO, TP, OCC>,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns short file name.
     ///
@@ -601,7 +602,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
 
     /// Returns file size or 0 for directory.
     pub fn len(&self) -> u64 {
-        self.data.size as u64
+        u64::from(self.data.size)
     }
 
     /// Returns file creation date and time.

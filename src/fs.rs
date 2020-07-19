@@ -49,7 +49,7 @@ impl FatType {
         }
     }
 
-    pub(crate) fn bits_per_fat_entry(&self) -> u32 {
+    pub(crate) fn bits_per_fat_entry(self) -> u32 {
         match self {
             FatType::Fat12 => 12,
             FatType::Fat16 => 16,
@@ -57,7 +57,7 @@ impl FatType {
         }
     }
 
-    pub(crate) fn min_clusters(&self) -> u32 {
+    pub(crate) fn min_clusters(self) -> u32 {
         match self {
             FatType::Fat12 => 0,
             FatType::Fat16 => Self::FAT16_MIN_CLUSTERS,
@@ -65,7 +65,7 @@ impl FatType {
         }
     }
 
-    pub(crate) fn max_clusters(&self) -> u32 {
+    pub(crate) fn max_clusters(self) -> u32 {
         match self {
             FatType::Fat12 => Self::FAT16_MIN_CLUSTERS - 1,
             FatType::Fat16 => Self::FAT32_MIN_CLUSTERS - 1,
@@ -85,16 +85,18 @@ impl FsStatusFlags {
     /// Checks if the volume is marked as dirty.
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     /// Checks if the volume has the IO Error flag active.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn io_error(&self) -> bool {
         self.io_error
     }
 
-    fn encode(&self) -> u8 {
+    fn encode(self) -> u8 {
         let mut res = 0u8;
         if self.dirty {
             res |= 1;
@@ -126,9 +128,9 @@ struct FsInfoSector {
 }
 
 impl FsInfoSector {
-    const LEAD_SIG: u32 = 0x41615252;
-    const STRUC_SIG: u32 = 0x61417272;
-    const TRAIL_SIG: u32 = 0xAA550000;
+    const LEAD_SIG: u32 = 0x4161_5252;
+    const STRUC_SIG: u32 = 0x6141_7272;
+    const TRAIL_SIG: u32 = 0xAA55_0000;
 
     fn deserialize<R: Read>(rdr: &mut R) -> io::Result<FsInfoSector> {
         let lead_sig = rdr.read_u32_le()?;
@@ -142,12 +144,12 @@ impl FsInfoSector {
             return Err(Error::new(ErrorKind::Other, "invalid struc_sig in FsInfo sector"));
         }
         let free_cluster_count = match rdr.read_u32_le()? {
-            0xFFFFFFFF => None,
+            0xFFFF_FFFF => None,
             // Note: value is validated in FileSystem::new function using values from BPB
             n => Some(n),
         };
         let next_free_cluster = match rdr.read_u32_le()? {
-            0xFFFFFFFF => None,
+            0xFFFF_FFFF => None,
             0 | 1 => {
                 warn!("invalid next_free_cluster in FsInfo sector (values 0 and 1 are reserved)");
                 None
@@ -169,8 +171,8 @@ impl FsInfoSector {
         let reserved = [0u8; 480];
         wrt.write_all(&reserved)?;
         wrt.write_u32_le(Self::STRUC_SIG)?;
-        wrt.write_u32_le(self.free_cluster_count.unwrap_or(0xFFFFFFFF))?;
-        wrt.write_u32_le(self.next_free_cluster.unwrap_or(0xFFFFFFFF))?;
+        wrt.write_u32_le(self.free_cluster_count.unwrap_or(0xFFFF_FFFF))?;
+        wrt.write_u32_le(self.next_free_cluster.unwrap_or(0xFFFF_FFFF))?;
         let reserved2 = [0u8; 12];
         wrt.write_all(&reserved2)?;
         wrt.write_u32_le(Self::TRAIL_SIG)?;
@@ -458,7 +460,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         if zero {
             let mut disk = self.disk.borrow_mut();
             disk.seek(SeekFrom::Start(self.offset_from_cluster(cluster)))?;
-            write_zeros(&mut *disk, self.cluster_size() as u64)?;
+            write_zeros(&mut *disk, u64::from(self.cluster_size()))?;
         }
         let mut fs_info = self.fs_info.borrow_mut();
         fs_info.set_next_free_cluster(cluster + 1);
@@ -514,7 +516,8 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         let mut fs_info = self.fs_info.borrow_mut();
         if self.fat_type == FatType::Fat32 && fs_info.dirty {
             let mut disk = self.disk.borrow_mut();
-            disk.seek(SeekFrom::Start(self.offset_from_sector(self.bpb.fs_info_sector as u32)))?;
+            let fs_info_sector_offset = self.offset_from_sector(u32::from(self.bpb.fs_info_sector));
+            disk.seek(SeekFrom::Start(fs_info_sector_offset))?;
             fs_info.serialize(&mut *disk)?;
             fs_info.dirty = false;
         }
@@ -662,7 +665,7 @@ fn fat_slice<S: ReadWriteSeek, B: BorrowMut<S>>(io: B, bpb: &BiosParameterBlock)
     let (fat_first_sector, mirrors) = if mirroring_enabled {
         (bpb.reserved_sectors(), bpb.fats)
     } else {
-        let active_fat = bpb.active_fat() as u32;
+        let active_fat = u32::from(bpb.active_fat());
         let fat_first_sector = (bpb.reserved_sectors()) + active_fat * sectors_per_fat;
         (fat_first_sector, 1)
     };
@@ -727,7 +730,7 @@ impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
         }
         // Write data
         for i in 0..self.mirrors {
-            self.inner.borrow_mut().seek(SeekFrom::Start(offset + i as u64 * self.size))?;
+            self.inner.borrow_mut().seek(SeekFrom::Start(offset + u64::from(i) * self.size))?;
             self.inner.borrow_mut().write_all(&buf[..write_size])?;
         }
         self.offset += write_size as u64;
@@ -805,8 +808,8 @@ pub(crate) fn write_zeros<IO: ReadWriteSeek>(disk: &mut IO, mut len: u64) -> io:
 
 fn write_zeros_until_end_of_sector<IO: ReadWriteSeek>(disk: &mut IO, bytes_per_sector: u16) -> io::Result<()> {
     let pos = disk.seek(SeekFrom::Current(0))?;
-    let total_bytes_to_write = bytes_per_sector as u64 - (pos % bytes_per_sector as u64);
-    if total_bytes_to_write != bytes_per_sector as u64 {
+    let total_bytes_to_write = u64::from(bytes_per_sector) - (pos % u64::from(bytes_per_sector));
+    if total_bytes_to_write != u64::from(bytes_per_sector) {
         write_zeros(disk, total_bytes_to_write)?;
     }
     Ok(())
@@ -1027,7 +1030,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
             first_data_sector + boot.bpb.sectors_from_clusters(root_dir_first_cluster - RESERVED_FAT_ENTRIES);
         let root_dir_pos = boot.bpb.bytes_from_sectors(root_dir_first_sector);
         storage.seek(SeekFrom::Start(root_dir_pos))?;
-        write_zeros(storage, boot.bpb.cluster_size() as u64)?;
+        write_zeros(storage, u64::from(boot.bpb.cluster_size()))?;
     }
 
     // TODO: create volume label dir entry if volume label is set

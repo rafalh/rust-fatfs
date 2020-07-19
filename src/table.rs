@@ -141,25 +141,25 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(
             fat.write_u16_le(0xFFFF)?;
         },
         FatType::Fat16 => {
-            fat.write_u16_le(media as u16 | 0xFF00)?;
+            fat.write_u16_le(u16::from(media) | 0xFF00)?;
             fat.write_u16_le(0xFFFF)?;
         },
         FatType::Fat32 => {
-            fat.write_u32_le(media as u32 | 0xFFFFF00)?;
-            fat.write_u32_le(0xFFFFFFFF)?;
+            fat.write_u32_le(u32::from(media) | 0xFFF_FF00)?;
+            fat.write_u32_le(0xFFFF_FFFF)?;
         },
     };
     // mark entries at the end of FAT as used (after FAT but before sector end)
     const BITS_PER_BYTE: u64 = 8;
     let start_cluster = total_clusters + RESERVED_FAT_ENTRIES;
-    let end_cluster = (bytes_per_fat * BITS_PER_BYTE / fat_type.bits_per_fat_entry() as u64) as u32;
+    let end_cluster = (bytes_per_fat * BITS_PER_BYTE / u64::from(fat_type.bits_per_fat_entry())) as u32;
     for cluster in start_cluster..end_cluster {
         write_fat(fat, fat_type, cluster, FatValue::EndOfChain)?;
     }
     // mark special entries 0x0FFFFFF0 - 0x0FFFFFFF as BAD if they exists on FAT32 volume
-    if end_cluster > 0x0FFFFFF0 {
-        let end_bad_cluster = cmp::min(0x0FFFFFFF + 1, end_cluster);
-        for cluster in 0x0FFFFFF0..end_bad_cluster {
+    if end_cluster > 0x0FFF_FFF0 {
+        let end_bad_cluster = cmp::min(0x0FFF_FFFF + 1, end_cluster);
+        for cluster in 0x0FFF_FFF0..end_bad_cluster {
             write_fat(fat, fat_type, cluster, FatValue::Bad)?;
         }
     }
@@ -169,12 +169,12 @@ pub(crate) fn format_fat<T: ReadWriteSeek>(
 impl FatTrait for Fat12 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
         let fat_offset = cluster + (cluster / 2);
-        fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(fat_offset)))?;
         let packed_val = fat.read_u16_le()?;
-        Ok(match cluster & 1 {
+        Ok(u32::from(match cluster & 1 {
             0 => packed_val & 0x0FFF,
             _ => packed_val >> 4,
-        } as u32)
+        }))
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
@@ -183,7 +183,7 @@ impl FatTrait for Fat12 {
             0 => FatValue::Free,
             0xFF7 => FatValue::Bad,
             0xFF8..=0xFFF => FatValue::EndOfChain,
-            n => FatValue::Data(n as u32),
+            n => FatValue::Data(n),
         })
     }
 
@@ -194,14 +194,14 @@ impl FatTrait for Fat12 {
             FatValue::EndOfChain => 0xFFF,
             FatValue::Data(n) => n as u16,
         };
-        Self::set_raw(fat, cluster, raw_val as u32)
+        Self::set_raw(fat, cluster, u32::from(raw_val))
     }
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_val: u32) -> io::Result<()> {
         let fat_offset = cluster + (cluster / 2);
-        fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(fat_offset)))?;
         let old_packed = fat.read_u16_le()?;
-        fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(fat_offset)))?;
         let new_packed = match cluster & 1 {
             0 => (old_packed & 0xF000) | raw_val as u16,
             _ => (old_packed & 0x000F) | ((raw_val as u16) << 4),
@@ -213,7 +213,7 @@ impl FatTrait for Fat12 {
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
         let fat_offset = cluster + (cluster / 2);
-        fat.seek(io::SeekFrom::Start(fat_offset as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(fat_offset)))?;
         let mut packed_val = fat.read_u16_le()?;
         loop {
             let val = match cluster & 1 {
@@ -230,8 +230,8 @@ impl FatTrait for Fat12 {
             packed_val = match cluster & 1 {
                 0 => fat.read_u16_le()?,
                 _ => {
-                    let next_byte = fat.read_u8()? as u16;
-                    (packed_val >> 8) | (next_byte << 8)
+                    let next_byte = fat.read_u8()?;
+                    (packed_val >> 8) | (u16::from(next_byte) << 8)
                 },
             };
         }
@@ -240,12 +240,12 @@ impl FatTrait for Fat12 {
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
-        fat.seek(io::SeekFrom::Start((cluster * 3 / 2) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 3 / 2)))?;
         let mut prev_packed_val = 0u16;
         while cluster < end_cluster {
             let res = match cluster & 1 {
                 0 => fat.read_u16_le(),
-                _ => fat.read_u8().map(|n| n as u16),
+                _ => fat.read_u8().map(u16::from),
             };
             let packed_val = match res {
                 Err(err) => return Err(err),
@@ -267,8 +267,8 @@ impl FatTrait for Fat12 {
 
 impl FatTrait for Fat16 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
-        fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
-        Ok(fat.read_u16_le()? as u32)
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 2)))?;
+        Ok(u32::from(fat.read_u16_le()?))
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
@@ -277,12 +277,12 @@ impl FatTrait for Fat16 {
             0 => FatValue::Free,
             0xFFF7 => FatValue::Bad,
             0xFFF8..=0xFFFF => FatValue::EndOfChain,
-            n => FatValue::Data(n as u32),
+            n => FatValue::Data(n),
         })
     }
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
-        fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 2)))?;
         fat.write_u16_le(raw_value as u16)?;
         Ok(())
     }
@@ -294,12 +294,12 @@ impl FatTrait for Fat16 {
             FatValue::EndOfChain => 0xFFFF,
             FatValue::Data(n) => n as u16,
         };
-        Self::set_raw(fat, cluster, raw_value as u32)
+        Self::set_raw(fat, cluster, u32::from(raw_value))
     }
 
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
-        fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 2)))?;
         while cluster < end_cluster {
             let val = fat.read_u16_le()?;
             if val == 0 {
@@ -313,7 +313,7 @@ impl FatTrait for Fat16 {
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
-        fat.seek(io::SeekFrom::Start((cluster * 2) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 2)))?;
         while cluster < end_cluster {
             let val = fat.read_u16_le()?;
             if val == 0 {
@@ -327,15 +327,15 @@ impl FatTrait for Fat16 {
 
 impl FatTrait for Fat32 {
     fn get_raw<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<u32> {
-        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 4)))?;
         Ok(fat.read_u32_le()?)
     }
 
     fn get<T: ReadSeek>(fat: &mut T, cluster: u32) -> io::Result<FatValue> {
-        let val = Self::get_raw(fat, cluster)? & 0x0FFFFFFF;
+        let val = Self::get_raw(fat, cluster)? & 0x0FFF_FFFF;
         Ok(match val {
-            0 if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
-                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            0 if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
+                let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
                 warn!(
                     "cluster number {} is a special value in FAT to indicate {}; it should never be seen as free",
                     cluster, tmp
@@ -343,31 +343,31 @@ impl FatTrait for Fat32 {
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             },
             0 => FatValue::Free,
-            0x0FFFFFF7 => FatValue::Bad,
-            0x0FFFFFF8..=0x0FFFFFFF => FatValue::EndOfChain,
-            n if cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF => {
-                let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            0x0FFF_FFF7 => FatValue::Bad,
+            0x0FFF_FFF8..=0x0FFF_FFFF => FatValue::EndOfChain,
+            n if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
+                let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
                 warn!("cluster number {} is a special value in FAT to indicate {}; hiding potential FAT chain value {} and instead reporting as a bad sector", cluster, tmp, n);
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             },
-            n => FatValue::Data(n as u32),
+            n => FatValue::Data(n),
         })
     }
 
     fn set_raw<T: ReadWriteSeek>(fat: &mut T, cluster: u32, raw_value: u32) -> io::Result<()> {
-        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 4)))?;
         fat.write_u32_le(raw_value)?;
         Ok(())
     }
 
     fn set<T: ReadWriteSeek>(fat: &mut T, cluster: u32, value: FatValue) -> io::Result<()> {
-        let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF0000000;
+        let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF000_0000;
 
-        if value == FatValue::Free && cluster >= 0x0FFFFFF7 && cluster <= 0x0FFFFFFF {
+        if value == FatValue::Free && cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF {
             // NOTE: it is technically allowed for them to store FAT chain loops,
             //       or even have them all store value '4' as their next cluster.
             //       Some believe only FatValue::Bad should be allowed for this edge case.
-            let tmp = if cluster == 0x0FFFFFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
             panic!(
                 "cluster number {} is a special value in FAT to indicate {}; it should never be set as free",
                 cluster, tmp
@@ -375,8 +375,8 @@ impl FatTrait for Fat32 {
         };
         let raw_val = match value {
             FatValue::Free => 0,
-            FatValue::Bad => 0x0FFFFFF7,
-            FatValue::EndOfChain => 0x0FFFFFFF,
+            FatValue::Bad => 0x0FFF_FFF7,
+            FatValue::EndOfChain => 0x0FFF_FFFF,
             FatValue::Data(n) => n,
         };
         let raw_val = raw_val | old_reserved_bits; // must preserve original reserved values
@@ -385,9 +385,9 @@ impl FatTrait for Fat32 {
 
     fn find_free<T: ReadSeek>(fat: &mut T, start_cluster: u32, end_cluster: u32) -> io::Result<u32> {
         let mut cluster = start_cluster;
-        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 4)))?;
         while cluster < end_cluster {
-            let val = fat.read_u32_le()? & 0x0FFFFFFF;
+            let val = fat.read_u32_le()? & 0x0FFF_FFFF;
             if val == 0 {
                 return Ok(cluster);
             }
@@ -399,9 +399,9 @@ impl FatTrait for Fat32 {
     fn count_free<T: ReadSeek>(fat: &mut T, end_cluster: u32) -> io::Result<u32> {
         let mut count = 0;
         let mut cluster = RESERVED_FAT_ENTRIES;
-        fat.seek(io::SeekFrom::Start((cluster * 4) as u64))?;
+        fat.seek(io::SeekFrom::Start(u64::from(cluster * 4)))?;
         while cluster < end_cluster {
-            let val = fat.read_u32_le()? & 0x0FFFFFFF;
+            let val = fat.read_u32_le()? & 0x0FFF_FFFF;
             if val == 0 {
                 count += 1;
             }
