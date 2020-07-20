@@ -20,6 +20,7 @@ matrix:
         # See: https://github.com/BurntSushi/byteorder/pull/150
         - cargo update -p byteorder --precise 1.2.7
         - cargo update -p cfg-if --precise 0.1.9
+        - cargo update -p log --precise 0.4.8
         - cargo build --verbose --no-default-features --features core_io
         - cargo build --verbose --no-default-features --features core_io,alloc
     - rust: nightly-2019-07-01
