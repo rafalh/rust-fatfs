@@ -7,8 +7,9 @@ matrix:
     - rust: 1.24.0
       script:
         # Build only the library (examples may fail)
-        - cargo update && cargo update -p cfg-if --precise 0.1.9
-        - cargo build
+        - cargo update -p cfg-if --precise 0.1.9
+        - cargo update -p log --precise 0.4.8
+        - cargo build --verbose
     - rust: stable
     - rust: beta
     - rust: nightly
@@ -17,13 +18,14 @@ matrix:
         # nostd build
         # byteorder crate version is configured here to fix build in old nightly compiler
         # See: https://github.com/BurntSushi/byteorder/pull/150
-        - cargo update && cargo update -p byteorder --precise 1.2.7 && cargo update -p cfg-if --precise 0.1.9
-        - cargo build --no-default-features --features core_io
-        - cargo build --no-default-features --features core_io,alloc
+        - cargo update -p byteorder --precise 1.2.7
+        - cargo update -p cfg-if --precise 0.1.9
+        - cargo build --verbose --no-default-features --features core_io
+        - cargo build --verbose --no-default-features --features core_io,alloc
     - rust: nightly-2019-07-01
       script:
-        - cargo build --no-default-features --features core_io
-        - cargo build --no-default-features --features core_io,alloc
+        - cargo build --verbose --no-default-features --features core_io
+        - cargo build --verbose --no-default-features --features core_io,alloc
 
   allow_failures:
     - rust: nightly
