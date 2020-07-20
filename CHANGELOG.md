@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.3.4 (2020-07-20)
+------------------
+Bug fixes:
+* Fix time encoding and decoding in directory entries
+
 0.3.3 (2019-11-10)
 ------------------
 Bug fixes:
