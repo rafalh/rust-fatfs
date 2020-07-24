@@ -476,55 +476,58 @@ mod tests {
     fn test_fat<T: ReadWriteSeek>(fat_type: FatType, mut cur: T) {
         // based on cluster maps from Wikipedia:
         // https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#Cluster_map
-        assert_eq!(read_fat(&mut cur, fat_type, 1).unwrap(), FatValue::EndOfChain);
-        assert_eq!(read_fat(&mut cur, fat_type, 4).unwrap(), FatValue::Data(5));
-        assert_eq!(read_fat(&mut cur, fat_type, 5).unwrap(), FatValue::Data(6));
-        assert_eq!(read_fat(&mut cur, fat_type, 8).unwrap(), FatValue::EndOfChain);
-        assert_eq!(read_fat(&mut cur, fat_type, 9).unwrap(), FatValue::Data(0xA));
-        assert_eq!(read_fat(&mut cur, fat_type, 0xA).unwrap(), FatValue::Data(0x14));
-        assert_eq!(read_fat(&mut cur, fat_type, 0x12).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x17).unwrap(), FatValue::Bad);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x18).unwrap(), FatValue::Bad);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).unwrap(), FatValue::Free);
+        assert_eq!(read_fat(&mut cur, fat_type, 1).ok(), Some(FatValue::EndOfChain));
+        assert_eq!(read_fat(&mut cur, fat_type, 4).ok(), Some(FatValue::Data(5)));
+        assert_eq!(read_fat(&mut cur, fat_type, 5).ok(), Some(FatValue::Data(6)));
+        assert_eq!(read_fat(&mut cur, fat_type, 8).ok(), Some(FatValue::EndOfChain));
+        assert_eq!(read_fat(&mut cur, fat_type, 9).ok(), Some(FatValue::Data(0xA)));
+        assert_eq!(read_fat(&mut cur, fat_type, 0xA).ok(), Some(FatValue::Data(0x14)));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x12).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x17).ok(), Some(FatValue::Bad));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x18).ok(), Some(FatValue::Bad));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).ok(), Some(FatValue::Free));
 
-        assert_eq!(find_free_cluster(&mut cur, fat_type, 2, 0x20).unwrap(), 0x12);
-        assert_eq!(find_free_cluster(&mut cur, fat_type, 0x12, 0x20).unwrap(), 0x12);
-        assert_eq!(find_free_cluster(&mut cur, fat_type, 0x13, 0x20).unwrap(), 0x1B);
+        assert_eq!(find_free_cluster(&mut cur, fat_type, 2, 0x20).ok(), Some(0x12));
+        assert_eq!(find_free_cluster(&mut cur, fat_type, 0x12, 0x20).ok(), Some(0x12));
+        assert_eq!(find_free_cluster(&mut cur, fat_type, 0x13, 0x20).ok(), Some(0x1B));
         assert!(find_free_cluster(&mut cur, fat_type, 0x13, 0x14).is_err());
 
-        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).unwrap(), 5);
+        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).ok(), Some(5));
 
         // test allocation
-        assert_eq!(alloc_cluster(&mut cur, fat_type, None, Some(0x13), 0x1E).unwrap(), 0x1B);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).unwrap(), FatValue::EndOfChain);
-        assert_eq!(alloc_cluster(&mut cur, fat_type, Some(0x1B), None, 0x1E).unwrap(), 0x12);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).unwrap(), FatValue::Data(0x12));
-        assert_eq!(read_fat(&mut cur, fat_type, 0x12).unwrap(), FatValue::EndOfChain);
-        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).unwrap(), 3);
+        assert_eq!(alloc_cluster(&mut cur, fat_type, None, Some(0x13), 0x1E).ok(), Some(0x1B));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).ok(), Some(FatValue::EndOfChain));
+        assert_eq!(alloc_cluster(&mut cur, fat_type, Some(0x1B), None, 0x1E).ok(), Some(0x12));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x1B).ok(), Some(FatValue::Data(0x12)));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x12).ok(), Some(FatValue::EndOfChain));
+        assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).ok(), Some(3));
         // test reading from iterator
         {
             let iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
-            assert_eq!(iter.map(Result::unwrap).collect::<Vec<_>>(), vec![0xA, 0x14, 0x15, 0x16, 0x19, 0x1A]);
+            let actual_cluster_numbers = iter.map(Result::ok).collect::<Vec<_>>();
+            let expected_cluster_numbers = [0xA_u32, 0x14_u32, 0x15_u32, 0x16_u32, 0x19_u32, 0x1A_u32]
+                .iter().cloned().map(Some).collect::<Vec<_>>();
+            assert_eq!(actual_cluster_numbers, expected_cluster_numbers);
         }
         // test truncating a chain
         {
             let mut iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
-            assert_eq!(iter.nth(3).unwrap().unwrap(), 0x16);
-            iter.truncate().unwrap();
+            assert_eq!(iter.nth(3).map(Result::ok), Some(Some(0x16)));
+            assert!(iter.truncate().is_ok());
         }
-        assert_eq!(read_fat(&mut cur, fat_type, 0x16).unwrap(), FatValue::EndOfChain);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x19).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x1A).unwrap(), FatValue::Free);
+        assert_eq!(read_fat(&mut cur, fat_type, 0x16).ok(), Some(FatValue::EndOfChain));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x19).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x1A).ok(), Some(FatValue::Free));
         // test freeing a chain
         {
             let mut iter = ClusterIterator::<&mut T, T>::new(&mut cur, fat_type, 0x9);
-            iter.free().unwrap();
+            assert!(iter.free().is_ok());
         }
-        assert_eq!(read_fat(&mut cur, fat_type, 0x9).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0xA).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x14).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x15).unwrap(), FatValue::Free);
-        assert_eq!(read_fat(&mut cur, fat_type, 0x16).unwrap(), FatValue::Free);
+        assert_eq!(read_fat(&mut cur, fat_type, 0x9).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0xA).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x14).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x15).ok(), Some(FatValue::Free));
+        assert_eq!(read_fat(&mut cur, fat_type, 0x16).ok(), Some(FatValue::Free));
     }
 
     #[test]

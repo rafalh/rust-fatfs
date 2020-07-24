@@ -571,8 +571,7 @@ fn determine_fs_geometry(
         let root_dir_sectors = determine_root_dir_sectors(root_dir_entries, bytes_per_sector, fat_type);
         let result =
             try_fs_geometry(total_sectors, bytes_per_sector, sectors_per_cluster, fat_type, root_dir_sectors, fats);
-        if result.is_ok() {
-            let (reserved_sectors, sectors_per_fat) = result.unwrap(); // SAFE: used is_ok() before
+        if let Ok((reserved_sectors, sectors_per_fat)) = result {
             return Ok((fat_type, reserved_sectors, sectors_per_fat));
         }
     }

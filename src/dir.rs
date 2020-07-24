@@ -976,33 +976,42 @@ impl ShortNameGenerator {
             self.exact_match = true;
         }
         // check for long prefix form collision (TEXTFI~1.TXT)
-        let long_prefix_len = cmp::min(self.basename_len, 6);
-        let num_suffix = if short_name[long_prefix_len] == b'~' {
-            (short_name[long_prefix_len + 1] as char).to_digit(10)
-        } else {
-            None
-        };
-        let long_prefix_matches = short_name[..long_prefix_len] == self.short_name[..long_prefix_len];
-        let ext_matches = short_name[8..] == self.short_name[8..];
-        if long_prefix_matches && num_suffix.is_some() && ext_matches {
-            let num = num_suffix.unwrap(); // SAFE: checked in if condition
-            self.long_prefix_bitmap |= 1 << num;
-        }
+        self.check_for_long_prefix_collision(short_name);
 
         // check for short prefix + checksum form collision (TE021F~1.TXT)
+        self.check_for_short_prefix_collision(short_name);
+    }
+
+    fn check_for_long_prefix_collision(&mut self, short_name: &[u8; SFN_SIZE]) {
+        // check for long prefix form collision (TEXTFI~1.TXT)
+        let long_prefix_len = cmp::min(self.basename_len, 6);
+        if short_name[long_prefix_len] != b'~' {
+            return;
+        }
+        if let Some(num_suffix) = char::from(short_name[long_prefix_len + 1]).to_digit(10) {
+            let long_prefix_matches = short_name[..long_prefix_len] == self.short_name[..long_prefix_len];
+            let ext_matches = short_name[8..] == self.short_name[8..];
+            if long_prefix_matches && ext_matches {
+                self.long_prefix_bitmap |= 1 << num_suffix;
+            }
+        }
+    }
+
+    fn check_for_short_prefix_collision(&mut self, short_name: &[u8; SFN_SIZE]) {
+        // check for short prefix + checksum form collision (TE021F~1.TXT)
         let short_prefix_len = cmp::min(self.basename_len, 2);
-        let num_suffix = if short_name[short_prefix_len + 4] == b'~' {
-            char::from(short_name[short_prefix_len + 4 + 1]).to_digit(10)
-        } else {
-            None
-        };
-        let short_prefix_matches = short_name[..short_prefix_len] == self.short_name[..short_prefix_len];
-        if short_prefix_matches && num_suffix.is_some() && ext_matches {
-            let chksum_res = str::from_utf8(&short_name[short_prefix_len..short_prefix_len + 4])
-                .map(|s| u16::from_str_radix(s, 16));
-            if chksum_res == Ok(Ok(self.chksum)) {
-                let num = num_suffix.unwrap(); // SAFE: checked in if condition
-                self.prefix_chksum_bitmap |= 1 << num;
+        if short_name[short_prefix_len + 4] != b'~' {
+            return;
+        }
+        if let Some(num_suffix) = char::from(short_name[short_prefix_len + 4 + 1]).to_digit(10) {
+            let short_prefix_matches = short_name[..short_prefix_len] == self.short_name[..short_prefix_len];
+            let ext_matches = short_name[8..] == self.short_name[8..];
+            if short_prefix_matches && ext_matches {
+                let chksum_res = str::from_utf8(&short_name[short_prefix_len..short_prefix_len + 4])
+                    .map(|s| u16::from_str_radix(s, 16));
+                if chksum_res == Ok(Ok(self.chksum)) {
+                    self.prefix_chksum_bitmap |= 1 << num_suffix;
+                }
             }
         }
     }
@@ -1059,12 +1068,14 @@ impl ShortNameGenerator {
             prefix_len
         };
         buf[prefix_len] = b'~';
-        buf[prefix_len + 1] = char::from_digit(num, 10).unwrap() as u8; // SAFE
+        buf[prefix_len + 1] = char::from_digit(num, 10).unwrap() as u8; // SAFE: num is in range [1, 9]
         buf[8..].copy_from_slice(&self.short_name[8..]);
         buf
     }
 
     fn u16_to_hex(x: u16) -> [u8; 4] {
+        // Unwrapping is safe because each line below takes 4 bits of `x` and shifts them so they form a number in
+        // range [0, 15]
         let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
@@ -1086,13 +1097,13 @@ mod tests {
 
     #[test]
     fn test_generate_short_name() {
-        assert_eq!(&ShortNameGenerator::new("Foo").generate().unwrap(), b"FOO        ");
-        assert_eq!(&ShortNameGenerator::new("Foo.b").generate().unwrap(), b"FOO     B  ");
-        assert_eq!(&ShortNameGenerator::new("Foo.baR").generate().unwrap(), b"FOO     BAR");
-        assert_eq!(&ShortNameGenerator::new("Foo+1.baR").generate().unwrap(), b"FOO_1~1 BAR");
-        assert_eq!(&ShortNameGenerator::new("ver +1.2.text").generate().unwrap(), b"VER_12~1TEX");
-        assert_eq!(&ShortNameGenerator::new(".bashrc.swp").generate().unwrap(), b"BASHRC~1SWP");
-        assert_eq!(&ShortNameGenerator::new(".foo").generate().unwrap(), b"FOO~1      ");
+        assert_eq!(ShortNameGenerator::new("Foo").generate().ok(), Some(*b"FOO        "));
+        assert_eq!(ShortNameGenerator::new("Foo.b").generate().ok(), Some(*b"FOO     B  "));
+        assert_eq!(ShortNameGenerator::new("Foo.baR").generate().ok(), Some(*b"FOO     BAR"));
+        assert_eq!(ShortNameGenerator::new("Foo+1.baR").generate().ok(), Some(*b"FOO_1~1 BAR"));
+        assert_eq!(ShortNameGenerator::new("ver +1.2.text").generate().ok(), Some(*b"VER_12~1TEX"));
+        assert_eq!(ShortNameGenerator::new(".bashrc.swp").generate().ok(), Some(*b"BASHRC~1SWP"));
+        assert_eq!(ShortNameGenerator::new(".foo").generate().ok(), Some(*b"FOO~1      "));
     }
 
     #[test]
