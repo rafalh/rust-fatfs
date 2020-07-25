@@ -454,8 +454,16 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         let (mut stream, start_pos) = self.alloc_and_write_lfn_entries(&lfn_utf16, raw_entry.name())?;
         // write short name entry
         raw_entry.serialize(&mut stream)?;
+        // Get position directory stream after entries were written
         let end_pos = stream.seek(io::SeekFrom::Current(0))?;
-        let abs_pos = stream.abs_pos().map(|p| p - u64::from(DIR_ENTRY_SIZE));
+        // Get current absolute position on the storage
+        // Unwrapping is safe because abs_pos() returns None only if stream is at position 0. This is not
+        // the case because an entry was just written
+        // Note: if current position is on the cluster boundary then a position in the cluster containing the entry is
+        // returned
+        let end_abs_pos = stream.abs_pos().unwrap();
+        // Calculate SFN entry start position on the storage
+        let start_abs_pos = end_abs_pos - u64::from(DIR_ENTRY_SIZE);
         // return new logical entry descriptor
         let short_name = ShortName::new(raw_entry.name());
         Ok(DirEntry {
@@ -464,7 +472,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
             #[cfg(feature = "lfn")]
             lfn_utf16,
             fs: self.fs,
-            entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is absent only for empty file
+            entry_pos: start_abs_pos,
             offset_range: (start_pos, end_pos),
         })
     }
@@ -525,8 +533,14 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
             }
             match raw_entry {
                 DirEntryData::File(data) => {
-                    // Get entry position on volume
-                    let abs_pos = self.stream.abs_pos().map(|p| p - u64::from(DIR_ENTRY_SIZE));
+                    // Get current absolute position on the storage
+                    // Unwrapping is safe because abs_pos() returns None only if stream is at position 0. This is not
+                    // the case because an entry was just read
+                    // Note: if current position is on the cluster boundary then a position in the cluster containing the entry is
+                    // returned
+                    let end_abs_pos = self.stream.abs_pos().unwrap();
+                    // Calculate SFN entry start position on the storage
+                    let abs_pos = end_abs_pos - u64::from(DIR_ENTRY_SIZE);
                     // Check if LFN checksum is valid
                     lfn_builder.validate_chksum(data.name());
                     // Return directory entry
@@ -538,7 +552,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
                         #[cfg(feature = "lfn")]
                         lfn_utf16: lfn_builder.into_buf(),
                         fs: self.fs,
-                        entry_pos: abs_pos.unwrap(), // SAFE: abs_pos is empty only for empty file
+                        entry_pos: abs_pos,
                         offset_range: (begin_offset, offset),
                     }));
                 },
@@ -1075,8 +1089,8 @@ impl ShortNameGenerator {
     }
 
     fn u16_to_hex(x: u16) -> [u8; 4] {
-        // Unwrapping is safe because each line below takes 4 bits of `x` and shifts them so they form a number in
-        // range [0, 15]
+        // Unwrapping below is safe because each line takes 4 bits of `x` and shifts them to the right so they form
+        // a number in range [0, 15]
         let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;

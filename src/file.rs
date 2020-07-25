@@ -41,13 +41,16 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
             if self.offset == 0 {
                 e.set_first_cluster(None, self.fs.fat_type());
             }
-        }
-        if self.offset > 0 {
-            debug_assert!(self.current_cluster.is_some());
-            // if offset is not 0 current cluster cannot be empty
-            self.fs.truncate_cluster_chain(self.current_cluster.unwrap()) // SAFE
         } else {
-            debug_assert!(self.current_cluster.is_none());
+            // Note: we cannot handle this case because there is no size field
+            panic!("Trying to a file without an entry");
+        }
+        if let Some(current_cluster) = self.current_cluster {
+            // current cluster is none only if offset is 0
+            debug_assert!(self.offset > 0);
+            self.fs.truncate_cluster_chain(current_cluster)
+        } else {
+            debug_assert!(self.offset == 0);
             if let Some(n) = self.first_cluster {
                 self.fs.free_cluster_chain(n)?;
                 self.first_cluster = None;
