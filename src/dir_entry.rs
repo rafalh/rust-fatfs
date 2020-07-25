@@ -631,21 +631,32 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     #[cfg(feature = "lfn")]
     fn eq_name_lfn(&self, name: &str) -> bool {
         if let Some(lfn) = self.long_file_name_as_ucs2_units() {
-            if char::decode_utf16(lfn.iter().cloned()).any(|r| r.is_err()) {
-                // File name cannot be decoded
-                return false;
+            let mut self_decode_iter = char::decode_utf16(lfn.iter().cloned());
+            let mut other_uppercase_iter = name.chars().flat_map(char_to_uppercase);
+            loop {
+                if let Some(decode_result) = self_decode_iter.next() {
+                    if let Ok(self_char) = decode_result {
+                        for self_uppercase_char in char_to_uppercase(self_char) {
+                            // compare each character in uppercase
+                            if Some(self_uppercase_char) != other_uppercase_iter.next() {
+                                return false;
+                            }
+                        }
+                    } else {
+                        // decoding failed
+                        return false;
+                    }
+                } else {
+                    // end of self chars iterator
+                    break;
+                }
             }
-            // Convert both names to uppercase character iterators to achieve case insensitive comparsion
-            let self_name_uppercase_iter = char::decode_utf16(lfn.iter().cloned())
-                .map(Result::unwrap)
-                .flat_map(char_to_uppercase);
-            let other_name_uppercase_iter = name.chars().flat_map(char_to_uppercase);
-            // Compare two iterators
-            if self_name_uppercase_iter.eq(other_name_uppercase_iter) {
-                return true;
-            }
+            // both iterators should be at the end here
+            other_uppercase_iter.next() == None
+        } else {
+            // entry has no long name
+            false
         }
-        false
     }
 
     pub(crate) fn eq_name(&self, name: &str) -> bool {
