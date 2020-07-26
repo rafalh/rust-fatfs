@@ -153,17 +153,22 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> io::Result<DirEntryOrShortName<'a, IO, TP, OCC>> {
         let mut short_name_gen = ShortNameGenerator::new(name);
         loop {
+            // find matching entry
             let r = self.find_entry(name, is_dir, Some(&mut short_name_gen));
             match r {
+                // file not found - continue with short name generation
                 Err(ref err) if err.kind() == ErrorKind::NotFound => {},
-                // other error
+                // unexpected error - return it
                 Err(err) => return Err(err),
                 // directory already exists - return it
                 Ok(e) => return Ok(DirEntryOrShortName::DirEntry(e)),
             };
+            // try to generate short name
             if let Ok(name) = short_name_gen.generate() {
                 return Ok(DirEntryOrShortName::ShortName(name));
             }
+            // there were too many collisions in short name generation
+            // try different checksum in the next iteration
             short_name_gen.next_iteration();
         }
     }
@@ -339,13 +344,17 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // check if destionation filename is unused
         let r = dst_dir.check_for_existence(dst_name, None)?;
         let short_name = match r {
+            // destination file already exist
             DirEntryOrShortName::DirEntry(ref dst_e) => {
                 // check if source and destination entry is the same
                 if e.is_same_entry(dst_e) {
+                    // nothing to do
                     return Ok(());
                 }
+                // destination file exists and it is not the same as source file - fail
                 return Err(io::Error::new(ErrorKind::AlreadyExists, "Destination file already exists"));
             },
+            // destionation file does not exist, short name has been generated
             DirEntryOrShortName::ShortName(short_name) => short_name,
         };
         // free long and short name entries
