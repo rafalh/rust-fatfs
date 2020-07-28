@@ -7,7 +7,8 @@ use core::str;
 #[cfg(feature = "lfn")]
 use core::{iter, slice};
 
-use crate::io::{self, Read, Write, Seek, ErrorKind, SeekFrom};
+use crate::io::{self, Read, Write, Seek, SeekFrom, IoBase};
+use crate::error::{Error, IoError};
 use crate::dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
 #[cfg(feature = "lfn")]
 use crate::dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
@@ -47,8 +48,13 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
     }
 }
 
+impl<IO: ReadWriteSeek, TP, OCC> IoBase for DirRawStream<'_, IO, TP, OCC> {
+    type Error = Error<IO::Error>;
+}
+
+
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         match self {
             DirRawStream::File(file) => file.read(buf),
             DirRawStream::Root(raw) => raw.read(buf),
@@ -57,13 +63,13 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP,
 }
 
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP, OCC> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         match self {
             DirRawStream::File(file) => file.write(buf),
             DirRawStream::Root(raw) => raw.write(buf),
         }
     }
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<(), Self::Error> {
         match self {
             DirRawStream::File(file) => file.flush(),
             DirRawStream::Root(raw) => raw.flush(),
@@ -72,7 +78,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
         match self {
             DirRawStream::File(file) => file.seek(pos),
             DirRawStream::Root(raw) => raw.seek(pos),
@@ -120,15 +126,15 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         name: &str,
         is_dir: Option<bool>,
         mut short_name_gen: Option<&mut ShortNameGenerator>,
-    ) -> io::Result<DirEntry<'a, IO, TP, OCC>> {
+    ) -> Result<DirEntry<'a, IO, TP, OCC>, Error<IO::Error>> {
         for r in self.iter() {
             let e = r?;
             // compare name ignoring case
             if e.eq_name(name) {
                 // check if file or directory is expected
                 if is_dir.is_some() && Some(e.is_dir()) != is_dir {
-                    let error_msg = if e.is_dir() { "Is a directory" } else { "Not a directory" };
-                    return Err(io::Error::new(ErrorKind::Other, error_msg));
+                    if e.is_dir() { error!("Is a directory"); } else { error!("Not a directory"); }
+                    return Err(Error::InvalidInput);
                 }
                 return Ok(e);
             }
@@ -137,10 +143,10 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 gen.add_existing(e.raw_short_name());
             }
         }
-        Err(io::Error::new(ErrorKind::NotFound, "No such file or directory"))
+        Err(Error::NotFound) //("No such file or directory"))
     }
 
-    pub(crate) fn find_volume_entry(&self) -> io::Result<Option<DirEntry<'a, IO, TP, OCC>>> {
+    pub(crate) fn find_volume_entry(&self) -> Result<Option<DirEntry<'a, IO, TP, OCC>>, Error<IO::Error>> {
         for r in DirIter::new(self.stream.clone(), self.fs, false) {
             let e = r?;
             if e.data.is_volume() {
@@ -150,14 +156,14 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok(None)
     }
 
-    fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> io::Result<DirEntryOrShortName<'a, IO, TP, OCC>> {
+    fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> Result<DirEntryOrShortName<'a, IO, TP, OCC>, Error<IO::Error>> {
         let mut short_name_gen = ShortNameGenerator::new(name);
         loop {
             // find matching entry
             let r = self.find_entry(name, is_dir, Some(&mut short_name_gen));
             match r {
                 // file not found - continue with short name generation
-                Err(ref err) if err.kind() == ErrorKind::NotFound => {},
+                Err(Error::NotFound) => {},
                 // unexpected error - return it
                 Err(err) => return Err(err),
                 // directory already exists - return it
@@ -176,8 +182,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Opens existing subdirectory.
     ///
     /// `path` is a '/' separated directory path relative to self directory.
-    pub fn open_dir(&self, path: &str) -> io::Result<Self> {
-        trace!("open_dir {}", path);
+    pub fn open_dir(&self, path: &str) -> Result<Self, Error<IO::Error>> {
+        trace!("Dir::open_dir {}", path);
         let (name, rest_opt) = split_path(path);
         let e = self.find_entry(name, Some(true), None)?;
         match rest_opt {
@@ -189,8 +195,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Opens existing file.
     ///
     /// `path` is a '/' separated file path relative to self directory.
-    pub fn open_file(&self, path: &str) -> io::Result<File<'a, IO, TP, OCC>> {
-        trace!("open_file {}", path);
+    pub fn open_file(&self, path: &str) -> Result<File<'a, IO, TP, OCC>, Error<IO::Error>> {
+        trace!("Dir::open_file {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -206,8 +212,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     ///
     /// `path` is a '/' separated file path relative to self directory.
     /// File is never truncated when opening. It can be achieved by calling `File::truncate` method after opening.
-    pub fn create_file(&self, path: &str) -> io::Result<File<'a, IO, TP, OCC>> {
-        trace!("create_file {}", path);
+    pub fn create_file(&self, path: &str) -> Result<File<'a, IO, TP, OCC>, Error<IO::Error>> {
+        trace!("Dir::create_file {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -229,8 +235,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Creates new directory or opens existing.
     ///
     /// `path` is a '/' separated path relative to self directory.
-    pub fn create_dir(&self, path: &str) -> io::Result<Self> {
-        trace!("create_dir {}", path);
+    pub fn create_dir(&self, path: &str) -> Result<Self, Error<IO::Error>> {
+        trace!("Dir::create_dir {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -262,8 +268,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         }
     }
 
-    fn is_empty(&self) -> io::Result<bool> {
-        trace!("is_empty");
+    fn is_empty(&self) -> Result<bool, Error<IO::Error>> {
+        trace!("Dir::is_empty");
         // check if directory contains no files
         for r in self.iter() {
             let e = r?;
@@ -281,8 +287,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// `path` is a '/' separated file path relative to self directory.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
-    pub fn remove(&self, path: &str) -> io::Result<()> {
-        trace!("remove {}", path);
+    pub fn remove(&self, path: &str) -> Result<(), Error<IO::Error>> {
+        trace!("Dir::remove {}", path);
         // traverse path
         let (name, rest_opt) = split_path(path);
         if let Some(rest) = rest_opt {
@@ -292,7 +298,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // in case of directory check if it is empty
         let e = self.find_entry(name, None, None)?;
         if e.is_dir() && !e.to_dir().is_empty()? {
-            return Err(io::Error::new(ErrorKind::Other, "Directory not empty"));
+            return Err(Error::DirectoryIsNotEmpty);
         }
         // free data
         if let Some(n) = e.first_cluster() {
@@ -319,8 +325,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// `dst_dir` can be set to self directory if rename operation without moving is needed.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
-    pub fn rename(&self, src_path: &str, dst_dir: &Dir<IO, TP, OCC>, dst_path: &str) -> io::Result<()> {
-        trace!("rename {} {}", src_path, dst_path);
+    pub fn rename(&self, src_path: &str, dst_dir: &Dir<IO, TP, OCC>, dst_path: &str) -> Result<(), Error<IO::Error>> {
+        trace!("Dir::rename {} {}", src_path, dst_path);
         // traverse source path
         let (src_name, src_rest_opt) = split_path(src_path);
         if let Some(rest) = src_rest_opt {
@@ -337,8 +343,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
-    fn rename_internal(&self, src_name: &str, dst_dir: &Dir<IO, TP, OCC>, dst_name: &str) -> io::Result<()> {
-        trace!("rename_internal {} {}", src_name, dst_name);
+    fn rename_internal(&self, src_name: &str, dst_dir: &Dir<IO, TP, OCC>, dst_name: &str) -> Result<(), Error<IO::Error>> {
+        trace!("Dir::rename_internal {} {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
         // check if destionation filename is unused
@@ -352,7 +358,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                     return Ok(());
                 }
                 // destination file exists and it is not the same as source file - fail
-                return Err(io::Error::new(ErrorKind::AlreadyExists, "Destination file already exists"));
+                return Err(Error::AlreadyExists);
             },
             // destionation file does not exist, short name has been generated
             DirEntryOrShortName::ShortName(short_name) => short_name,
@@ -374,7 +380,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok(())
     }
 
-    fn find_free_entries(&self, num_entries: u32) -> io::Result<DirRawStream<'a, IO, TP, OCC>> {
+    fn find_free_entries(&self, num_entries: u32) -> Result<DirRawStream<'a, IO, TP, OCC>, Error<IO::Error>> {
         let mut stream = self.stream.clone();
         let mut first_free: u32 = 0;
         let mut num_free: u32 = 0;
@@ -437,7 +443,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         &self,
         lfn_utf16: &LfnBuffer,
         short_name: &[u8; SFN_SIZE],
-    ) -> io::Result<(DirRawStream<'a, IO, TP, OCC>, u64)> {
+    ) -> Result<(DirRawStream<'a, IO, TP, OCC>, u64), Error<IO::Error>> {
         // get short name checksum
         let lfn_chsum = lfn_checksum(short_name);
         // create LFN entries generator
@@ -453,8 +459,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok((stream, start_pos))
     }
 
-    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> io::Result<DirEntry<'a, IO, TP, OCC>> {
-        trace!("write_entry {}", name);
+    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> Result<DirEntry<'a, IO, TP, OCC>, Error<IO::Error>> {
+        trace!("Dir::write_entry {}", name);
         // check if name doesn't contain unsupported characters
         validate_long_name(name)?;
         // convert long name to UTF-16
@@ -521,8 +527,8 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
         }
     }
 
-    fn read_dir_entry(&mut self) -> io::Result<Option<DirEntry<'a, IO, TP, OCC>>> {
-        trace!("read_dir_entry");
+    fn read_dir_entry(&mut self) -> Result<Option<DirEntry<'a, IO, TP, OCC>>, Error<IO::Error>> {
+        trace!("DirIter::read_dir_entry");
         let mut lfn_builder = LongNameBuilder::new();
         let mut offset = self.stream.seek(SeekFrom::Current(0))?;
         let mut begin_offset = offset;
@@ -583,7 +589,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirIter<'_, IO, TP, OCC> {
 }
 
 impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Iterator for DirIter<'a, IO, TP, OCC> {
-    type Item = io::Result<DirEntry<'a, IO, TP, OCC>>;
+    type Item = Result<DirEntry<'a, IO, TP, OCC>, Error<IO::Error>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.err {
@@ -601,13 +607,13 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Iterator for DirIter<'a, IO, 
     }
 }
 
-fn validate_long_name(name: &str) -> io::Result<()> {
+fn validate_long_name<E: IoError>(name: &str) -> Result<(), Error<E>> {
     // check if length is valid
     if name.is_empty() {
-        return Err(io::Error::new(ErrorKind::Other, "File name is empty"));
+        return Err(Error::InvalidFileNameLength);
     }
     if name.len() > 255 {
-        return Err(io::Error::new(ErrorKind::Other, "File name too long"));
+        return Err(Error::InvalidFileNameLength);
     }
     // check if there are only valid characters
     for c in name.chars() {
@@ -616,7 +622,7 @@ fn validate_long_name(name: &str) -> io::Result<()> {
             | '\u{80}'..='\u{FFFF}'
             | '$' | '%' | '\'' | '-' | '_' | '@' | '~' | '`' | '!' | '(' | ')' | '{' | '}' | '.' | ' ' | '+' | ','
             | ';' | '=' | '[' | ']' | '^' | '#' | '&' => {},
-            _ => return Err(io::Error::new(ErrorKind::Other, "File name contains unsupported characters")),
+            _ => return Err(Error::UnsupportedFileNameCharacter),
         }
     }
     Ok(())
@@ -1049,7 +1055,7 @@ impl ShortNameGenerator {
         chksum.0
     }
 
-    fn generate(&self) -> io::Result<[u8; SFN_SIZE]> {
+    fn generate(&self) -> Result<[u8; SFN_SIZE], Error<()>> {
         if !self.lossy_conv && self.name_fits && !self.exact_match {
             // If there was no lossy conversion and name fits into
             // 8.3 convention and there is no collision return it as is
@@ -1068,7 +1074,7 @@ impl ShortNameGenerator {
             }
         }
         // Too many collisions - fail
-        Err(io::Error::new(ErrorKind::AlreadyExists, "short name already exists"))
+        Err(Error::AlreadyExists)
     }
 
     fn next_iteration(&mut self) {

@@ -81,6 +81,7 @@ mod fs;
 mod table;
 mod time;
 mod io;
+mod error;
 
 pub use crate::dir::*;
 pub use crate::dir_entry::*;
@@ -88,3 +89,4 @@ pub use crate::file::*;
 pub use crate::fs::*;
 pub use crate::time::*;
 pub use crate::io::*;
+pub use crate::error::*;

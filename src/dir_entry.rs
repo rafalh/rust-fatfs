@@ -1,13 +1,15 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
 use core::char;
+use core::convert::TryInto;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
 use core::iter::FromIterator;
 use core::fmt;
 use core::str;
 
-use crate::io::{self, Read, Write, Cursor, ReadLeExt, WriteLeExt};
+use crate::io::{self, Read, Write, ReadLeExt, WriteLeExt};
+use crate::error::{Error, IoError};
 use crate::dir::{Dir, DirRawStream};
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
@@ -235,7 +237,7 @@ impl DirFileEntryData {
         self.modify_time = date_time.time.encode().0;
     }
 
-    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> Result<(), W::Error> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
         wrt.write_u8(self.reserved_0)?;
@@ -299,7 +301,7 @@ impl DirLfnEntryData {
         lfn_part[11..13].copy_from_slice(&self.name_2);
     }
 
-    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> Result<(), W::Error> {
         wrt.write_u8(self.order)?;
         for ch in &self.name_0 {
             wrt.write_u16_le(*ch)?;
@@ -345,34 +347,37 @@ pub(crate) enum DirEntryData {
 }
 
 impl DirEntryData {
-    pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> io::Result<()> {
+    pub(crate) fn serialize<E: IoError, W: Write<Error = Error<E>>>(&self, wrt: &mut W) -> Result<(), Error<E>> {
+        trace!("DirEntryData::serialize");
         match self {
             DirEntryData::File(file) => file.serialize(wrt),
             DirEntryData::Lfn(lfn) => lfn.serialize(wrt),
         }
     }
 
-    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> io::Result<Self> {
+    pub(crate) fn deserialize<E: IoError, R: Read<Error = Error<E>>>(rdr: &mut R) -> Result<Self, Error<E>> {
+        trace!("DirEntryData::deserialize");
         let mut name = [0; SFN_SIZE];
         match rdr.read_exact(&mut name) {
-            Err(ref err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+            Err(Error::UnexpectedEof) => {
                 // entries can occupy all clusters of directory so there is no zero entry at the end
                 // handle it here by returning non-existing empty entry
                 return Ok(DirEntryData::File(DirFileEntryData::default()));
             },
-            Err(err) => return Err(err),
+            Err(err) =>{ trace!("meh"); return Err(err); },
             _ => {},
-        }
+        }trace!("meh2");
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             // read long name entry
             let mut data = DirLfnEntryData { attrs, ..DirLfnEntryData::default() };
-            // use cursor to divide name into order and LFN name_0
-            let mut cur = Cursor::new(&name);
-            data.order = cur.read_u8()?;
-            for x in &mut data.name_0 {
-                *x = cur.read_u16_le()?;
+            // divide the name into order and LFN name_0
+            data.order = name[0];
+            for (dst, src) in data.name_0.iter_mut().zip(name[1..].chunks_exact(2)) {
+                // unwrap cannot panic because src has exactly 2 values
+                *dst = u16::from_le_bytes(src.try_into().unwrap());
             }
+
             data.entry_type = rdr.read_u8()?;
             data.checksum = rdr.read_u8()?;
             for x in &mut data.name_1 {
@@ -479,7 +484,7 @@ impl DirEntryEditor {
         }
     }
 
-    pub(crate) fn flush<IO: ReadWriteSeek, TP, OCC>(&mut self, fs: &FileSystem<IO, TP, OCC>) -> io::Result<()> {
+    pub(crate) fn flush<IO: ReadWriteSeek, TP, OCC>(&mut self, fs: &FileSystem<IO, TP, OCC>) -> Result<(), IO::Error> {
         if self.dirty {
             self.write(fs)?;
             self.dirty = false;
@@ -487,7 +492,7 @@ impl DirEntryEditor {
         Ok(())
     }
 
-    fn write<IO: ReadWriteSeek, TP, OCC>(&self, fs: &FileSystem<IO, TP, OCC>) -> io::Result<()> {
+    fn write<IO: ReadWriteSeek, TP, OCC>(&self, fs: &FileSystem<IO, TP, OCC>) -> Result<(), IO::Error> {
         let mut disk = fs.disk.borrow_mut();
         disk.seek(io::SeekFrom::Start(self.pos))?;
         self.data.serialize(&mut *disk)

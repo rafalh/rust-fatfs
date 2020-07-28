@@ -5,23 +5,25 @@ Changelog
 ------------------------
 New features:
 * Add `fatfs::Read`, `fatfs::Write` and `fatfs::Seek` traits and use them to replace usages of `Read`, `Write`, `Seek`
-  traits from `std::io` (BREAKING CHANGE).
-* Add `Error` struct and use it to replace all usages of `std::io::Error` struct (BREAKING CHANGE). Implement `From`
-  trait for `Error` struct that allows easy conversion to `std::io::Error`.
-* Implement `Read`, `Write`, `Seek` traits from `std::io` module for `fatfs::File` struct.
-* Add `StdIoWrapper` struct that implements new `Read`, `Write`, `Seek` traits and wraps types that implement
+  traits from `std::io` (BREAKING CHANGE). New traits are subtraits of `fatfs::IoBase` and use `IoBase::Error`
+  associated type for errors.
+* Add `Error` enum and use it to replace all usages of `std::io::Error` struct (BREAKING CHANGE). The new enum items
+  allow better differentiation of errors than `std::io::ErrorKind`.
+* Implement `From<Error<std::io::Error>>` trait for `std::io::Error` to simplify errors conversion.
+* Implement `Read`, `Write`, `Seek` traits from `std::io` for `fatfs::File` struct.
+* Add `StdIoWrapper` struct that implements newly added `Read`, `Write`, `Seek` traits and wraps types that implement
   corresponding traits from `std::io` module.
-* Add `IntoStorage` trait and implement it for types that implement `Read`, `Write`, `Seek` traits from `std::io`.
-  Make `FileSystem::new` accept types that implement `IntoStorage`. It should handle types that implement `std::io`
-  traits as well as types that implement `fatfs::Read`, `fatfs::Write`, `fatfs::Seek` traits.
+* Add `IntoStorage` trait and implement it for types that implement `Read`, `Write`, `Seek` traits from `std::io` and
+  types that implement newly added `Read`, `Write`, `Seek` traits from this crate. Make `FileSystem::new` accept types
+  that implement `IntoStorage`.
 * Remove `core_io` dependency. There are no Rust compiler restrictions for `no_std` builds anymore.
 * Add type parameters for `TimeProvider` and `OemCpConverter` in `FileSystem`, `File`, `Dir`, `DirEntry`, `FsOptions`
-  public structs and require owned time provider and oem CP converter instead of a reference with a static lifetime in
+  public structs and require an owned time provider and oem CP converter instead of a reference with a static lifetime in
   `FsOptions` (BREAKING CHANGE). This change allows `FileSystem` usage in multi-threaded environment (e.g. wrapped in a
   `Mutex`).
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.36.0.
-* Build the crate using 2018 edition.
+* Build the crate using the 2018 edition.
 
 Bug fixes:
 * Fix time encoding and decoding in a directory entry.
