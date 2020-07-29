@@ -364,9 +364,9 @@ impl DirEntryData {
                 // handle it here by returning non-existing empty entry
                 return Ok(DirEntryData::File(DirFileEntryData::default()));
             },
-            Err(err) =>{ trace!("meh"); return Err(err); },
+            Err(err) => { return Err(err); },
             _ => {},
-        }trace!("meh2");
+        }
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
             // read long name entry
