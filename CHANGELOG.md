@@ -25,6 +25,8 @@ New features:
 * Bump up minimal Rust compiler version to 1.36.0.
 * Build the crate using the 2018 edition.
 
+0.3.4 (2020-07-20)
+------------------
 Bug fixes:
 * Fix time encoding and decoding in a directory entry.
 
