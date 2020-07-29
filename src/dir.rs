@@ -7,14 +7,16 @@ use core::str;
 #[cfg(feature = "lfn")]
 use core::{iter, slice};
 
-use crate::io::{self, Read, Write, Seek, SeekFrom, IoBase};
-use crate::error::{Error, IoError};
-use crate::dir_entry::{DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE};
+use crate::dir_entry::{
+    DirEntry, DirEntryData, DirFileEntryData, DirLfnEntryData, FileAttributes, ShortName, DIR_ENTRY_SIZE,
+};
 #[cfg(feature = "lfn")]
 use crate::dir_entry::{LFN_ENTRY_LAST_FLAG, LFN_PART_LEN};
-use crate::dir_entry::{SFN_SIZE, SFN_PADDING};
+use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
+use crate::error::{Error, IoError};
 use crate::file::File;
-use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, ReadWriteSeek, OemCpConverter};
+use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, OemCpConverter, ReadWriteSeek};
+use crate::io::{self, IoBase, Read, Seek, SeekFrom, Write};
 use crate::time::TimeProvider;
 
 pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
@@ -51,7 +53,6 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for DirRawStream<'_, IO, TP, OCC> {
     type Error = Error<IO::Error>;
 }
-
 
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
@@ -133,7 +134,11 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
             if e.eq_name(name) {
                 // check if file or directory is expected
                 if is_dir.is_some() && Some(e.is_dir()) != is_dir {
-                    if e.is_dir() { error!("Is a directory"); } else { error!("Not a directory"); }
+                    if e.is_dir() {
+                        error!("Is a directory");
+                    } else {
+                        error!("Not a directory");
+                    }
                     return Err(Error::InvalidInput);
                 }
                 return Ok(e);
@@ -156,14 +161,18 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok(None)
     }
 
-    fn check_for_existence(&self, name: &str, is_dir: Option<bool>) -> Result<DirEntryOrShortName<'a, IO, TP, OCC>, Error<IO::Error>> {
+    fn check_for_existence(
+        &self,
+        name: &str,
+        is_dir: Option<bool>,
+    ) -> Result<DirEntryOrShortName<'a, IO, TP, OCC>, Error<IO::Error>> {
         let mut short_name_gen = ShortNameGenerator::new(name);
         loop {
             // find matching entry
             let r = self.find_entry(name, is_dir, Some(&mut short_name_gen));
             match r {
                 // file not found - continue with short name generation
-                Err(Error::NotFound) => {},
+                Err(Error::NotFound) => {}
                 // unexpected error - return it
                 Err(err) => return Err(err),
                 // directory already exists - return it
@@ -226,7 +235,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
             DirEntryOrShortName::ShortName(short_name) => {
                 let sfn_entry = self.create_sfn_entry(short_name, FileAttributes::from_bits_truncate(0), None);
                 Ok(self.write_entry(name, sfn_entry)?.to_file())
-            },
+            }
             // file already exists - return it
             DirEntryOrShortName::DirEntry(e) => Ok(e.to_file()),
         }
@@ -262,7 +271,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                     self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
                 dir.write_entry("..", sfn_entry)?;
                 Ok(dir)
-            },
+            }
             // directory already exists - return it
             DirEntryOrShortName::DirEntry(e) => Ok(e.to_dir()),
         }
@@ -343,7 +352,12 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         self.rename_internal(src_path, dst_dir, dst_path)
     }
 
-    fn rename_internal(&self, src_name: &str, dst_dir: &Dir<IO, TP, OCC>, dst_name: &str) -> Result<(), Error<IO::Error>> {
+    fn rename_internal(
+        &self,
+        src_name: &str,
+        dst_dir: &Dir<IO, TP, OCC>,
+        dst_name: &str,
+    ) -> Result<(), Error<IO::Error>> {
         trace!("Dir::rename_internal {} {}", src_name, dst_name);
         // find existing file
         let e = self.find_entry(src_name, None, None)?;
@@ -359,7 +373,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 }
                 // destination file exists and it is not the same as source file - fail
                 return Err(Error::AlreadyExists);
-            },
+            }
             // destionation file does not exist, short name has been generated
             DirEntryOrShortName::ShortName(short_name) => short_name,
         };
@@ -459,7 +473,11 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Ok((stream, start_pos))
     }
 
-    fn write_entry(&self, name: &str, raw_entry: DirFileEntryData) -> Result<DirEntry<'a, IO, TP, OCC>, Error<IO::Error>> {
+    fn write_entry(
+        &self,
+        name: &str,
+        raw_entry: DirFileEntryData,
+    ) -> Result<DirEntry<'a, IO, TP, OCC>, Error<IO::Error>> {
         trace!("Dir::write_entry {}", name);
         // check if name doesn't contain unsupported characters
         validate_long_name(name)?;
@@ -496,7 +514,10 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for Dir<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
-        Self { stream: self.stream.clone(), fs: self.fs }
+        Self {
+            stream: self.stream.clone(),
+            fs: self.fs,
+        }
     }
 }
 
@@ -512,7 +533,12 @@ pub struct DirIter<'a, IO: ReadWriteSeek, TP, OCC> {
 
 impl<'a, IO: ReadWriteSeek, TP, OCC> DirIter<'a, IO, TP, OCC> {
     fn new(stream: DirRawStream<'a, IO, TP, OCC>, fs: &'a FileSystem<IO, TP, OCC>, skip_volume: bool) -> Self {
-        DirIter { stream, fs, skip_volume, err: false }
+        DirIter {
+            stream,
+            fs,
+            skip_volume,
+            err: false,
+        }
     }
 }
 
@@ -570,12 +596,12 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
                         entry_pos: abs_pos,
                         offset_range: (begin_offset, offset),
                     }));
-                },
+                }
                 DirEntryData::Lfn(data) => {
                     // Append to LFN buffer
                     trace!("lfn entry");
                     lfn_builder.process(&data);
-                },
+                }
             }
         }
     }
@@ -584,7 +610,12 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
 impl<IO: ReadWriteSeek, TP, OCC> Clone for DirIter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
-        Self { stream: self.stream.clone(), fs: self.fs, err: self.err, skip_volume: self.skip_volume }
+        Self {
+            stream: self.stream.clone(),
+            fs: self.fs,
+            err: self.err,
+            skip_volume: self.skip_volume,
+        }
     }
 }
 
@@ -602,11 +633,12 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> Iterator for DirIter<'a, IO, 
             Err(err) => {
                 self.err = true;
                 Some(Err(err))
-            },
+            }
         }
     }
 }
 
+#[rustfmt::skip]
 fn validate_long_name<E: IoError>(name: &str) -> Result<(), Error<E>> {
     // check if length is valid
     if name.is_empty() {
@@ -655,11 +687,15 @@ pub(crate) struct LfnBuffer {
 #[cfg(all(feature = "lfn", feature = "alloc"))]
 impl LfnBuffer {
     fn new() -> Self {
-        Self { ucs2_units: Vec::<u16>::new() }
+        Self {
+            ucs2_units: Vec::<u16>::new(),
+        }
     }
 
     fn from_ucs2_units<I: Iterator<Item = u16>>(usc2_units: I) -> Self {
-        Self { ucs2_units: usc2_units.collect() }
+        Self {
+            ucs2_units: usc2_units.collect(),
+        }
     }
 
     fn clear(&mut self) {
@@ -682,11 +718,17 @@ impl LfnBuffer {
 #[cfg(all(feature = "lfn", not(feature = "alloc")))]
 impl LfnBuffer {
     fn new() -> Self {
-        Self { ucs2_units: [0_u16; MAX_LFN_LEN], len: 0 }
+        Self {
+            ucs2_units: [0_u16; MAX_LFN_LEN],
+            len: 0,
+        }
     }
 
     fn from_ucs2_units<I: Iterator<Item = u16>>(usc2_units: I) -> Self {
-        let mut lfn = Self { ucs2_units: [0_u16; MAX_LFN_LEN], len: 0 };
+        let mut lfn = Self {
+            ucs2_units: [0_u16; MAX_LFN_LEN],
+            len: 0,
+        };
         for (i, usc2_unit) in usc2_units.enumerate() {
             lfn.ucs2_units[i] = usc2_unit;
         }
@@ -732,7 +774,11 @@ struct LongNameBuilder {
 #[cfg(feature = "lfn")]
 impl LongNameBuilder {
     fn new() -> Self {
-        Self { buf: LfnBuffer::new(), chksum: 0, index: 0 }
+        Self {
+            buf: LfnBuffer::new(),
+            chksum: 0,
+            index: 0,
+        }
     }
 
     fn clear(&mut self) {
@@ -785,7 +831,13 @@ impl LongNameBuilder {
             self.buf.set_len(index as usize * LFN_PART_LEN);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
-            warn!("currupted lfn entry! {:x} {:x} {:x} {:x}", data.order(), self.index, data.checksum(), self.chksum);
+            warn!(
+                "currupted lfn entry! {:x} {:x} {:x} {:x}",
+                data.order(),
+                self.index,
+                data.checksum(),
+                self.chksum
+            );
             self.clear();
             return;
         } else {
@@ -943,8 +995,7 @@ impl ShortNameGenerator {
             let dot_index = index + 1;
             let (basename_len, basename_fits, basename_lossy) =
                 Self::copy_short_name_part(&mut short_name[0..8], &name[..dot_index]);
-            let (_, ext_fits, ext_lossy) =
-                Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
+            let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
             (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
         } else {
             // no extension - copy name and leave extension empty
@@ -953,7 +1004,14 @@ impl ShortNameGenerator {
             (basename_len, basename_fits, basename_lossy)
         };
         let chksum = Self::checksum(name);
-        Self { short_name, chksum, name_fits, lossy_conv, basename_len, ..Self::default() }
+        Self {
+            short_name,
+            chksum,
+            name_fits,
+            lossy_conv,
+            basename_len,
+            ..Self::default()
+        }
     }
 
     fn generate_dot() -> [u8; SFN_SIZE] {
@@ -978,6 +1036,7 @@ impl ShortNameGenerator {
                 return (dst_pos, false, lossy_conv);
             }
             // Make sure character is allowed in 8.3 name
+            #[rustfmt::skip]
             let fixed_c = match c {
                 // strip spaces and dots
                 ' ' | '.' => {
@@ -1106,9 +1165,15 @@ impl ShortNameGenerator {
     fn u16_to_hex(x: u16) -> [u8; 4] {
         // Unwrapping below is safe because each line takes 4 bits of `x` and shifts them to the right so they form
         // a number in range [0, 15]
-        let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
+        let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16)
+            .unwrap()
+            .to_ascii_uppercase() as u8;
+        let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16)
+            .unwrap()
+            .to_ascii_uppercase() as u8;
+        let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16)
+            .unwrap()
+            .to_ascii_uppercase() as u8;
         let c4 = char::from_digit((u32::from(x)) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
         [c1, c2, c3, c4]
     }
@@ -1129,10 +1194,22 @@ mod tests {
     fn test_generate_short_name() {
         assert_eq!(ShortNameGenerator::new("Foo").generate().ok(), Some(*b"FOO        "));
         assert_eq!(ShortNameGenerator::new("Foo.b").generate().ok(), Some(*b"FOO     B  "));
-        assert_eq!(ShortNameGenerator::new("Foo.baR").generate().ok(), Some(*b"FOO     BAR"));
-        assert_eq!(ShortNameGenerator::new("Foo+1.baR").generate().ok(), Some(*b"FOO_1~1 BAR"));
-        assert_eq!(ShortNameGenerator::new("ver +1.2.text").generate().ok(), Some(*b"VER_12~1TEX"));
-        assert_eq!(ShortNameGenerator::new(".bashrc.swp").generate().ok(), Some(*b"BASHRC~1SWP"));
+        assert_eq!(
+            ShortNameGenerator::new("Foo.baR").generate().ok(),
+            Some(*b"FOO     BAR")
+        );
+        assert_eq!(
+            ShortNameGenerator::new("Foo+1.baR").generate().ok(),
+            Some(*b"FOO_1~1 BAR")
+        );
+        assert_eq!(
+            ShortNameGenerator::new("ver +1.2.text").generate().ok(),
+            Some(*b"VER_12~1TEX")
+        );
+        assert_eq!(
+            ShortNameGenerator::new(".bashrc.swp").generate().ok(),
+            Some(*b"BASHRC~1SWP")
+        );
         assert_eq!(ShortNameGenerator::new(".foo").generate().ok(), Some(*b"FOO~1      "));
     }
 

@@ -58,9 +58,15 @@
 // Disable warnings to not clutter code with cfg too much
 #![cfg_attr(not(all(feature = "alloc", feature = "lfn")), allow(dead_code, unused_imports))]
 #![deny(clippy::pedantic)]
-#![allow(clippy::module_name_repetitions, clippy::pub_enum_variant_names, clippy::items_after_statements,
-    clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::replace_consts, clippy::cast_possible_wrap)]
-
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::pub_enum_variant_names,
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::replace_consts,
+    clippy::cast_possible_wrap
+)]
 
 #[macro_use]
 extern crate bitflags;
@@ -76,17 +82,17 @@ extern crate alloc;
 mod boot_sector;
 mod dir;
 mod dir_entry;
+mod error;
 mod file;
 mod fs;
+mod io;
 mod table;
 mod time;
-mod io;
-mod error;
 
 pub use crate::dir::*;
 pub use crate::dir_entry::*;
+pub use crate::error::*;
 pub use crate::file::*;
 pub use crate::fs::*;
-pub use crate::time::*;
 pub use crate::io::*;
-pub use crate::error::*;
+pub use crate::time::*;

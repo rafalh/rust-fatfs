@@ -1,6 +1,6 @@
+use crate::error::IoError;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::vec::Vec;
-use crate::error::IoError;
 
 /// Provides IO error as an associated type.
 ///
@@ -8,13 +8,13 @@ use crate::error::IoError;
 /// `Seek`.
 pub trait IoBase {
     /// Type of errors returned by input/output operations.
-    type Error : IoError;
+    type Error: IoError;
 }
 
 /// The `Read` trait allows for reading bytes from a source.
 ///
 /// It is based on the `std::io::Read` trait.
-pub trait Read : IoBase {
+pub trait Read: IoBase {
     /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error>;
 
@@ -48,7 +48,7 @@ pub trait Read : IoBase {
 /// The `Write` trait allows for writing bytes into the sink.
 ///
 /// It is based on the `std::io::Write` trait.
-pub trait Write : IoBase {
+pub trait Write: IoBase {
     /// Write a buffer into this writer, returning how many bytes were written.
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error>;
 
@@ -91,7 +91,7 @@ pub enum SeekFrom {
 /// The `Seek` trait provides a cursor which can be moved within a stream of bytes.
 ///
 /// It is based on the `std::io::Seek` trait.
-pub trait Seek : IoBase {
+pub trait Seek: IoBase {
     /// Seek to an offset, in bytes, in a stream.
     ///
     /// A seek beyond the end of a stream or to a negative position is not allowed.
@@ -176,7 +176,6 @@ impl<T: std::io::Seek> Seek for StdIoWrapper<T> {
         Ok(self.inner.seek(pos.into())?)
     }
 }
-
 
 #[cfg(feature = "std")]
 impl<T> From<T> for StdIoWrapper<T> {

@@ -42,8 +42,10 @@ impl From<Error<std::io::Error>> for std::io::Error {
             Error::Io(io_error) => io_error,
             Error::UnexpectedEof | Error::NotEnoughSpace => Self::new(std::io::ErrorKind::UnexpectedEof, error),
             Error::WriteZero => Self::new(std::io::ErrorKind::WriteZero, error),
-            Error::InvalidInput | Error::InvalidFileNameLength | Error::UnsupportedFileNameCharacter | Error::DirectoryIsNotEmpty =>
-                Self::new(std::io::ErrorKind::InvalidInput, error),
+            Error::InvalidInput
+            | Error::InvalidFileNameLength
+            | Error::UnsupportedFileNameCharacter
+            | Error::DirectoryIsNotEmpty => Self::new(std::io::ErrorKind::InvalidInput, error),
             Error::NotFound => Self::new(std::io::ErrorKind::NotFound, error),
             Error::AlreadyExists => Self::new(std::io::ErrorKind::AlreadyExists, error),
             Error::CorruptedFileSystem => Self::new(std::io::ErrorKind::InvalidData, error),
@@ -68,7 +70,7 @@ impl<T: core::fmt::Debug> std::error::Error for Error<T> {
 /// Trait that should be implemented by errors returned from the user supplied storage.
 ///
 /// Implementations for `std::io::Error` and `()` are provided by this crate.
-pub trait IoError : core::fmt::Debug {
+pub trait IoError: core::fmt::Debug {
     fn is_interrupted(&self) -> bool;
     fn new_unexpected_eof_error() -> Self;
     fn new_write_zero_error() -> Self;

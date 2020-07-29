@@ -72,7 +72,10 @@ pub struct DateTime {
 
 impl DateTime {
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
-        Self { date: Date::decode(dos_date), time: Time::decode(dos_time, dos_time_hi_res) }
+        Self {
+            date: Date::decode(dos_date),
+            time: Time::decode(dos_time, dos_time_hi_res),
+        }
     }
 }
 
@@ -99,9 +102,9 @@ impl From<DateTime> for chrono::DateTime<Local> {
 impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
         Self {
-            year: date.year() as u16, // safe cast unless it is after year 65,536
+            year: date.year() as u16,   // safe cast unless it is after year 65,536
             month: date.month() as u16, // safe cast: value in range [1, 12]
-            day: date.day() as u16, // safe cast: value in range [1, 31]
+            day: date.day() as u16,     // safe cast: value in range [1, 31]
         }
     }
 }
@@ -109,13 +112,14 @@ impl From<chrono::Date<Local>> for Date {
 #[cfg(feature = "chrono")]
 impl From<chrono::DateTime<Local>> for DateTime {
     fn from(date_time: chrono::DateTime<Local>) -> Self {
+        let millis = date_time.nanosecond() / 1_000_000;
         Self {
             date: Date::from(date_time.date()),
             time: Time {
-                hour: date_time.hour() as u16, // safe cast: value in range [0, 23]
+                hour: date_time.hour() as u16,  // safe cast: value in range [0, 23]
                 min: date_time.minute() as u16, // safe cast: value in range [0, 59]
                 sec: date_time.second() as u16, // safe cast: value in range [0, 59]
-                millis: (date_time.nanosecond() / 1_000_000) as u16, // safe cast: value in range [0, 999]
+                millis: millis as u16,          // safe cast: value in range [0, 999]
             },
         }
     }
@@ -194,7 +198,7 @@ mod tests {
         let d = Date {
             year: 2055,
             month: 7,
-            day: 23
+            day: 23,
         };
         let x = d.encode();
         assert_eq!(x, 38647);
@@ -209,14 +213,8 @@ mod tests {
             sec: 29,
             millis: 990,
         };
-        let t2 = Time {
-            sec: 18,
-            .. t1
-        };
-        let t3 = Time {
-            millis: 40,
-            .. t1
-        };
+        let t2 = Time { sec: 18, ..t1 };
+        let t3 = Time { millis: 40, ..t1 };
         let (x1, y1) = t1.encode();
         let (x2, y2) = t2.encode();
         let (x3, y3) = t3.encode();

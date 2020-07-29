@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use crate::error::{Error, IoError};
 use crate::fs::{FatType, FsStatusFlags};
-use crate::io::{self, Read, Write, Seek, ReadLeExt, WriteLeExt};
+use crate::io::{self, Read, ReadLeExt, Seek, Write, WriteLeExt};
 
 struct Fat<S> {
     phantom: PhantomData<S>,
@@ -75,12 +75,7 @@ where
     }
 }
 
-fn write_fat<S, E>(
-    fat: &mut S,
-    fat_type: FatType,
-    cluster: u32,
-    value: FatValue,
-) -> Result<(), Error<E>>
+fn write_fat<S, E>(fat: &mut S, fat_type: FatType, cluster: u32, value: FatValue) -> Result<(), Error<E>>
 where
     S: Read + Write + Seek,
     E: IoError,
@@ -94,11 +89,7 @@ where
     }
 }
 
-fn get_next_cluster<S, E>(
-    fat: &mut S,
-    fat_type: FatType,
-    cluster: u32,
-) -> Result<Option<u32>, Error<E>>
+fn get_next_cluster<S, E>(fat: &mut S, fat_type: FatType, cluster: u32) -> Result<Option<u32>, Error<E>>
 where
     S: Read + Seek,
     E: IoError,
@@ -186,11 +177,7 @@ where
     Ok(FsStatusFlags { dirty, io_error })
 }
 
-pub(crate) fn count_free_clusters<S, E>(
-    fat: &mut S,
-    fat_type: FatType,
-    total_clusters: u32,
-) -> Result<u32, Error<E>>
+pub(crate) fn count_free_clusters<S, E>(fat: &mut S, fat_type: FatType, total_clusters: u32) -> Result<u32, Error<E>>
 where
     S: Read + Seek,
     E: IoError,
@@ -486,7 +473,11 @@ impl FatTrait for Fat32 {
         let val = Self::get_raw(fat, cluster)? & 0x0FFF_FFFF;
         Ok(match val {
             0 if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
-                let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                let tmp = if cluster == 0x0FFF_FFF7 {
+                    "BAD_CLUSTER"
+                } else {
+                    "end-of-chain"
+                };
                 warn!(
                     "cluster number {} is a special value in FAT to indicate {}; it should never be seen as free",
                     cluster, tmp
@@ -497,7 +488,11 @@ impl FatTrait for Fat32 {
             0x0FFF_FFF7 => FatValue::Bad,
             0x0FFF_FFF8..=0x0FFF_FFFF => FatValue::EndOfChain,
             n if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
-                let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+                let tmp = if cluster == 0x0FFF_FFF7 {
+                    "BAD_CLUSTER"
+                } else {
+                    "end-of-chain"
+                };
                 warn!("cluster number {} is a special value in FAT to indicate {}; hiding potential FAT chain value {} and instead reporting as a bad sector", cluster, tmp, n);
                 FatValue::Bad // avoid accidental use or allocation into a FAT chain
             }
@@ -528,7 +523,11 @@ impl FatTrait for Fat32 {
             // NOTE: it is technically allowed for them to store FAT chain loops,
             //       or even have them all store value '4' as their next cluster.
             //       Some believe only FatValue::Bad should be allowed for this edge case.
-            let tmp = if cluster == 0x0FFF_FFF7 { "BAD_CLUSTER" } else { "end-of-chain" };
+            let tmp = if cluster == 0x0FFF_FFF7 {
+                "BAD_CLUSTER"
+            } else {
+                "end-of-chain"
+            };
             panic!(
                 "cluster number {} is a special value in FAT to indicate {}; it should never be set as free",
                 cluster, tmp
@@ -600,7 +599,14 @@ where
     Error<E>: From<S::Error>,
 {
     pub(crate) fn new(fat: B, fat_type: FatType, cluster: u32) -> Self {
-        Self { fat, fat_type, cluster: Some(cluster), err: false, phantom_s: PhantomData, phantom_e: PhantomData }
+        Self {
+            fat,
+            fat_type,
+            cluster: Some(cluster),
+            err: false,
+            phantom_s: PhantomData,
+            phantom_e: PhantomData,
+        }
     }
 
     pub(crate) fn truncate(&mut self) -> Result<u32, Error<E>> {
@@ -656,6 +662,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use io::StdIoWrapper;
+    use std::io::Cursor;
 
     #[allow(clippy::cognitive_complexity)]
     fn test_fat<S: Read + Write + Seek>(fat_type: FatType, mut cur: S) {
@@ -680,9 +688,15 @@ mod tests {
         assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).ok(), Some(5));
 
         // test allocation
-        assert_eq!(alloc_cluster(&mut cur, fat_type, None, Some(0x13), 0x1E).ok(), Some(0x1B));
+        assert_eq!(
+            alloc_cluster(&mut cur, fat_type, None, Some(0x13), 0x1E).ok(),
+            Some(0x1B)
+        );
         assert_eq!(read_fat(&mut cur, fat_type, 0x1B).ok(), Some(FatValue::EndOfChain));
-        assert_eq!(alloc_cluster(&mut cur, fat_type, Some(0x1B), None, 0x1E).ok(), Some(0x12));
+        assert_eq!(
+            alloc_cluster(&mut cur, fat_type, Some(0x1B), None, 0x1E).ok(),
+            Some(0x12)
+        );
         assert_eq!(read_fat(&mut cur, fat_type, 0x1B).ok(), Some(FatValue::Data(0x12)));
         assert_eq!(read_fat(&mut cur, fat_type, 0x12).ok(), Some(FatValue::EndOfChain));
         assert_eq!(count_free_clusters(&mut cur, fat_type, 0x1E).ok(), Some(3));
@@ -725,7 +739,7 @@ mod tests {
             0x0D, 0xE0, 0x00, 0x0F, 0x00, 0x01, 0x11, 0xF0, 0xFF, 0x00, 0xF0, 0xFF, 0x15, 0x60, 0x01, 0x19, 0x70, 0xFF,
             0xF7, 0xAF, 0x01, 0xFF, 0x0F, 0x00, 0x00, 0x70, 0xFF, 0x00, 0x00, 0x00,
         ];
-        test_fat(FatType::Fat12, io::StdIoWrapper::new(std::io::Cursor::<Vec<u8>>::new(fat)));
+        test_fat(FatType::Fat12, StdIoWrapper::new(Cursor::<Vec<u8>>::new(fat)));
     }
 
     #[test]
@@ -736,7 +750,7 @@ mod tests {
             0x00, 0x00, 0xFF, 0xFF, 0x15, 0x00, 0x16, 0x00, 0x19, 0x00, 0xF7, 0xFF, 0xF7, 0xFF, 0x1A, 0x00, 0xFF, 0xFF,
             0x00, 0x00, 0x00, 0x00, 0xF7, 0xFF, 0x00, 0x00, 0x00, 0x00,
         ];
-        test_fat(FatType::Fat16, io::StdIoWrapper::new(std::io::Cursor::<Vec<u8>>::new(fat)));
+        test_fat(FatType::Fat16, StdIoWrapper::new(Cursor::<Vec<u8>>::new(fat)));
     }
 
     #[test]
@@ -751,6 +765,6 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7, 0xFF, 0xFF, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ];
-        test_fat(FatType::Fat32, io::StdIoWrapper::new(std::io::Cursor::<Vec<u8>>::new(fat)));
+        test_fat(FatType::Fat32, StdIoWrapper::new(Cursor::<Vec<u8>>::new(fat)));
     }
 }
