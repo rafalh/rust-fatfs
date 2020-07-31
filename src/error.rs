@@ -116,11 +116,11 @@ impl IoError for () {
     }
 
     fn new_unexpected_eof_error() -> Self {
-        ()
+        // empty
     }
 
     fn new_write_zero_error() -> Self {
-        ()
+        // empty
     }
 }
 

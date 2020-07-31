@@ -134,43 +134,35 @@ impl BiosParameterBlock {
         Ok(())
     }
 
-    fn validate<E: IoError>(&self) -> Result<(), Error<E>> {
-        // sanity checks
+    fn validate_bytes_per_sector<E: IoError>(&self) -> Result<(), Error<E>> {
         if self.bytes_per_sector.count_ones() != 1 {
             error!(
                 "invalid bytes_per_sector value in BPB: expected a power of two but got {}",
                 self.bytes_per_sector
             );
             return Err(Error::CorruptedFileSystem);
-        } else if self.bytes_per_sector < 512 {
+        }
+        if self.bytes_per_sector < 512 || self.bytes_per_sector > 4096 {
             error!(
-                "invalid bytes_per_sector value in BPB: expected value >= 512 but got {}",
-                self.bytes_per_sector
-            );
-            return Err(Error::CorruptedFileSystem);
-        } else if self.bytes_per_sector > 4096 {
-            error!(
-                "invalid bytes_per_sector value in BPB: expected value <= 4096 but got {}",
+                "invalid bytes_per_sector value in BPB: expected value in range [512, 4096] but got {}",
                 self.bytes_per_sector
             );
             return Err(Error::CorruptedFileSystem);
         }
+        Ok(())
+    }
 
+    fn validate_sectors_per_cluster<E: IoError>(&self) -> Result<(), Error<E>> {
         if self.sectors_per_cluster.count_ones() != 1 {
             error!(
                 "invalid sectors_per_cluster value in BPB: expected a power of two but got {}",
                 self.sectors_per_cluster
             );
             return Err(Error::CorruptedFileSystem);
-        } else if self.sectors_per_cluster < 1 {
+        }
+        if self.sectors_per_cluster < 1 || self.sectors_per_cluster > 128 {
             error!(
-                "invalid sectors_per_cluster value in BPB: expected value >= 1 but got {}",
-                self.sectors_per_cluster
-            );
-            return Err(Error::CorruptedFileSystem);
-        } else if self.sectors_per_cluster > 128 {
-            error!(
-                "invalid sectors_per_cluster value in BPB: expected value <= 128 but got {}",
+                "invalid sectors_per_cluster value in BPB: expected value in range [1, 128] but got {}",
                 self.sectors_per_cluster
             );
             return Err(Error::CorruptedFileSystem);
@@ -187,30 +179,56 @@ impl BiosParameterBlock {
             warn!("fs compatibility: bytes_per_cluster value '{}' in BPB exceeds '{}', and thus may be incompatible with some implementations",
                 bytes_per_cluster, maximum_compatibility_bytes_per_cluster);
         }
+        Ok(())
+    }
 
+    fn validate_reserved_sectors<E: IoError>(&self) -> Result<(), Error<E>> {
         let is_fat32 = self.is_fat32();
         if self.reserved_sectors < 1 {
             error!("invalid reserved_sectors value in BPB: {}", self.reserved_sectors);
             return Err(Error::CorruptedFileSystem);
-        } else if !is_fat32 && self.reserved_sectors != 1 {
+        }
+        if !is_fat32 && self.reserved_sectors != 1 {
             // Microsoft document indicates fat12 and fat16 code exists that presume this value is 1
             warn!(
                 "fs compatibility: reserved_sectors value '{}' in BPB is not '1', and thus is incompatible with some implementations",
                 self.reserved_sectors
             );
         }
+        if is_fat32 && self.backup_boot_sector >= self.reserved_sectors {
+            error!(
+                "Invalid BPB: expected backup boot-sector to be in the reserved region (sector < {}) but got sector {}",
+                self.reserved_sectors, self.backup_boot_sector
+            );
+            return Err(Error::CorruptedFileSystem);
+        }
+        if is_fat32 && self.fs_info_sector >= self.reserved_sectors {
+            error!(
+                "Invalid BPB: expected FSInfo sector to be in the reserved region (sector < {}) but got sector {}",
+                self.reserved_sectors, self.fs_info_sector
+            );
+            return Err(Error::CorruptedFileSystem);
+        }
+        Ok(())
+    }
 
+    fn validate_fats<E: IoError>(&self) -> Result<(), Error<E>> {
         if self.fats == 0 {
             error!("invalid fats value in BPB: {}", self.fats);
             return Err(Error::CorruptedFileSystem);
-        } else if self.fats > 2 {
+        }
+        if self.fats > 2 {
             // Microsoft document indicates that few implementations support any values other than 1 or 2
             warn!(
                 "fs compatibility: numbers of FATs '{}' in BPB is greater than '2', and thus is incompatible with some implementations",
                 self.fats
             );
         }
+        Ok(())
+    }
 
+    fn validate_root_entries<E: IoError>(&self) -> Result<(), Error<E>> {
+        let is_fat32 = self.is_fat32();
         if is_fat32 && self.root_entries != 0 {
             error!(
                 "Invalid root_entries value in FAT32 BPB: expected 0 but got {}",
@@ -218,7 +236,6 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
-
         if !is_fat32 && self.root_entries == 0 {
             error!(
                 "Invalid root_entries value in FAT12/FAT16 BPB: expected non-zero value but got {}",
@@ -226,11 +243,14 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
-
         if (u32::from(self.root_entries) * DIR_ENTRY_SIZE) % u32::from(self.bytes_per_sector) != 0 {
             warn!("Root entries should fill sectors fully");
         }
+        Ok(())
+    }
 
+    fn validate_total_sectors<E: IoError>(&self) -> Result<(), Error<E>> {
+        let is_fat32 = self.is_fat32();
         if is_fat32 && self.total_sectors_16 != 0 {
             error!(
                 "Invalid total_sectors_16 value in FAT32 BPB: expected 0 but got {}",
@@ -238,25 +258,10 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
-
         if (self.total_sectors_16 == 0) == (self.total_sectors_32 == 0) {
             error!("Invalid BPB (total_sectors_16 or total_sectors_32 should be non-zero)");
             return Err(Error::CorruptedFileSystem);
         }
-
-        if is_fat32 && self.sectors_per_fat_32 == 0 {
-            error!(
-                "Invalid sectors_per_fat_32 value in FAT32 BPB: expected non-zero value but got {}",
-                self.sectors_per_fat_32
-            );
-            return Err(Error::CorruptedFileSystem);
-        }
-
-        if self.fs_version != 0 {
-            error!("Unsupported filesystem version: expected 0 but got {}", self.fs_version);
-            return Err(Error::CorruptedFileSystem);
-        }
-
         let total_sectors = self.total_sectors();
         let first_data_sector = self.first_data_sector();
         if total_sectors <= first_data_sector {
@@ -266,26 +271,23 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
+        Ok(())
+    }
 
-        let reserved_sectors = self.reserved_sectors();
-        let backup_boot_sector = self.backup_boot_sector();
-        if is_fat32 && backup_boot_sector >= reserved_sectors {
+    fn validate_sectors_per_fat<E: IoError>(&self) -> Result<(), Error<E>> {
+        let is_fat32 = self.is_fat32();
+        if is_fat32 && self.sectors_per_fat_32 == 0 {
             error!(
-                "Invalid BPB: expected backup boot-sector to be in the reserved region (sector < {}) but got sector {}",
-                reserved_sectors, backup_boot_sector
+                "Invalid sectors_per_fat_32 value in FAT32 BPB: expected non-zero value but got {}",
+                self.sectors_per_fat_32
             );
             return Err(Error::CorruptedFileSystem);
         }
+        Ok(())
+    }
 
-        let fs_info_sectors = self.fs_info_sector();
-        if is_fat32 && fs_info_sectors >= reserved_sectors {
-            error!(
-                "Invalid BPB: expected FSInfo sector to be in the reserved region (sector < {}) but got sector {}",
-                reserved_sectors, fs_info_sectors
-            );
-            return Err(Error::CorruptedFileSystem);
-        }
-
+    fn validate_total_clusters<E: IoError>(&self) -> Result<(), Error<E>> {
+        let is_fat32 = self.is_fat32();
         let total_clusters = self.total_clusters();
         let fat_type = FatType::from_clusters(total_clusters);
         if is_fat32 != (fat_type == FatType::Fat32) {
@@ -306,7 +308,22 @@ impl BiosParameterBlock {
                 usable_fat_entries, total_clusters
             );
         }
+        Ok(())
+    }
 
+    fn validate<E: IoError>(&self) -> Result<(), Error<E>> {
+        if self.fs_version != 0 {
+            error!("Unsupported filesystem version: expected 0 but got {}", self.fs_version);
+            return Err(Error::CorruptedFileSystem);
+        }
+        self.validate_bytes_per_sector()?;
+        self.validate_sectors_per_cluster()?;
+        self.validate_reserved_sectors()?;
+        self.validate_fats()?;
+        self.validate_root_entries()?;
+        self.validate_total_sectors()?;
+        self.validate_sectors_per_fat()?;
+        self.validate_total_clusters()?;
         Ok(())
     }
 

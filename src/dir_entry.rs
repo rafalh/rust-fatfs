@@ -389,7 +389,7 @@ impl DirEntryData {
             Err(err) => {
                 return Err(err);
             }
-            _ => {}
+            Ok(_) => {}
         }
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
@@ -667,24 +667,19 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     #[cfg(feature = "lfn")]
     fn eq_name_lfn(&self, name: &str) -> bool {
         if let Some(lfn) = self.long_file_name_as_ucs2_units() {
-            let mut self_decode_iter = char::decode_utf16(lfn.iter().cloned());
+            let self_decode_iter = char::decode_utf16(lfn.iter().cloned());
             let mut other_uppercase_iter = name.chars().flat_map(char_to_uppercase);
-            loop {
-                if let Some(decode_result) = self_decode_iter.next() {
-                    if let Ok(self_char) = decode_result {
-                        for self_uppercase_char in char_to_uppercase(self_char) {
-                            // compare each character in uppercase
-                            if Some(self_uppercase_char) != other_uppercase_iter.next() {
-                                return false;
-                            }
+            for decode_result in self_decode_iter {
+                if let Ok(self_char) = decode_result {
+                    for self_uppercase_char in char_to_uppercase(self_char) {
+                        // compare each character in uppercase
+                        if Some(self_uppercase_char) != other_uppercase_iter.next() {
+                            return false;
                         }
-                    } else {
-                        // decoding failed
-                        return false;
                     }
                 } else {
-                    // end of self chars iterator
-                    break;
+                    // decoding failed
+                    return false;
                 }
             }
             // both iterators should be at the end here

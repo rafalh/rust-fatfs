@@ -64,8 +64,10 @@
     clippy::items_after_statements,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::replace_consts,
-    clippy::cast_possible_wrap
+    clippy::cast_possible_wrap,
+    clippy::must_use_candidate,
+    clippy::missing_errors_doc,
+    clippy::manual_non_exhaustive // non_exhaustive was added in Rust 1.40.0
 )]
 
 #[macro_use]

@@ -454,8 +454,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         cluster: u32,
     ) -> ClusterIterator<impl ReadWriteSeek<Error = Error<IO::Error>> + 'a, IO::Error> {
         let disk_slice = self.fat_slice();
-        let iter = ClusterIterator::new(disk_slice, self.fat_type, cluster);
-        iter
+        ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
 
     pub(crate) fn truncate_cluster_chain(&self, cluster: u32) -> Result<(), Error<IO::Error>> {
@@ -504,13 +503,14 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
 
     /// Returns filesystem statistics like number of total and free clusters.
     ///
-    /// For FAT32 volumes number of free clusters from FSInfo sector is returned (may be incorrect).
+    /// For FAT32 volumes number of free clusters from the FS Information Sector is returned (may be incorrect).
     /// For other FAT variants number is computed on the first call to this method and cached for later use.
     pub fn stats(&self) -> Result<FileSystemStats, Error<IO::Error>> {
         let free_clusters_option = self.fs_info.borrow().free_cluster_count;
-        let free_clusters = match free_clusters_option {
-            Some(n) => n,
-            _ => self.recalc_free_clusters()?,
+        let free_clusters = if let Some(n) = free_clusters_option {
+            n
+        } else {
+            self.recalc_free_clusters()?
         };
         Ok(FileSystemStats {
             cluster_size: self.cluster_size(),
@@ -529,7 +529,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
 
     /// Unmounts the filesystem.
     ///
-    /// Updates FSInfo sector if needed.
+    /// Updates the FS Information Sector if needed.
     pub fn unmount(self) -> Result<(), Error<IO::Error>> {
         self.unmount_internal()
     }

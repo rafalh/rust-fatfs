@@ -151,6 +151,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         Err(Error::NotFound) //("No such file or directory"))
     }
 
+    #[allow(clippy::type_complexity)]
     pub(crate) fn find_volume_entry(&self) -> Result<Option<DirEntry<'a, IO, TP, OCC>>, Error<IO::Error>> {
         for r in DirIter::new(self.stream.clone(), self.fs, false) {
             let e = r?;
@@ -453,6 +454,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         LfnBuffer {}
     }
 
+    #[allow(clippy::type_complexity)]
     fn alloc_and_write_lfn_entries(
         &self,
         lfn_utf16: &LfnBuffer,
@@ -553,6 +555,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn read_dir_entry(&mut self) -> Result<Option<DirEntry<'a, IO, TP, OCC>>, Error<IO::Error>> {
         trace!("DirIter::read_dir_entry");
         let mut lfn_builder = LongNameBuilder::new();
@@ -799,14 +802,12 @@ impl LongNameBuilder {
 
     fn truncate(&mut self) {
         // Truncate 0 and 0xFFFF characters from LFN buffer
-        let mut lfn_len = self.buf.len();
-        while lfn_len > 0 {
-            match self.buf.ucs2_units[lfn_len - 1] {
-                0xFFFF | 0 => lfn_len -= 1,
-                _ => break,
-            }
-        }
-        self.buf.set_len(lfn_len);
+        let ucs2_units = &self.buf.ucs2_units;
+        let new_len = ucs2_units
+            .iter()
+            .rposition(|c| *c != 0xFFFF && *c != 0)
+            .map_or(0, |n| n + 1);
+        self.buf.set_len(new_len);
     }
 
     fn is_empty(&self) -> bool {
