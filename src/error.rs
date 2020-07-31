@@ -3,7 +3,7 @@
 /// Generic parameter `T` is a type of external error returned by the user provided storage
 #[derive(Debug)]
 pub enum Error<T> {
-    /// A user provided storage instance returned error during an input/output operation.
+    /// A user provided storage instance returned an error during an input/output operation.
     Io(T),
     /// A read operation cannot be completed because an end of a file has been reached prematurely.
     UnexpectedEof,
@@ -54,16 +54,33 @@ impl From<Error<std::io::Error>> for std::io::Error {
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Display for Error<T> {
+impl<T: core::fmt::Display> core::fmt::Display for Error<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            Error::Io(io_error) => write!(f, "IO error: {}", io_error),
+            Error::UnexpectedEof => write!(f, "Unexpected end of file"),
+            Error::NotEnoughSpace => write!(f, "Not enough space"),
+            Error::WriteZero => write!(f, "Write zero"),
+            Error::InvalidInput => write!(f, "Invalid input"),
+            Error::InvalidFileNameLength => write!(f, "Invalid file name length"),
+            Error::UnsupportedFileNameCharacter => write!(f, "Unsupported file name character"),
+            Error::DirectoryIsNotEmpty => write!(f, "Directory is not empty"),
+            Error::NotFound => write!(f, "No such file or directory"),
+            Error::AlreadyExists => write!(f, "File or directory already exists"),
+            Error::CorruptedFileSystem => write!(f, "Corrupted file system"),
+            _ => write!(f, "Other error"),
+        }
     }
 }
 
 #[cfg(feature = "std")]
-impl<T: core::fmt::Debug> std::error::Error for Error<T> {
+impl<T: std::error::Error + 'static> std::error::Error for Error<T> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        if let Error::Io(io_error) = self {
+            Some(io_error)
+        } else {
+            None
+        }
     }
 }
 
