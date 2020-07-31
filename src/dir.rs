@@ -19,6 +19,8 @@ use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, OemCpConverter, ReadWriteSee
 use crate::io::{self, IoBase, Read, Seek, SeekFrom, Write};
 use crate::time::TimeProvider;
 
+const LFN_PADDING: u16 = 0xFFFF;
+
 pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
     File(File<'a, IO, TP, OCC>),
     Root(DiskSlice<FsIoAdapter<'a, IO, TP, OCC>, FsIoAdapter<'a, IO, TP, OCC>>),
@@ -920,8 +922,6 @@ impl Iterator for LfnEntriesGenerator<'_> {
                 order |= LFN_ENTRY_LAST_FLAG;
             }
             debug_assert!(order > 0);
-            // name is padded with ' '
-            const LFN_PADDING: u16 = 0xFFFF;
             let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
             lfn_part[..name_part.len()].copy_from_slice(&name_part);
             if name_part.len() < LFN_PART_LEN {
