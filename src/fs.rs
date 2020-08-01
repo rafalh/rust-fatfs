@@ -90,12 +90,14 @@ impl FsStatusFlags {
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
     #[allow(clippy::trivially_copy_pass_by_ref)]
+    #[must_use]
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     /// Checks if the volume has the IO Error flag active.
     #[allow(clippy::trivially_copy_pass_by_ref)]
+    #[must_use]
     pub fn io_error(&self) -> bool {
         self.io_error
     }
@@ -245,6 +247,7 @@ pub struct FsOptions<TP, OCC> {
 
 impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     /// Creates a `FsOptions` struct with default options.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             update_accessed_date: false,
@@ -291,16 +294,19 @@ pub struct FileSystemStats {
 
 impl FileSystemStats {
     /// Cluster size in bytes
+    #[must_use]
     pub fn cluster_size(&self) -> u32 {
         self.cluster_size
     }
 
     /// Number of total clusters in filesystem usable for file allocation
+    #[must_use]
     pub fn total_clusters(&self) -> u32 {
         self.total_clusters
     }
 
     /// Number of free clusters
+    #[must_use]
     pub fn free_clusters(&self) -> u32 {
         self.free_clusters
     }
@@ -846,6 +852,7 @@ pub struct LossyOemCpConverter {
 }
 
 impl LossyOemCpConverter {
+    #[must_use]
     pub fn new() -> Self {
         Self { _dummy: () }
     }
@@ -912,6 +919,7 @@ impl FormatVolumeOptions {
     ///
     /// Allows to overwrite many filesystem parameters.
     /// In normal use-case defaults should suffice.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -921,6 +929,7 @@ impl FormatVolumeOptions {
     /// Cluster size must be a power of two and be greater or equal to sector size.
     /// If option is not specified optimal cluster size is selected based on partition size and
     /// optionally FAT type override (if specified using `fat_type` method).
+    #[must_use]
     pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
         assert!(
             bytes_per_cluster.count_ones() == 1 && bytes_per_cluster >= 512,
@@ -936,6 +945,7 @@ impl FormatVolumeOptions {
     /// It is unrecommended to set this option unless you know what you are doing.
     /// Note: FAT type is determined from total number of clusters. Changing this option can cause formatting to fail
     /// if the volume cannot be divided into proper number of clusters for selected FAT type.
+    #[must_use]
     pub fn fat_type(mut self, fat_type: FatType) -> Self {
         self.fat_type = Some(fat_type);
         self
@@ -945,6 +955,7 @@ impl FormatVolumeOptions {
     ///
     /// Sector size must be a power of two and be in range 512 - 4096.
     /// Default is `512`.
+    #[must_use]
     pub fn bytes_per_sector(mut self, bytes_per_sector: u16) -> Self {
         assert!(
             bytes_per_sector.count_ones() == 1 && bytes_per_sector >= 512,
@@ -957,6 +968,7 @@ impl FormatVolumeOptions {
     /// Set total number of sectors
     ///
     /// If option is not specified total number of sectors is calculated as storage device size divided by sector size.
+    #[must_use]
     pub fn total_sectors(mut self, total_sectors: u32) -> Self {
         self.total_sectors = Some(total_sectors);
         self
@@ -968,6 +980,7 @@ impl FormatVolumeOptions {
     /// size).
     /// Note: this limit is not used on FAT32 volumes.
     /// Default is `512`.
+    #[must_use]
     pub fn max_root_dir_entries(mut self, max_root_dir_entries: u16) -> Self {
         self.max_root_dir_entries = Some(max_root_dir_entries);
         self
@@ -977,6 +990,7 @@ impl FormatVolumeOptions {
     ///
     /// The only allowed values are `1` and `2`. If value `2` is used the FAT is mirrored.
     /// Default is `2`.
+    #[must_use]
     pub fn fats(mut self, fats: u8) -> Self {
         assert!(fats >= 1 && fats <= 2, "Invalid number of FATs");
         self.fats = Some(fats);
@@ -986,6 +1000,7 @@ impl FormatVolumeOptions {
     /// Set media field for Bios Parameters Block
     ///
     /// Default is `0xF8`.
+    #[must_use]
     pub fn media(mut self, media: u8) -> Self {
         self.media = Some(media);
         self
@@ -994,6 +1009,7 @@ impl FormatVolumeOptions {
     /// Set number of physical sectors per track for Bios Parameters Block (INT 13h CHS geometry)
     ///
     /// Default is `0x20`.
+    #[must_use]
     pub fn sectors_per_track(mut self, sectors_per_track: u16) -> Self {
         self.sectors_per_track = Some(sectors_per_track);
         self
@@ -1002,6 +1018,7 @@ impl FormatVolumeOptions {
     /// Set number of heads for Bios Parameters Block (INT 13h CHS geometry)
     ///
     /// Default is `0x40`.
+    #[must_use]
     pub fn heads(mut self, heads: u16) -> Self {
         self.heads = Some(heads);
         self
@@ -1010,6 +1027,7 @@ impl FormatVolumeOptions {
     /// Set drive number for Bios Parameters Block
     ///
     /// Default is `0` for FAT12, `0x80` for FAT16/FAT32.
+    #[must_use]
     pub fn drive_num(mut self, drive_num: u8) -> Self {
         self.drive_num = Some(drive_num);
         self
@@ -1018,6 +1036,7 @@ impl FormatVolumeOptions {
     /// Set volume ID for Bios Parameters Block
     ///
     /// Default is `0x12345678`.
+    #[must_use]
     pub fn volume_id(mut self, volume_id: u32) -> Self {
         self.volume_id = Some(volume_id);
         self
@@ -1026,6 +1045,7 @@ impl FormatVolumeOptions {
     /// Set volume label
     ///
     /// Default is empty label.
+    #[must_use]
     pub fn volume_label(mut self, volume_label: [u8; SFN_SIZE]) -> Self {
         self.volume_label = Some(volume_label);
         self

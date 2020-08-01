@@ -550,6 +550,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     ///
     /// Non-ASCII characters are replaced by the replacement character (U+FFFD).
     #[cfg(feature = "alloc")]
+    #[must_use]
     pub fn short_file_name(&self) -> String {
         self.short_name.to_string(&self.fs.options.oem_cp_converter)
     }
@@ -557,6 +558,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns short file name as byte array slice.
     ///
     /// Characters are encoded in the OEM codepage.
+    #[must_use]
     pub fn short_file_name_as_bytes(&self) -> &[u8] {
         self.short_name.as_bytes()
     }
@@ -565,6 +567,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     ///
     /// Characters are encoded in the UCS-2 encoding.
     #[cfg(feature = "lfn")]
+    #[must_use]
     pub fn long_file_name_as_ucs2_units(&self) -> Option<&[u16]> {
         if self.lfn_utf16.len() > 0 {
             Some(self.lfn_utf16.as_ucs2_units())
@@ -575,6 +578,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
 
     /// Returns long file name or if it doesn't exist fallbacks to short file name.
     #[cfg(feature = "alloc")]
+    #[must_use]
     pub fn file_name(&self) -> String {
         #[cfg(feature = "lfn")]
         {
@@ -588,16 +592,19 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     }
 
     /// Returns file attributes.
+    #[must_use]
     pub fn attributes(&self) -> FileAttributes {
         self.data.attrs
     }
 
     /// Checks if entry belongs to directory.
+    #[must_use]
     pub fn is_dir(&self) -> bool {
         self.data.is_dir()
     }
 
     /// Checks if entry belongs to regular file.
+    #[must_use]
     pub fn is_file(&self) -> bool {
         self.data.is_file()
     }
@@ -617,6 +624,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns `File` struct for this entry.
     ///
     /// Panics if this is not a file.
+    #[must_use]
     pub fn to_file(&self) -> File<'a, IO, TP, OCC> {
         assert!(!self.is_dir(), "Not a file entry");
         File::new(self.first_cluster(), Some(self.editor()), self.fs)
@@ -625,6 +633,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns `Dir` struct for this entry.
     ///
     /// Panics if this is not a directory.
+    #[must_use]
     pub fn to_dir(&self) -> Dir<'a, IO, TP, OCC> {
         assert!(self.is_dir(), "Not a directory entry");
         match self.first_cluster() {
@@ -637,6 +646,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     }
 
     /// Returns file size or 0 for directory.
+    #[must_use]
     pub fn len(&self) -> u64 {
         u64::from(self.data.size)
     }
@@ -644,11 +654,13 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns file creation date and time.
     ///
     /// Resolution of the time field is 1/100s.
+    #[must_use]
     pub fn created(&self) -> DateTime {
         self.data.created()
     }
 
     /// Returns file last access date.
+    #[must_use]
     pub fn accessed(&self) -> Date {
         self.data.accessed()
     }
@@ -656,6 +668,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     /// Returns file last modification date and time.
     ///
     /// Resolution of the time field is 2s.
+    #[must_use]
     pub fn modified(&self) -> DateTime {
         self.data.modified()
     }

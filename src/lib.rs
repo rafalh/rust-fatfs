@@ -61,9 +61,8 @@
 #![allow(
     clippy::module_name_repetitions,
     clippy::cast_possible_truncation,
-    clippy::must_use_candidate,
     clippy::missing_errors_doc,
-    clippy::manual_non_exhaustive // non_exhaustive was added in Rust 1.40.0
+    clippy::manual_non_exhaustive // non_exhaustive attribute was added in Rust 1.40.0
 )]
 
 #[macro_use]

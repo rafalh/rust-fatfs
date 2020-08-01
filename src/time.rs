@@ -33,6 +33,7 @@ impl Date {
     /// `year` - full year number in the range [1980, 2107]
     /// `month` - month of the year in the range [1, 12]
     /// `day` - a day of the month in the range [1, 31]
+    #[must_use]
     pub fn new(year: u16, month: u16, day: u16) -> Self {
         assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
         assert!(month >= MIN_MONTH && month <= MAX_MONTH, "month out of range");
@@ -85,6 +86,7 @@ impl Time {
     /// `min` - number of minutes after the hour in the range [0, 59]
     /// `sec` - number of seconds after the minute in the range [0, 59]
     /// `millis` - number of milliseconds after the second in the range [0, 999]
+    #[must_use]
     pub fn new(hour: u16, min: u16, sec: u16, millis: u16) -> Self {
         assert!(hour <= 23, "hour out of range");
         assert!(min <= 59, "min out of range");
@@ -136,6 +138,7 @@ pub struct DateTime {
 }
 
 impl DateTime {
+    #[must_use]
     pub fn new(date: Date, time: Time) -> Self {
         Self { date, time, _dummy: () }
     }
@@ -215,6 +218,7 @@ pub struct ChronoTimeProvider {
 
 #[cfg(feature = "chrono")]
 impl ChronoTimeProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self { _dummy: () }
     }
@@ -238,6 +242,7 @@ pub struct NullTimeProvider {
 }
 
 impl NullTimeProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self { _dummy: () }
     }
