@@ -1,5 +1,5 @@
-use core::fmt::Debug;
 use core::convert::TryFrom;
+use core::fmt::Debug;
 
 #[cfg(feature = "chrono")]
 use chrono::{self, Datelike, Local, TimeZone, Timelike};
@@ -171,7 +171,7 @@ impl From<chrono::Date<Local>> for Date {
         let year = u16::try_from(date.year()).unwrap(); // safe unwrap unless year is below 0 or above u16::MAX
         assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
         Self {
-            year: year,
+            year,
             month: date.month() as u16, // safe cast: value in range [1, 12]
             day: date.day() as u16,     // safe cast: value in range [1, 31]
             _dummy: (),
@@ -263,7 +263,7 @@ pub type DefaultTimeProvider = NullTimeProvider;
 
 #[cfg(test)]
 mod tests {
-    use super::{Date, Time, DateTime};
+    use super::{Date, DateTime, Time};
 
     #[test]
     fn date_new_no_panic_1980() {
@@ -316,6 +316,9 @@ mod tests {
         use super::TimeZone;
         let chrono_date_time = super::Local.ymd(2016, 12, 31).and_hms_milli(23, 59, 59, 1999);
         let date_time = DateTime::from(chrono_date_time);
-        assert_eq!(date_time, DateTime::new(Date::new(2016, 12, 31), Time::new(23, 59, 59, 999)));
+        assert_eq!(
+            date_time,
+            DateTime::new(Date::new(2016, 12, 31), Time::new(23, 59, 59, 999))
+        );
     }
 }
