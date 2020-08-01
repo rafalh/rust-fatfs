@@ -16,14 +16,45 @@ pub trait IoBase {
 /// It is based on the `std::io::Read` trait.
 pub trait Read: IoBase {
     /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+    ///
+    /// This function does not provide any guarantees about whether it blocks waiting for data, but if an object needs
+    /// to block for a read and cannot, it will typically signal this via an Err return value.
+    ///
+    /// If the return value of this method is `Ok(n)`, then it must be guaranteed that `0 <= n <= buf.len()`. A nonzero
+    /// `n` value indicates that the buffer buf has been filled in with n bytes of data from this source. If `n` is
+    /// `0`, then it can indicate one of two scenarios:
+    ///
+    /// 1. This reader has reached its "end of file" and will likely no longer be able to produce bytes. Note that this
+    ///    does not mean that the reader will always no longer be able to produce bytes.
+    /// 2. The buffer specified was 0 bytes in length.
+    ///
+    /// It is not an error if the returned value `n` is smaller than the buffer size, even when the reader is not at
+    /// the end of the stream yet. This may happen for example because fewer bytes are actually available right now
+    /// (e. g. being close to end-of-file) or because read() was interrupted by a signal.
+    ///
+    /// # Errors
+    ///
+    /// If this function encounters any form of I/O or other error, an error will be returned. If an error is returned
+    /// then it must be guaranteed that no bytes were read.
+    /// An error for which `IoError::is_interrupted` returns true is non-fatal and the read operation should be retried
+    /// if there is nothing else to do.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error>;
 
     /// Read the exact number of bytes required to fill `buf`.
     ///
     /// This function reads as many bytes as necessary to completely fill the specified buffer `buf`.
+    ///
+    /// # Errors
+    ///
+    /// If this function encounters an error for which `IoError::is_interrupted` returns true then the error is ignored
+    /// and the operation will continue.
+    ///
     /// If this function encounters an end of file before completely filling the buffer, it returns an error
-    /// instantiated by a call to `IoError::new_unexpected_eof_error`. The contents of buf are unspecified in this
+    /// instantiated by a call to `IoError::new_unexpected_eof_error`. The contents of `buf` are unspecified in this
     /// case.
+    ///
+    /// If this function returns an error, it is unspecified how many bytes it has read, but it will never read more
+    /// than would be necessary to completely fill the buffer.
     fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Self::Error> {
         while !buf.is_empty() {
             match self.read(buf) {
@@ -50,6 +81,12 @@ pub trait Read: IoBase {
 /// It is based on the `std::io::Write` trait.
 pub trait Write: IoBase {
     /// Write a buffer into this writer, returning how many bytes were written.
+    ///
+    /// # Errors
+    ///
+    /// Each call to write may generate an I/O error indicating that the operation could not be completed. If an error
+    /// is returned then no bytes in the buffer were written to this writer.
+    /// It is not considered an error if the entire buffer could not be written to this writer.
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error>;
 
     /// Attempts to write an entire buffer into this writer.
@@ -59,6 +96,11 @@ pub trait Write: IoBase {
     /// until the entire buffer has been successfully written or such an error occurs.
     /// If `write` returns 0 before the entire buffer has been written this method will return an error instantiated by
     /// a call to `IoError::new_write_zero_error`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return the first error for which `IoError::is_interrupted` method returns false that `write`
+    /// returns.
     fn write_all(&mut self, mut buf: &[u8]) -> Result<(), Self::Error> {
         while !buf.is_empty() {
             match self.write(buf) {
@@ -73,6 +115,12 @@ pub trait Write: IoBase {
         }
         Ok(())
     }
+
+    /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
+    ///
+    /// # Errors
+    ///
+    /// It is considered an error if not all bytes could be written due to I/O errors or EOF being reached.
     fn flush(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -98,6 +146,9 @@ pub trait Seek: IoBase {
     ///
     /// If the seek operation completed successfully, this method returns the new position from the start of the
     /// stream. That position can be used later with `SeekFrom::Start`.
+    ///
+    /// # Errors
+    /// Seeking to a negative offset is considered an error.
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error>;
 }
 

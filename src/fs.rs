@@ -353,6 +353,18 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     ///
     /// Note: creating multiple filesystem objects with a single underlying storage can
     /// cause a filesystem corruption.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::CorruptedFileSystem` will be returned if the boot sector and/or the file system information sector
+    ///   contains invalid values.
+    /// * `Error::Io` will be returned if the provided storage object returned an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// Panics in non-optimized build if `storage` position returned by `seek` is not zero.
     pub fn new<T: IntoStorage<IO>>(storage: T, options: FsOptions<TP, OCC>) -> Result<Self, Error<IO::Error>> {
         // Make sure given image is not seeked
         let mut disk = storage.into_storage();
@@ -499,6 +511,10 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     }
 
     /// Returns status flags for this volume.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
         let bpb_status = self.bpb.status_flags();
         let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
@@ -512,6 +528,10 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     ///
     /// For FAT32 volumes number of free clusters from the FS Information Sector is returned (may be incorrect).
     /// For other FAT variants number is computed on the first call to this method and cached for later use.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn stats(&self) -> Result<FileSystemStats, Error<IO::Error>> {
         let free_clusters_option = self.fs_info.borrow().free_cluster_count;
         let free_clusters = if let Some(n) = free_clusters_option {
@@ -537,6 +557,10 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Unmounts the filesystem.
     ///
     /// Updates the FS Information Sector if needed.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn unmount(self) -> Result<(), Error<IO::Error>> {
         self.unmount_internal()
     }
@@ -623,6 +647,10 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
     /// Returns a volume label from root directory as `String`.
     ///
     /// It finds file with `VOLUME_ID` attribute and returns its short name.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     #[cfg(feature = "alloc")]
     pub fn read_volume_label_from_root_dir(&self) -> Result<Option<String>, Error<IO::Error>> {
         // Note: DirEntry::file_short_name() cannot be used because it interprets name as 8.3
@@ -649,6 +677,10 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
     ///
     /// Label is encoded in the OEM codepage.
     /// It finds file with `VOLUME_ID` attribute and returns its short name.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_volume_label_from_root_dir_as_bytes(&self) -> Result<Option<[u8; SFN_SIZE]>, Error<IO::Error>> {
         let entry_opt = self.root_dir().find_volume_entry()?;
         Ok(entry_opt.map(|e| *e.raw_short_name()))
@@ -929,6 +961,10 @@ impl FormatVolumeOptions {
     /// Cluster size must be a power of two and be greater or equal to sector size.
     /// If option is not specified optimal cluster size is selected based on partition size and
     /// optionally FAT type override (if specified using `fat_type` method).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bytes_per_cluster` is not a power of two or is lower than `512`.
     #[must_use]
     pub fn bytes_per_cluster(mut self, bytes_per_cluster: u32) -> Self {
         assert!(
@@ -955,6 +991,10 @@ impl FormatVolumeOptions {
     ///
     /// Sector size must be a power of two and be in range 512 - 4096.
     /// Default is `512`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bytes_per_sector` is not a power of two or is lower than `512`.
     #[must_use]
     pub fn bytes_per_sector(mut self, bytes_per_sector: u16) -> Self {
         assert!(
@@ -990,6 +1030,10 @@ impl FormatVolumeOptions {
     ///
     /// The only allowed values are `1` and `2`. If value `2` is used the FAT is mirrored.
     /// Default is `2`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fats` is outside of the range [1, 2].
     #[must_use]
     pub fn fats(mut self, fats: u8) -> Self {
         assert!(fats >= 1 && fats <= 2, "Invalid number of FATs");
@@ -1060,6 +1104,20 @@ impl FormatVolumeOptions {
 /// Supplied `storage` parameter cannot be seeked (internal pointer must be on position 0).
 /// To format a fragment of a disk image (e.g. partition) library user should wrap the file struct in a struct
 /// limiting access to partition bytes only e.g. `fscommon::StreamSlice`.
+///
+/// # Errors
+///
+/// Errors that can be returned:
+///
+/// * `Error::InvalidInput` will be returned if `options` describes an invalid file system that cannot be created.
+///   Possible reason can be requesting a fat type that is not compatible with the total number of clusters or
+///   formatting a too big storage. If sectors/clusters related options in `options` structure were left set to
+///   defaults this error is very unlikely to happen.
+/// * `Error::Io` will be returned if the provided storage object returned an I/O error.
+///
+/// # Panics
+///
+/// Panics in non-optimized build if `storage` position returned by `seek` is not zero.
 #[allow(clippy::needless_pass_by_value)]
 pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOptions) -> Result<(), Error<S::Error>> {
     trace!("format_volume");
@@ -1076,12 +1134,14 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
             error!("Volume has too many sectors: {}", total_sectors_64);
             return Err(Error::InvalidInput);
         }
-        total_sectors_64 as u32 // safe case: possible overflow is handled up from here
+        total_sectors_64 as u32 // safe case: possible overflow is handled above
     };
 
     // Create boot sector, validate and write to storage device
     let (boot, fat_type) = format_boot_sector(&options, total_sectors, bytes_per_sector)?;
-    boot.validate()?;
+    if boot.validate::<S::Error>().is_err() {
+        return Err(Error::InvalidInput);
+    }
     boot.serialize(storage)?;
     // Make sure entire logical sector is updated (serialize method always writes 512 bytes)
     let bytes_per_sector = boot.bpb.bytes_per_sector;

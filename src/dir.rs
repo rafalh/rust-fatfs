@@ -195,6 +195,14 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Opens existing subdirectory.
     ///
     /// `path` is a '/' separated directory path relative to self directory.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::NotFound` will be returned if `path` does not point to any existing directory entry.
+    /// * `Error::InvalidInput` will be returned if `path` points to a file that is not a directory.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn open_dir(&self, path: &str) -> Result<Self, Error<IO::Error>> {
         trace!("Dir::open_dir {}", path);
         let (name, rest_opt) = split_path(path);
@@ -208,6 +216,14 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Opens existing file.
     ///
     /// `path` is a '/' separated file path relative to self directory.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::NotFound` will be returned if `path` points to a non-existing directory entry.
+    /// * `Error::InvalidInput` will be returned if `path` points to a file that is a directory.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn open_file(&self, path: &str) -> Result<File<'a, IO, TP, OCC>, Error<IO::Error>> {
         trace!("Dir::open_file {}", path);
         // traverse path
@@ -223,8 +239,18 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
 
     /// Creates new or opens existing file=.
     ///
-    /// `path` is a '/' separated file path relative to self directory.
+    /// `path` is a '/' separated file path relative to `self` directory.
     /// File is never truncated when opening. It can be achieved by calling `File::truncate` method after opening.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::InvalidInput` will be returned if `path` points to an existing file that is a directory.
+    /// * `Error::InvalidFileNameLength` will be returned if the file name is empty or if it is too long.
+    /// * `Error::UnsupportedFileNameCharacter` will be returned if the file name contains an invalid character.
+    /// * `Error::NotEnoughSpace` will be returned if there is not enough free space to create a new file.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn create_file(&self, path: &str) -> Result<File<'a, IO, TP, OCC>, Error<IO::Error>> {
         trace!("Dir::create_file {}", path);
         // traverse path
@@ -248,6 +274,16 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// Creates new directory or opens existing.
     ///
     /// `path` is a '/' separated path relative to self directory.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::InvalidInput` will be returned if `path` points to an existing file that is not a directory.
+    /// * `Error::InvalidFileNameLength` will be returned if the file name is empty or if it is too long.
+    /// * `Error::UnsupportedFileNameCharacter` will be returned if the file name contains an invalid character.
+    /// * `Error::NotEnoughSpace` will be returned if there is not enough free space to create a new directory.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn create_dir(&self, path: &str) -> Result<Self, Error<IO::Error>> {
         trace!("Dir::create_dir {}", path);
         // traverse path
@@ -300,6 +336,15 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// `path` is a '/' separated file path relative to self directory.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::NotFound` will be returned if `path` points to a non-existing directory entry.
+    /// * `Error::InvalidInput` will be returned if `path` points to a file that is not a directory.
+    /// * `Error::DirectoryIsNotEmpty` will be returned if the specified directory is not empty.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn remove(&self, path: &str) -> Result<(), Error<IO::Error>> {
         trace!("Dir::remove {}", path);
         // traverse path
@@ -338,6 +383,15 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
     /// `dst_dir` can be set to self directory if rename operation without moving is needed.
     /// Make sure there is no reference to this file (no File instance) or filesystem corruption
     /// can happen.
+    ///
+    /// # Errors
+    ///
+    /// Errors that can be returned:
+    ///
+    /// * `Error::NotFound` will be returned if `src_path` points to a non-existing directory entry or if `dst_path`
+    ///   stripped from the last component does not point to an existing directory.
+    /// * `Error::AlreadyExists` will be returned if `dst_path` points to an existing directory entry.
+    /// * `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn rename(&self, src_path: &str, dst_dir: &Dir<IO, TP, OCC>, dst_path: &str) -> Result<(), Error<IO::Error>> {
         trace!("Dir::rename {} {}", src_path, dst_path);
         // traverse source path

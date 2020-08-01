@@ -29,10 +29,13 @@ pub struct Date {
 impl Date {
     /// Creates a new `Date` instance.
     ///
-    /// Panics if one of provided parameters is out of the supported range:
-    /// `year` - full year number in the range [1980, 2107]
-    /// `month` - month of the year in the range [1, 12]
-    /// `day` - a day of the month in the range [1, 31]
+    /// * `year` - full year number in the range [1980, 2107]
+    /// * `month` - month of the year in the range [1, 12]
+    /// * `day` - a day of the month in the range [1, 31]
+    ///
+    /// # Panics
+    ///
+    /// Panics if one of provided arguments is out of the supported range.
     #[must_use]
     pub fn new(year: u16, month: u16, day: u16) -> Self {
         assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
@@ -81,11 +84,14 @@ pub struct Time {
 impl Time {
     /// Creates a new `Time` instance.
     ///
-    /// Panics if one of provided parameters is out of the supported range:
-    /// `hour` - number of hours after midnight in the range [0, 23]
-    /// `min` - number of minutes after the hour in the range [0, 59]
-    /// `sec` - number of seconds after the minute in the range [0, 59]
-    /// `millis` - number of milliseconds after the second in the range [0, 999]
+    /// * `hour` - number of hours after midnight in the range [0, 23]
+    /// * `min` - number of minutes after the hour in the range [0, 59]
+    /// * `sec` - number of seconds after the minute in the range [0, 59]
+    /// * `millis` - number of milliseconds after the second in the range [0, 999]
+    ///
+    /// # Panics
+    ///
+    /// Panics if one of provided arguments is out of the supported range.
     #[must_use]
     pub fn new(hour: u16, min: u16, sec: u16, millis: u16) -> Self {
         assert!(hour <= 23, "hour out of range");

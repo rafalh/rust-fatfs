@@ -41,6 +41,10 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     }
 
     /// Truncate file in current position.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn truncate(&mut self) -> Result<(), Error<IO::Error>> {
         trace!("File::truncate");
         if let Some(ref mut e) = self.entry {
