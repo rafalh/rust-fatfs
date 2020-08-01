@@ -1,7 +1,15 @@
 use core::fmt::Debug;
+use core::convert::TryFrom;
 
 #[cfg(feature = "chrono")]
 use chrono::{self, Datelike, Local, TimeZone, Timelike};
+
+const MIN_YEAR: u16 = 1980;
+const MAX_YEAR: u16 = 2107;
+const MIN_MONTH: u16 = 1;
+const MAX_MONTH: u16 = 12;
+const MIN_DAY: u16 = 1;
+const MAX_DAY: u16 = 31;
 
 /// A DOS compatible date.
 ///
@@ -14,16 +22,41 @@ pub struct Date {
     pub month: u16,
     /// Day of the month - [1, 31]
     pub day: u16,
+    // Not-public field to disallow direct instantiation of this struct
+    _dummy: (),
 }
 
 impl Date {
+    /// Creates a new `Date` instance.
+    ///
+    /// Panics if one of provided parameters is out of the supported range:
+    /// `year` - full year number in the range [1980, 2107]
+    /// `month` - month of the year in the range [1, 12]
+    /// `day` - a day of the month in the range [1, 31]
+    pub fn new(year: u16, month: u16, day: u16) -> Self {
+        assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
+        assert!(month >= MIN_MONTH && month <= MAX_MONTH, "month out of range");
+        assert!(day >= MIN_DAY && day <= MAX_DAY, "day out of range");
+        Self {
+            year,
+            month,
+            day,
+            _dummy: (),
+        }
+    }
+
     pub(crate) fn decode(dos_date: u16) -> Self {
-        let (year, month, day) = ((dos_date >> 9) + 1980, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        Self { year, month, day }
+        let (year, month, day) = ((dos_date >> 9) + MIN_YEAR, (dos_date >> 5) & 0xF, dos_date & 0x1F);
+        Self {
+            year,
+            month,
+            day,
+            _dummy: (),
+        }
     }
 
     pub(crate) fn encode(self) -> u16 {
-        ((self.year - 1980) << 9) | (self.month << 5) | self.day
+        ((self.year - MIN_YEAR) << 9) | (self.month << 5) | self.day
     }
 }
 
@@ -40,22 +73,52 @@ pub struct Time {
     pub sec: u16,
     /// Milliseconds after the second - [0, 999]
     pub millis: u16,
+    // Not-public field to disallow direct instantiation of this struct
+    _dummy: (),
 }
 
 impl Time {
+    /// Creates a new `Time` instance.
+    ///
+    /// Panics if one of provided parameters is out of the supported range:
+    /// `hour` - number of hours after midnight in the range [0, 23]
+    /// `min` - number of minutes after the hour in the range [0, 59]
+    /// `sec` - number of seconds after the minute in the range [0, 59]
+    /// `millis` - number of milliseconds after the second in the range [0, 999]
+    pub fn new(hour: u16, min: u16, sec: u16, millis: u16) -> Self {
+        assert!(hour <= 23, "hour out of range");
+        assert!(min <= 59, "min out of range");
+        assert!(sec <= 59, "sec out of range");
+        assert!(millis <= 999, "millis out of range");
+        Self {
+            hour,
+            min,
+            sec,
+            millis,
+            _dummy: (),
+        }
+    }
+
     pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
         let hour = dos_time >> 11;
         let min = (dos_time >> 5) & 0x3F;
         let sec = (dos_time & 0x1F) * 2 + u16::from(dos_time_hi_res / 100);
         let millis = u16::from(dos_time_hi_res % 100) * 10;
-        Self { hour, min, sec, millis }
+        Self {
+            hour,
+            min,
+            sec,
+            millis,
+            _dummy: (),
+        }
     }
 
     pub(crate) fn encode(self) -> (u16, u8) {
         let dos_time = (self.hour << 11) | (self.min << 5) | (self.sec / 2);
+        let dos_time_hi_res = (self.millis / 10) + (self.sec % 2) * 100;
         // safe cast: value in range [0, 199]
-        let dos_time_hi_res = ((self.millis / 10) + (self.sec % 2) * 100) as u8;
-        (dos_time, dos_time_hi_res)
+        #[allow(clippy::cast_possible_truncation)]
+        (dos_time, dos_time_hi_res as u8)
     }
 }
 
@@ -68,14 +131,17 @@ pub struct DateTime {
     pub date: Date,
     // A time part
     pub time: Time,
+    // Not-public field to disallow direct instantiation of this struct
+    _dummy: (),
 }
 
 impl DateTime {
+    pub fn new(date: Date, time: Time) -> Self {
+        Self { date, time, _dummy: () }
+    }
+
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
-        Self {
-            date: Date::decode(dos_date),
-            time: Time::decode(dos_time, dos_time_hi_res),
-        }
+        Self::new(Date::decode(dos_date), Time::decode(dos_time, dos_time_hi_res))
     }
 }
 
@@ -101,10 +167,14 @@ impl From<DateTime> for chrono::DateTime<Local> {
 #[cfg(feature = "chrono")]
 impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
+        #[allow(clippy::cast_sign_loss)]
+        let year = u16::try_from(date.year()).unwrap(); // safe unwrap unless year is below 0 or above u16::MAX
+        assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
         Self {
-            year: date.year() as u16,   // safe cast unless it is after year 65,536
+            year: year,
             month: date.month() as u16, // safe cast: value in range [1, 12]
             day: date.day() as u16,     // safe cast: value in range [1, 31]
+            _dummy: (),
         }
     }
 }
@@ -112,16 +182,18 @@ impl From<chrono::Date<Local>> for Date {
 #[cfg(feature = "chrono")]
 impl From<chrono::DateTime<Local>> for DateTime {
     fn from(date_time: chrono::DateTime<Local>) -> Self {
-        let millis = date_time.nanosecond() / 1_000_000;
-        Self {
-            date: Date::from(date_time.date()),
-            time: Time {
-                hour: date_time.hour() as u16,  // safe cast: value in range [0, 23]
-                min: date_time.minute() as u16, // safe cast: value in range [0, 59]
-                sec: date_time.second() as u16, // safe cast: value in range [0, 59]
-                millis: millis as u16,          // safe cast: value in range [0, 999]
-            },
-        }
+        let millis_leap = date_time.nanosecond() / 1_000_000; // value in the range [0, 1999] (> 999 if leap second)
+        let millis = millis_leap.min(999); // during leap second set milliseconds to 999
+        #[allow(clippy::cast_possible_truncation)]
+        let date = Date::from(date_time.date());
+        let time = Time {
+            hour: date_time.hour() as u16,  // safe cast: value in range [0, 23]
+            min: date_time.minute() as u16, // safe cast: value in range [0, 59]
+            sec: date_time.second() as u16, // safe cast: value in range [0, 59]
+            millis: millis as u16,          // safe cast: value in range [0, 999]
+            _dummy: (),
+        };
+        Self::new(date, time)
     }
 }
 
@@ -191,15 +263,33 @@ pub type DefaultTimeProvider = NullTimeProvider;
 
 #[cfg(test)]
 mod tests {
-    use super::{Date, Time};
+    use super::{Date, Time, DateTime};
+
+    #[test]
+    fn date_new_no_panic_1980() {
+        let _ = Date::new(1980, 1, 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn date_new_panic_year_1979() {
+        let _ = Date::new(1979, 12, 31);
+    }
+
+    #[test]
+    fn date_new_no_panic_2107() {
+        let _ = Date::new(2107, 12, 31);
+    }
+
+    #[test]
+    #[should_panic]
+    fn date_new_panic_year_2108() {
+        let _ = Date::new(2108, 1, 1);
+    }
 
     #[test]
     fn date_encode_decode() {
-        let d = Date {
-            year: 2055,
-            month: 7,
-            day: 23,
-        };
+        let d = Date::new(2055, 7, 23);
         let x = d.encode();
         assert_eq!(x, 38647);
         assert_eq!(d, Date::decode(x));
@@ -207,12 +297,7 @@ mod tests {
 
     #[test]
     fn time_encode_decode() {
-        let t1 = Time {
-            hour: 15,
-            min: 3,
-            sec: 29,
-            millis: 990,
-        };
+        let t1 = Time::new(15, 3, 29, 990);
         let t2 = Time { sec: 18, ..t1 };
         let t3 = Time { millis: 40, ..t1 };
         let (x1, y1) = t1.encode();
@@ -224,5 +309,13 @@ mod tests {
         assert_eq!(t1, Time::decode(x1, y1));
         assert_eq!(t2, Time::decode(x2, y2));
         assert_eq!(t3, Time::decode(x3, y3));
+    }
+
+    #[test]
+    fn date_time_from_chrono_leap_second() {
+        use super::TimeZone;
+        let chrono_date_time = super::Local.ymd(2016, 12, 31).and_hms_milli(23, 59, 59, 1999);
+        let date_time = DateTime::from(chrono_date_time);
+        assert_eq!(date_time, DateTime::new(Date::new(2016, 12, 31), Time::new(23, 59, 59, 999)));
     }
 }

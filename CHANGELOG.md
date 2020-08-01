@@ -21,6 +21,10 @@ New features:
   public structs and require an owned time provider and oem CP converter instead of a reference with a static lifetime in
   `FsOptions` (BREAKING CHANGE). This change allows `FileSystem` usage in multi-threaded environment (e.g. wrapped in a
   `Mutex`).
+* Add non-public field to `Date`, `Time`, `DateTime` structures to disallow direct instantiation (BREAKING CHANGE).
+* Add `Date::new`, `Time::new`, `DateTime::new` functions that instiantiate corresponding structures after ensuring
+  that arguments are in the supported range. They panic if this is not the case.
+* Fix time encoding during a leap second if using `chrono`.
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.36.0.
 * Build the crate using the 2018 edition.
