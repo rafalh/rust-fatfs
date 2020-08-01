@@ -1,4 +1,5 @@
 use core::cmp;
+use core::convert::TryFrom;
 
 use crate::dir_entry::DirEntryEditor;
 use crate::error::Error;
@@ -349,56 +350,63 @@ where
 impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
         trace!("File::seek");
-        let mut new_pos = match pos {
-            SeekFrom::Current(x) => i64::from(self.offset) + x,
-            SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => {
-                let size = i64::from(self.size().expect("cannot seek from end if size is unknown"));
-                size + x
-            }
+        let size_opt = self.size();
+        let new_offset_opt: Option<u32> = match pos {
+            SeekFrom::Current(x) => i64::from(self.offset)
+                .checked_add(x)
+                .and_then(|n| u32::try_from(n).ok()),
+            SeekFrom::Start(x) => u32::try_from(x).ok(),
+            SeekFrom::End(o) => size_opt
+                .and_then(|s| i64::from(s).checked_add(o))
+                .and_then(|n| u32::try_from(n).ok()),
         };
-        if new_pos < 0 {
-            error!("Seek to a negative offset");
+        let mut new_offset = if let Some(new_offset) = new_offset_opt {
+            new_offset
+        } else {
+            error!("Invalid seek offset");
             return Err(Error::InvalidInput);
-        }
-        if let Some(s) = self.size() {
-            if new_pos > i64::from(s) {
-                info!("seek beyond end of file");
-                new_pos = i64::from(s);
+        };
+        if let Some(size) = size_opt {
+            if new_offset > size {
+                warn!("Seek beyond the end of the file");
+                new_offset = size;
             }
         }
-        let mut new_pos = new_pos as u32;
-        trace!("file seek {} -> {} - entry {:?}", self.offset, new_pos, self.entry);
-        if new_pos == self.offset {
+        trace!("file seek {} -> {} - entry {:?}", self.offset, new_offset, self.entry);
+        if new_offset == self.offset {
             // position is the same - nothing to do
             return Ok(u64::from(self.offset));
         }
-        // get number of clusters to seek (favoring previous cluster in corner case)
-        let cluster_count = (self.fs.clusters_from_bytes(u64::from(new_pos)) as i32 - 1) as isize;
-        let old_cluster_count = (self.fs.clusters_from_bytes(u64::from(self.offset)) as i32 - 1) as isize;
-        let new_cluster = if new_pos == 0 {
+        let new_offset_in_clusters = self.fs.clusters_from_bytes(u64::from(new_offset));
+        let old_offset_in_clusters = self.fs.clusters_from_bytes(u64::from(self.offset));
+        let new_cluster = if new_offset == 0 {
             None
-        } else if cluster_count == old_cluster_count {
+        } else if new_offset_in_clusters == old_offset_in_clusters {
             self.current_cluster
-        } else if let Some(n) = self.first_cluster {
-            let mut cluster = n;
-            let mut iter = self.fs.cluster_iter(n);
-            for i in 0..cluster_count {
+        } else if let Some(first_cluster) = self.first_cluster {
+            // calculate number of clusters to skip
+            // return the previous cluster if the offset points to the cluster boundary
+            // Note: new_offset_in_clusters cannot be 0 here because new_offset is not 0
+            debug_assert!(new_offset_in_clusters > 0);
+            let clusters_to_skip = new_offset_in_clusters - 1;
+            let mut cluster = first_cluster;
+            let mut iter = self.fs.cluster_iter(first_cluster);
+            for i in 0..clusters_to_skip {
                 cluster = if let Some(r) = iter.next() {
                     r?
                 } else {
-                    // chain ends before new position - seek to end of last cluster
-                    new_pos = self.fs.bytes_from_clusters((i + 1) as u32) as u32;
+                    // cluster chain ends before the new position - seek to the end of the last cluster
+                    new_offset = self.fs.bytes_from_clusters(i + 1) as u32;
                     break;
                 };
             }
             Some(cluster)
         } else {
             // empty file - always seek to 0
-            new_pos = 0;
+            new_offset = 0;
             None
         };
-        self.offset = new_pos;
+        self.offset = new_offset;
         self.current_cluster = new_cluster;
         Ok(u64::from(self.offset))
     }

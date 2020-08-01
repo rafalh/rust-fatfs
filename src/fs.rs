@@ -4,6 +4,7 @@ use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
+use core::convert::TryFrom;
 use core::fmt::Debug;
 use core::iter::FromIterator;
 use core::marker::PhantomData;
@@ -803,17 +804,28 @@ impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
 
 impl<B, S: IoBase> Seek for DiskSlice<B, S> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
-        let new_offset = match pos {
-            SeekFrom::Current(x) => self.offset as i64 + x,
-            SeekFrom::Start(x) => x as i64,
-            SeekFrom::End(x) => self.size as i64 + x,
+        let new_offset_opt: Option<u64> = match pos {
+            SeekFrom::Current(x) => i64::try_from(self.offset)
+                .ok()
+                .and_then(|n| n.checked_add(x))
+                .and_then(|n| u64::try_from(n).ok()),
+            SeekFrom::Start(x) => Some(x),
+            SeekFrom::End(o) => i64::try_from(self.size)
+                .ok()
+                .and_then(|size| size.checked_add(o))
+                .and_then(|n| u64::try_from(n).ok()),
         };
-        if new_offset < 0 || new_offset as u64 > self.size {
-            error!("Seek to a negative offset");
-            Err(Error::InvalidInput)
+        if let Some(new_offset) = new_offset_opt {
+            if new_offset > self.size {
+                error!("Seek beyond the end of the file");
+                Err(Error::InvalidInput)
+            } else {
+                self.offset = new_offset;
+                Ok(self.offset)
+            }
         } else {
-            self.offset = new_offset as u64;
-            Ok(self.offset)
+            error!("Invalid seek offset");
+            Err(Error::InvalidInput)
         }
     }
 }
