@@ -91,11 +91,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
 
 fn split_path(path: &str) -> (&str, Option<&str>) {
     let trimmed_path = path.trim_matches('/');
-    if let Some(n) = trimmed_path.find('/') {
-        (&trimmed_path[..n], Some(&trimmed_path[n + 1..]))
-    } else {
-        (trimmed_path, None)
-    }
+    trimmed_path.find('/').map_or((trimmed_path, None), |n| (&trimmed_path[..n], Some(&trimmed_path[n + 1..])))
 }
 
 enum DirEntryOrShortName<'a, IO: ReadWriteSeek, TP, OCC> {
@@ -1046,19 +1042,16 @@ impl ShortNameGenerator {
         let mut short_name = [SFN_PADDING; SFN_SIZE];
         // find extension after last dot
         // Note: short file name cannot start with the extension
-        let (basename_len, name_fits, lossy_conv) = if let Some(index) = name[1..].rfind('.') {
-            // extension found - copy parts before and after dot
-            let dot_index = index + 1;
-            let (basename_len, basename_fits, basename_lossy) =
-                Self::copy_short_name_part(&mut short_name[0..8], &name[..dot_index]);
+        let dot_index_opt = name[1..].rfind('.').map(|index| index + 1);
+        // copy basename (part of filename before a dot)
+        let basename_src = dot_index_opt.map_or(name, |dot_index| &name[..dot_index]);
+        let (basename_len, basename_fits, basename_lossy) =
+            Self::copy_short_name_part(&mut short_name[0..8], basename_src);
+        // copy file extension if exists
+        let (name_fits, lossy_conv) = dot_index_opt.map_or((basename_fits, basename_lossy), |dot_index| {
             let (_, ext_fits, ext_lossy) = Self::copy_short_name_part(&mut short_name[8..11], &name[dot_index + 1..]);
-            (basename_len, basename_fits && ext_fits, basename_lossy || ext_lossy)
-        } else {
-            // no extension - copy name and leave extension empty
-            let (basename_len, basename_fits, basename_lossy) =
-                Self::copy_short_name_part(&mut short_name[0..8], &name);
-            (basename_len, basename_fits, basename_lossy)
-        };
+            (basename_fits && ext_fits, basename_lossy || ext_lossy)
+        });
         let chksum = Self::checksum(name);
         Self {
             short_name,
