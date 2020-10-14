@@ -656,7 +656,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
         // Note: DirEntry::file_short_name() cannot be used because it interprets name as 8.3
         // (adds dot before an extension)
         let volume_label_opt = self.read_volume_label_from_root_dir_as_bytes()?;
-        if let Some(volume_label) = volume_label_opt {
+        volume_label_opt.map_or(Ok(None), |volume_label| {
             // Strip label padding
             let len = volume_label
                 .iter()
@@ -668,9 +668,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
             let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
             // Build string from character iterator
             Ok(Some(String::from_iter(char_iter)))
-        } else {
-            Ok(None)
-        }
+        })
     }
 
     /// Returns a volume label from root directory as byte array.
