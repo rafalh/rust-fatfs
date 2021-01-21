@@ -76,8 +76,15 @@ impl<'a, T: ReadWriteSeek> File<'a, T> {
         match self.current_cluster {
             Some(n) => {
                 let cluster_size = self.fs.cluster_size();
-                let offset_in_cluster = self.offset % cluster_size;
-                let offset_in_fs = self.fs.offset_from_cluster(n) + (offset_in_cluster as u64);
+                let offset_mod_cluster_size = self.offset % cluster_size;
+                let offset_in_cluster = if offset_mod_cluster_size == 0 {
+                    // position points between clusters - we are returning previous cluster so
+                    // offset must be set to the cluster size
+                    cluster_size
+                } else {
+                    offset_mod_cluster_size
+                };
+                let offset_in_fs = self.fs.offset_from_cluster(n) + u64::from(offset_in_cluster);
                 Some(offset_in_fs)
             },
             None => None,

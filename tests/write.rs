@@ -349,3 +349,36 @@ fn test_dirty_flag_fat16() {
 fn test_dirty_flag_fat32() {
     call_with_tmp_img(&test_dirty_flag, FAT32_IMG, 7)
 }
+
+fn test_multiple_files_in_directory(fs: FileSystem) {
+    let dir = fs.root_dir().create_dir("/TMP").unwrap();
+    for i in 0..8 {
+        let name = format!("T{}.TXT", i);
+        let mut file = dir.create_file(&name).unwrap();
+        file.write_all(TEST_STR.as_bytes()).unwrap();
+        file.flush().unwrap();
+
+        let file = dir.iter()
+            .map(|r| r.unwrap())
+            .filter(|e| e.file_name() == name)
+            .next()
+            .unwrap();
+
+        assert_eq!(TEST_STR.len() as u64, file.len(), "Wrong file len on iteration {}", i);
+    }
+}
+
+#[test]
+fn test_multiple_files_in_directory_fat12() {
+    call_with_fs(&test_multiple_files_in_directory, FAT12_IMG, 8)
+}
+
+#[test]
+fn test_multiple_files_in_directory_fat16() {
+    call_with_fs(&test_multiple_files_in_directory, FAT16_IMG, 8)
+}
+
+#[test]
+fn test_multiple_files_in_directory_fat32() {
+    call_with_fs(&test_multiple_files_in_directory, FAT32_IMG, 8)
+}
