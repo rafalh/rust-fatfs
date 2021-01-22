@@ -8,6 +8,7 @@ matrix:
       script:
         # Build only the library (examples may fail)
         - cargo update
+        - cargo update -p byteorder --precise 1.3.4
         - cargo update -p cfg-if --precise 0.1.9
         - cargo update -p log --precise 0.4.8
         - cargo build --verbose
