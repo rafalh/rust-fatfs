@@ -1,11 +1,11 @@
 Changelog
 =========
 
-0.3.5 (not released yet)
+0.3.5 (2021-01-23)
 ------------------------
 Bug fixes:
-* Fix file-system corruption when creating multiple directory entries in non-root directory (directory size must
-  be greater or equal to cluster size for corruption to happen)
+* Fix file-system corruption that occurs when creating multiple directory entries in a non-root directory (directory
+  size must be greater or equal to the cluster size for the corruption to happen)
 
 0.3.4 (2020-07-20)
 ------------------
