@@ -384,7 +384,8 @@ fn test_multiple_files_in_directory(fs: FileSystem) {
         file.write_all(TEST_STR.as_bytes()).unwrap();
         file.flush().unwrap();
 
-        let file = dir.iter()
+        let file = dir
+            .iter()
             .map(|r| r.unwrap())
             .filter(|e| e.file_name() == name)
             .next()

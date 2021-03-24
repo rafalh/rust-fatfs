@@ -91,7 +91,9 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for DirRawStream<'_, IO, TP, OCC> {
 
 fn split_path(path: &str) -> (&str, Option<&str>) {
     let trimmed_path = path.trim_matches('/');
-    trimmed_path.find('/').map_or((trimmed_path, None), |n| (&trimmed_path[..n], Some(&trimmed_path[n + 1..])))
+    trimmed_path.find('/').map_or((trimmed_path, None), |n| {
+        (&trimmed_path[..n], Some(&trimmed_path[n + 1..]))
+    })
 }
 
 enum DirEntryOrShortName<'a, IO: ReadWriteSeek, TP, OCC> {

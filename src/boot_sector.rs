@@ -54,12 +54,12 @@ impl BiosParameterBlock {
             fats: rdr.read_u8()?,
             root_entries: rdr.read_u16_le()?,
             total_sectors_16: rdr.read_u16_le()?,
-             media: rdr.read_u8()?,
-             sectors_per_fat_16: rdr.read_u16_le()?,
-             sectors_per_track: rdr.read_u16_le()?,
-             heads: rdr.read_u16_le()?,
-             hidden_sectors: rdr.read_u32_le()?,
-             total_sectors_32: rdr.read_u32_le()?,
+            media: rdr.read_u8()?,
+            sectors_per_fat_16: rdr.read_u16_le()?,
+            sectors_per_track: rdr.read_u16_le()?,
+            heads: rdr.read_u16_le()?,
+            hidden_sectors: rdr.read_u32_le()?,
+            total_sectors_32: rdr.read_u32_le()?,
             ..Self::default()
         };
 
