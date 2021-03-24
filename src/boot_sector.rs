@@ -47,19 +47,21 @@ pub(crate) struct BiosParameterBlock {
 
 impl BiosParameterBlock {
     fn deserialize<R: Read>(rdr: &mut R) -> Result<Self, R::Error> {
-        let mut bpb = Self::default();
-        bpb.bytes_per_sector = rdr.read_u16_le()?;
-        bpb.sectors_per_cluster = rdr.read_u8()?;
-        bpb.reserved_sectors = rdr.read_u16_le()?;
-        bpb.fats = rdr.read_u8()?;
-        bpb.root_entries = rdr.read_u16_le()?;
-        bpb.total_sectors_16 = rdr.read_u16_le()?;
-        bpb.media = rdr.read_u8()?;
-        bpb.sectors_per_fat_16 = rdr.read_u16_le()?;
-        bpb.sectors_per_track = rdr.read_u16_le()?;
-        bpb.heads = rdr.read_u16_le()?;
-        bpb.hidden_sectors = rdr.read_u32_le()?;
-        bpb.total_sectors_32 = rdr.read_u32_le()?;
+        let mut bpb = Self {
+            bytes_per_sector: rdr.read_u16_le()?,
+            sectors_per_cluster: rdr.read_u8()?,
+            reserved_sectors: rdr.read_u16_le()?,
+            fats: rdr.read_u8()?,
+            root_entries: rdr.read_u16_le()?,
+            total_sectors_16: rdr.read_u16_le()?,
+             media: rdr.read_u8()?,
+             sectors_per_fat_16: rdr.read_u16_le()?,
+             sectors_per_track: rdr.read_u16_le()?,
+             heads: rdr.read_u16_le()?,
+             hidden_sectors: rdr.read_u32_le()?,
+             total_sectors_32: rdr.read_u32_le()?,
+            ..Self::default()
+        };
 
         if bpb.is_fat32() {
             bpb.sectors_per_fat_32 = rdr.read_u32_le()?;
