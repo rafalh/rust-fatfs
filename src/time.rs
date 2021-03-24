@@ -38,9 +38,9 @@ impl Date {
     /// Panics if one of provided arguments is out of the supported range.
     #[must_use]
     pub fn new(year: u16, month: u16, day: u16) -> Self {
-        assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
-        assert!(month >= MIN_MONTH && month <= MAX_MONTH, "month out of range");
-        assert!(day >= MIN_DAY && day <= MAX_DAY, "day out of range");
+        assert!((MIN_YEAR..=MAX_YEAR).contains(&year), "year out of range");
+        assert!((MIN_MONTH..=MAX_MONTH).contains(&month), "month out of range");
+        assert!((MIN_DAY..=MAX_DAY).contains(&day), "day out of range");
         Self {
             year,
             month,
@@ -178,7 +178,7 @@ impl From<chrono::Date<Local>> for Date {
     fn from(date: chrono::Date<Local>) -> Self {
         #[allow(clippy::cast_sign_loss)]
         let year = u16::try_from(date.year()).unwrap(); // safe unwrap unless year is below 0 or above u16::MAX
-        assert!(year >= MIN_YEAR && year <= MAX_YEAR, "year out of range");
+        assert!((MIN_YEAR..=MAX_YEAR).contains(&year), "year out of range");
         Self {
             year,
             month: date.month() as u16, // safe cast: value in range [1, 12]

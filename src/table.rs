@@ -472,7 +472,7 @@ impl FatTrait for Fat32 {
     {
         let val = Self::get_raw(fat, cluster)? & 0x0FFF_FFFF;
         Ok(match val {
-            0 if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
+            0 if (0x0FFF_FFF7..=0x0FFF_FFFF).contains(&cluster) => {
                 let tmp = if cluster == 0x0FFF_FFF7 {
                     "BAD_CLUSTER"
                 } else {
@@ -487,7 +487,7 @@ impl FatTrait for Fat32 {
             0 => FatValue::Free,
             0x0FFF_FFF7 => FatValue::Bad,
             0x0FFF_FFF8..=0x0FFF_FFFF => FatValue::EndOfChain,
-            n if cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF => {
+            n if (0x0FFF_FFF7..=0x0FFF_FFFF).contains(&cluster) => {
                 let tmp = if cluster == 0x0FFF_FFF7 {
                     "BAD_CLUSTER"
                 } else {

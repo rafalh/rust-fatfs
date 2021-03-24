@@ -1034,7 +1034,7 @@ impl FormatVolumeOptions {
     /// Panics if `fats` is outside of the range [1, 2].
     #[must_use]
     pub fn fats(mut self, fats: u8) -> Self {
-        assert!(fats >= 1 && fats <= 2, "Invalid number of FATs");
+        assert!((1..=2).contains(&fats), "Invalid number of FATs");
         self.fats = Some(fats);
         self
     }
