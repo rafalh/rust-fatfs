@@ -1,9 +1,9 @@
 Rust FAT FS
 ===========
 
-[![Travis Build Status](https://travis-ci.org/rafalh/rust-fatfs.svg?branch=master)](https://travis-ci.org/rafalh/rust-fatfs)
+[![CI Status](https://github.com/rafalh/rust-fatfs/actions/workflows/ci.yml/badge.svg)](https://github.com/rafalh/rust-fatfs/actions/workflows/ci.yml)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
-[![crates.io](http://meritbadge.herokuapp.com/fatfs)](https://crates.io/crates/fatfs)
+[![crates.io](https://img.shields.io/crates/v/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
 [![Minimum rustc version](https://img.shields.io/badge/rustc-1.36+-yellow.svg)](https://blog.rust-lang.org/2019/07/04/Rust-1.36.0.html)
 
