@@ -45,6 +45,10 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     /// # Errors
     ///
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if this is the root directory.
     pub fn truncate(&mut self) -> Result<(), Error<IO::Error>> {
         trace!("File::truncate");
         if let Some(ref mut e) = self.entry {
@@ -54,7 +58,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
             }
         } else {
             // Note: we cannot handle this case because there is no size field
-            panic!("Trying to a file without an entry");
+            panic!("Trying to truncate a file without an entry");
         }
         if let Some(current_cluster) = self.current_cluster {
             // current cluster is none only if offset is 0

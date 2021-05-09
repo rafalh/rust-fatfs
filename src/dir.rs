@@ -1056,11 +1056,11 @@ impl ShortNameGenerator {
         });
         let chksum = Self::checksum(name);
         Self {
-            short_name,
             chksum,
             name_fits,
             lossy_conv,
             basename_len,
+            short_name,
             ..Self::default()
         }
     }

@@ -199,32 +199,32 @@ impl<T> IoBase for StdIoWrapper<T> {
 #[cfg(feature = "std")]
 impl<T: std::io::Read> Read for StdIoWrapper<T> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        Ok(self.inner.read(buf)?)
+        self.inner.read(buf)
     }
     fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
-        Ok(self.inner.read_exact(buf)?)
+        self.inner.read_exact(buf)
     }
 }
 
 #[cfg(feature = "std")]
 impl<T: std::io::Write> Write for StdIoWrapper<T> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        Ok(self.inner.write(buf)?)
+        self.inner.write(buf)
     }
 
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        Ok(self.inner.write_all(buf)?)
+        self.inner.write_all(buf)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        Ok(self.inner.flush()?)
+        self.inner.flush()
     }
 }
 
 #[cfg(feature = "std")]
 impl<T: std::io::Seek> Seek for StdIoWrapper<T> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
-        Ok(self.inner.seek(pos.into())?)
+        self.inner.seek(pos.into())
     }
 }
 

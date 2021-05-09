@@ -704,7 +704,7 @@ impl<IO: ReadWriteSeek, TP, OCC> IoBase for FsIoAdapter<'_, IO, TP, OCC> {
 
 impl<IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        Ok(self.fs.disk.borrow_mut().read(buf)?)
+        self.fs.disk.borrow_mut().read(buf)
     }
 }
 
@@ -718,13 +718,13 @@ impl<IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'_, IO, TP, OCC> {
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        Ok(self.fs.disk.borrow_mut().flush()?)
+        self.fs.disk.borrow_mut().flush()
     }
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
-        Ok(self.fs.disk.borrow_mut().seek(pos)?)
+        self.fs.disk.borrow_mut().seek(pos)
     }
 }
 

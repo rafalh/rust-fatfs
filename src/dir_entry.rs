@@ -623,7 +623,9 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
 
     /// Returns `File` struct for this entry.
     ///
-    /// Panics if this is not a file.
+    /// # Panics
+    ///
+    /// Will panic if this is not a file.
     #[must_use]
     pub fn to_file(&self) -> File<'a, IO, TP, OCC> {
         assert!(!self.is_dir(), "Not a file entry");
@@ -632,7 +634,9 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
 
     /// Returns `Dir` struct for this entry.
     ///
-    /// Panics if this is not a directory.
+    /// # Panics
+    ///
+    /// Will panic if this is not a directory.
     #[must_use]
     pub fn to_dir(&self) -> Dir<'a, IO, TP, OCC> {
         assert!(self.is_dir(), "Not a directory entry");
