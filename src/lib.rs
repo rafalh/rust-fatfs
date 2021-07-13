@@ -49,11 +49,13 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
-#[macro_use]
 extern crate log;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
+
+#[macro_use]
+mod log_macros;
 
 mod boot_sector;
 mod dir;
