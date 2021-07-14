@@ -1,10 +1,6 @@
 //! This module offers a convenient way to enable only a subset of logging levels
 //! for just this `fatfs` crate only without changing the logging levels
 //! of other crates in a given project. 
-//!
-//! This only applies to the five level-specific logging macros:
-//! `error`, `warn`, `info`, `debug`, and `trace`. 
-//! The core `log!()` macro is unaffected.
 
 use log::LevelFilter;
 
