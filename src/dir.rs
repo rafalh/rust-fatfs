@@ -884,7 +884,7 @@ impl LongNameBuilder {
             // last entry is actually first entry in stream
             self.index = index;
             self.chksum = data.checksum();
-            self.buf.set_len(index as usize * LFN_PART_LEN);
+            self.buf.set_len(usize::from(index) * LFN_PART_LEN);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
             warn!(
@@ -900,7 +900,7 @@ impl LongNameBuilder {
             // Decrement LFN index only for non-last entries
             self.index -= 1;
         }
-        let pos = LFN_PART_LEN * (index - 1) as usize;
+        let pos = LFN_PART_LEN * usize::from(index - 1);
         // copy name parts into LFN buffer
         data.copy_name_to_slice(&mut self.buf.ucs2_units[pos..pos + 13]);
     }

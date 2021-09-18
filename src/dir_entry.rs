@@ -102,7 +102,7 @@ impl ShortName {
     }
 
     fn as_bytes(&self) -> &[u8] {
-        &self.name[..self.len as usize]
+        &self.name[..usize::from(self.len)]
     }
 
     #[cfg(feature = "alloc")]
