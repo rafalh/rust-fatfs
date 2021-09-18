@@ -1216,17 +1216,15 @@ impl ShortNameGenerator {
     fn u16_to_hex(x: u16) -> [u8; 4] {
         // Unwrapping below is safe because each line takes 4 bits of `x` and shifts them to the right so they form
         // a number in range [0, 15]
-        let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c4 = char::from_digit((u32::from(x)) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        [c1, c2, c3, c4]
+        let x_u32 = u32::from(x);
+        let mut hex_bytes = [
+            char::from_digit((x_u32 >> 12) & 0xF, 16).unwrap() as u8,
+            char::from_digit((x_u32 >> 8) & 0xF, 16).unwrap() as u8,
+            char::from_digit((x_u32 >> 4) & 0xF, 16).unwrap() as u8,
+            char::from_digit(x_u32 & 0xF, 16).unwrap() as u8,
+        ];
+        hex_bytes.make_ascii_uppercase();
+        hex_bytes
     }
 }
 

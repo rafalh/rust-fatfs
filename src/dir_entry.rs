@@ -165,14 +165,10 @@ impl DirFileEntryData {
     fn lowercase_name(&self) -> ShortName {
         let mut name_copy: [u8; SFN_SIZE] = self.name;
         if self.lowercase_basename() {
-            for c in &mut name_copy[..8] {
-                c.make_ascii_lowercase();
-            }
+            name_copy[..8].make_ascii_lowercase();
         }
         if self.lowercase_ext() {
-            for c in &mut name_copy[8..] {
-                c.make_ascii_lowercase();
-            }
+            name_copy[8..].make_ascii_lowercase();
         }
         ShortName::new(&name_copy)
     }
