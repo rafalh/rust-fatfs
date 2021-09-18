@@ -26,7 +26,7 @@ New features:
   that arguments are in the supported range. They panic if this is not the case.
 * Fix time encoding during a leap second if using `chrono`.
 * Remove `byteorder` dependency.
-* Bump up minimal Rust compiler version to 1.36.0.
+* Bump up minimal Rust compiler version to 1.46.0.
 * Build the crate using the 2018 edition.
 
 0.3.4 (2020-07-20)

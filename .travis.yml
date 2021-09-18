@@ -9,7 +9,7 @@ script:
 matrix:
   include:
     # Minimal supported rustc version
-    - rust: 1.36.0
+    - rust: 1.46.0
       script:
         # Build only the library (examples may fail)
         - cargo build
