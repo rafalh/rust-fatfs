@@ -15,9 +15,6 @@ exclude = [
     "resources/*",
 ]
 
-[badges]
-travis-ci = { repository = "rafalh/rust-fatfs" }
-
 [features]
 # Use Rust std library
 std = []
