@@ -606,7 +606,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
         }
         match raw_entry {
             DirEntryData::File(sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
-            _ => false,
+            DirEntryData::Lfn(_) => false,
         }
     }
 
@@ -967,7 +967,7 @@ impl Iterator for LfnEntriesGenerator<'_> {
         }
 
         // get next part from reverse iterator
-        if let Some(ref name_part) = self.name_parts_iter.next() {
+        if let Some(name_part) = self.name_parts_iter.next() {
             let lfn_index = self.num - self.index;
             let mut order = lfn_index as u8;
             if self.index == 0 {
@@ -976,7 +976,7 @@ impl Iterator for LfnEntriesGenerator<'_> {
             }
             debug_assert!(order > 0);
             let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
-            lfn_part[..name_part.len()].copy_from_slice(&name_part);
+            lfn_part[..name_part.len()].copy_from_slice(name_part);
             if name_part.len() < LFN_PART_LEN {
                 // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
                 lfn_part[name_part.len()] = 0;
