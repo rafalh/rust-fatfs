@@ -16,6 +16,7 @@ const MAX_DAY: u16 = 31;
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct Date {
     /// Full year - [1980, 2107]
     pub year: u16,
@@ -23,8 +24,6 @@ pub struct Date {
     pub month: u16,
     /// Day of the month - [1, 31]
     pub day: u16,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl Date {
@@ -46,7 +45,6 @@ impl Date {
             year,
             month,
             day,
-            _dummy: (),
         }
     }
 
@@ -56,7 +54,6 @@ impl Date {
             year,
             month,
             day,
-            _dummy: (),
         }
     }
 
@@ -69,6 +66,7 @@ impl Date {
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct Time {
     /// Hours after midnight - [0, 23]
     pub hour: u16,
@@ -78,8 +76,6 @@ pub struct Time {
     pub sec: u16,
     /// Milliseconds after the second - [0, 999]
     pub millis: u16,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl Time {
@@ -104,7 +100,6 @@ impl Time {
             min,
             sec,
             millis,
-            _dummy: (),
         }
     }
 
@@ -118,7 +113,6 @@ impl Time {
             min,
             sec,
             millis,
-            _dummy: (),
         }
     }
 
@@ -135,19 +129,18 @@ impl Time {
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct DateTime {
     /// A date part
     pub date: Date,
     // A time part
     pub time: Time,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl DateTime {
     #[must_use]
     pub fn new(date: Date, time: Time) -> Self {
-        Self { date, time, _dummy: () }
+        Self { date, time }
     }
 
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
@@ -184,7 +177,6 @@ impl From<chrono::Date<Local>> for Date {
             year,
             month: date.month() as u16, // safe cast: value in range [1, 12]
             day: date.day() as u16,     // safe cast: value in range [1, 31]
-            _dummy: (),
         }
     }
 }
@@ -194,14 +186,13 @@ impl From<chrono::DateTime<Local>> for DateTime {
     fn from(date_time: chrono::DateTime<Local>) -> Self {
         let millis_leap = date_time.nanosecond() / 1_000_000; // value in the range [0, 1999] (> 999 if leap second)
         let millis = millis_leap.min(999); // during leap second set milliseconds to 999
-        #[allow(clippy::cast_possible_truncation)]
         let date = Date::from(date_time.date());
+        #[allow(clippy::cast_possible_truncation)]
         let time = Time {
             hour: date_time.hour() as u16,  // safe cast: value in range [0, 23]
             min: date_time.minute() as u16, // safe cast: value in range [0, 59]
             sec: date_time.second() as u16, // safe cast: value in range [0, 59]
             millis: millis as u16,          // safe cast: value in range [0, 999]
-            _dummy: (),
         };
         Self::new(date, time)
     }

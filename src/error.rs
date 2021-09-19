@@ -2,6 +2,7 @@
 ///
 /// Generic parameter `T` is a type of external error returned by the user provided storage
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error<T> {
     /// A user provided storage instance returned an error during an input/output operation.
     Io(T),
@@ -25,8 +26,6 @@ pub enum Error<T> {
     InvalidFileNameLength,
     /// The provided file name contains an invalid character.
     UnsupportedFileNameCharacter,
-    #[doc(hidden)]
-    _Nonexhaustive,
 }
 
 impl<T: IoError> From<T> for Error<T> {
@@ -49,7 +48,6 @@ impl From<Error<std::io::Error>> for std::io::Error {
             Error::NotFound => Self::new(std::io::ErrorKind::NotFound, error),
             Error::AlreadyExists => Self::new(std::io::ErrorKind::AlreadyExists, error),
             Error::CorruptedFileSystem => Self::new(std::io::ErrorKind::InvalidData, error),
-            _ => Self::new(std::io::ErrorKind::Other, error),
         }
     }
 }
@@ -68,7 +66,6 @@ impl<T: core::fmt::Display> core::fmt::Display for Error<T> {
             Error::NotFound => write!(f, "No such file or directory"),
             Error::AlreadyExists => write!(f, "File or directory already exists"),
             Error::CorruptedFileSystem => write!(f, "Corrupted file system"),
-            _ => write!(f, "Other error"),
         }
     }
 }
