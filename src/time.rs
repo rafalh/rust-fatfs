@@ -41,20 +41,12 @@ impl Date {
         assert!((MIN_YEAR..=MAX_YEAR).contains(&year), "year out of range");
         assert!((MIN_MONTH..=MAX_MONTH).contains(&month), "month out of range");
         assert!((MIN_DAY..=MAX_DAY).contains(&day), "day out of range");
-        Self {
-            year,
-            month,
-            day,
-        }
+        Self { year, month, day }
     }
 
     pub(crate) fn decode(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + MIN_YEAR, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        Self {
-            year,
-            month,
-            day,
-        }
+        Self { year, month, day }
     }
 
     pub(crate) fn encode(self) -> u16 {
@@ -95,12 +87,7 @@ impl Time {
         assert!(min <= 59, "min out of range");
         assert!(sec <= 59, "sec out of range");
         assert!(millis <= 999, "millis out of range");
-        Self {
-            hour,
-            min,
-            sec,
-            millis,
-        }
+        Self { hour, min, sec, millis }
     }
 
     pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
@@ -108,12 +95,7 @@ impl Time {
         let min = (dos_time >> 5) & 0x3F;
         let sec = (dos_time & 0x1F) * 2 + u16::from(dos_time_hi_res / 100);
         let millis = u16::from(dos_time_hi_res % 100) * 10;
-        Self {
-            hour,
-            min,
-            sec,
-            millis,
-        }
+        Self { hour, min, sec, millis }
     }
 
     pub(crate) fn encode(self) -> (u16, u8) {

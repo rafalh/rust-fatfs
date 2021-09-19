@@ -88,14 +88,12 @@ impl FsStatusFlags {
     /// Checks if the volume is marked as dirty.
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     #[must_use]
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     /// Checks if the volume has the IO Error flag active.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     #[must_use]
     pub fn io_error(&self) -> bool {
         self.io_error
@@ -256,7 +254,6 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     }
 }
 
-#[allow(clippy::use_self)]
 impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     /// If enabled accessed date field in directory entry is updated when reading or writing a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
