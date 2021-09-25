@@ -187,6 +187,11 @@ impl<T> StdIoWrapper<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
+
+    /// Returns inner struct
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
 }
 
 #[cfg(feature = "std")]
