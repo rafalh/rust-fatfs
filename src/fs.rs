@@ -15,6 +15,7 @@ use byteorder_ext::{ReadBytesExt, WriteBytesExt};
 
 use boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use dir::{Dir, DirRawStream};
+use dir_entry::{DirFileEntryData, FileAttributes};
 use file::File;
 use table::{alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES};
 use time::{TimeProvider, DEFAULT_TIME_PROVIDER};
@@ -997,7 +998,12 @@ pub fn format_volume<T: ReadWriteSeek>(mut disk: T, options: FormatVolumeOptions
         write_zeros(&mut disk, boot.bpb.cluster_size() as u64)?;
     }
 
-    // TODO: create volume label dir entry if volume label is set
+    // Create volume label directory entry if volume label is specified in options
+    if let Some(volume_label) = options.volume_label {
+        disk.seek(SeekFrom::Start(root_dir_pos))?;
+        let volume_entry = DirFileEntryData::new(volume_label, FileAttributes::VOLUME_ID);
+        volume_entry.serialize(&mut disk)?;
+    }
 
     disk.seek(SeekFrom::Start(0))?;
     trace!("format_volume end");
