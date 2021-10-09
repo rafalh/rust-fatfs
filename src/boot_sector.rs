@@ -801,8 +801,7 @@ pub(crate) fn format_boot_sector<E: IoError>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate env_logger;
-    use crate::core::u32;
+    use core::u32;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();

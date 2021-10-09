@@ -28,10 +28,6 @@ Add this to your `Cargo.toml`:
     [dependencies]
     fatfs = "0.4"
 
-and this to your crate root:
-
-    extern crate fatfs;
-
 You can start using the `fatfs` library now:
 
     let img_file = File::open("fat.img")?;
@@ -43,7 +39,6 @@ You can start using the `fatfs` library now:
 Note: it is recommended to wrap the underlying file struct in a buffering/caching object like `BufStream` from
 `fscommon` crate. For example:
 
-    extern crate fscommon;
     let buf_stream = BufStream::new(img_file);
     let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
 
