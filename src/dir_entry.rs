@@ -6,6 +6,7 @@ use core::fmt;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
 use core::str;
+use bitflags::bitflags;
 
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
