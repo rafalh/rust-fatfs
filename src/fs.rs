@@ -11,7 +11,7 @@ use core::u32;
 
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use crate::dir::{Dir, DirRawStream};
-use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
+use crate::dir_entry::{DirFileEntryData, FileAttributes, SFN_PADDING, SFN_SIZE};
 use crate::error::Error;
 use crate::file::File;
 use crate::io::{self, IoBase, Read, ReadLeExt, Seek, SeekFrom, Write, WriteLeExt};
@@ -1192,7 +1192,12 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
         write_zeros(storage, u64::from(bpb.cluster_size()))?;
     }
 
-    // TODO: create volume label dir entry if volume label is set
+    // Create volume label directory entry if volume label is specified in options
+    if let Some(volume_label) = options.volume_label {
+        storage.seek(SeekFrom::Start(root_dir_pos))?;
+        let volume_entry = DirFileEntryData::new(volume_label, FileAttributes::VOLUME_ID);
+        volume_entry.serialize(storage)?;
+    }
 
     storage.seek(SeekFrom::Start(0))?;
     trace!("format_volume end");
