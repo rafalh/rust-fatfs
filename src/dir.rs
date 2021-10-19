@@ -789,6 +789,7 @@ impl LfnBuffer {
         };
         for (i, usc2_unit) in usc2_units.enumerate() {
             lfn.ucs2_units[i] = usc2_unit;
+            lfn.len += 1;
         }
         lfn
     }
@@ -807,7 +808,7 @@ impl LfnBuffer {
     }
 
     pub(crate) fn as_ucs2_units(&self) -> &[u16] {
-        &self.ucs2_units
+        &self.ucs2_units[..self.len]
     }
 }
 
