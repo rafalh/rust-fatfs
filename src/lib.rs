@@ -10,20 +10,9 @@
 //! fatfs = "0.4"
 //! ```
 //!
-//! And this in your crate root:
-//!
-//! ```rust
-//! extern crate fatfs;
-//! ```
-//!
 //! # Examples
 //!
 //! ```rust
-//! // Declare external crates
-//! // Note: `fscommon` crate is used to speedup IO operations
-//! extern crate fatfs;
-//! extern crate fscommon;
-//!
 //! use std::io::prelude::*;
 //!
 //! fn main() -> std::io::Result<()> {
@@ -61,12 +50,7 @@
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
 #[macro_use]
-extern crate bitflags;
-
-#[macro_use]
 extern crate log;
-
-extern crate core;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;

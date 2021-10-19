@@ -1,6 +1,3 @@
-extern crate fatfs;
-extern crate fscommon;
-
 use std::{fs, io};
 
 use fatfs::{FileSystem, FsOptions};

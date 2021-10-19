@@ -1,7 +1,3 @@
-extern crate env_logger;
-extern crate fatfs;
-extern crate fscommon;
-
 use std::io;
 use std::io::prelude::*;
 
@@ -115,4 +111,28 @@ fn test_format_1gb_4096sec() {
     let opts = fatfs::FormatVolumeOptions::new().bytes_per_sector(4096);
     let fs = test_format_fs(opts, total_bytes);
     assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);
+}
+
+#[test]
+fn test_format_empty_volume_label() {
+    let total_bytes = 2 * 1024 * MB;
+    let opts = fatfs::FormatVolumeOptions::new();
+    let fs = test_format_fs(opts, total_bytes);
+    assert_eq!(fs.volume_label(), "NO NAME");
+    assert_eq!(fs.read_volume_label_from_root_dir().unwrap(), None);
+}
+
+#[test]
+fn test_format_volume_label_and_id() {
+    let total_bytes = 2 * 1024 * MB;
+    let opts = fatfs::FormatVolumeOptions::new()
+        .volume_id(1234)
+        .volume_label(*b"VOLUMELABEL");
+    let fs = test_format_fs(opts, total_bytes);
+    assert_eq!(fs.volume_label(), "VOLUMELABEL");
+    assert_eq!(
+        fs.read_volume_label_from_root_dir().unwrap(),
+        Some("VOLUMELABEL".to_string())
+    );
+    assert_eq!(fs.volume_id(), 1234);
 }
