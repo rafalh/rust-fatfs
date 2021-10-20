@@ -25,8 +25,9 @@ New features:
 * Add `Date::new`, `Time::new`, `DateTime::new` functions that instiantiate corresponding structures after ensuring
   that arguments are in the supported range. They panic if this is not the case.
 * Fix time encoding during a leap second if using `chrono`.
+* Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
 * Remove `byteorder` dependency.
-* Bump up minimal Rust compiler version to 1.36.0.
+* Bump up minimal Rust compiler version to 1.46.0.
 * Build the crate using the 2018 edition.
 
 0.3.4 (2020-07-20)

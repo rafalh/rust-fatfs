@@ -1,7 +1,3 @@
-extern crate chrono;
-extern crate fatfs;
-extern crate fscommon;
-
 use std::env;
 use std::fs::File;
 use std::io;

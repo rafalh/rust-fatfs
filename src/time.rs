@@ -1,3 +1,4 @@
+#[cfg(feature = "chrono")]
 use core::convert::TryFrom;
 use core::fmt::Debug;
 
@@ -15,6 +16,7 @@ const MAX_DAY: u16 = 31;
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct Date {
     /// Full year - [1980, 2107]
     pub year: u16,
@@ -22,8 +24,6 @@ pub struct Date {
     pub month: u16,
     /// Day of the month - [1, 31]
     pub day: u16,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl Date {
@@ -41,22 +41,12 @@ impl Date {
         assert!((MIN_YEAR..=MAX_YEAR).contains(&year), "year out of range");
         assert!((MIN_MONTH..=MAX_MONTH).contains(&month), "month out of range");
         assert!((MIN_DAY..=MAX_DAY).contains(&day), "day out of range");
-        Self {
-            year,
-            month,
-            day,
-            _dummy: (),
-        }
+        Self { year, month, day }
     }
 
     pub(crate) fn decode(dos_date: u16) -> Self {
         let (year, month, day) = ((dos_date >> 9) + MIN_YEAR, (dos_date >> 5) & 0xF, dos_date & 0x1F);
-        Self {
-            year,
-            month,
-            day,
-            _dummy: (),
-        }
+        Self { year, month, day }
     }
 
     pub(crate) fn encode(self) -> u16 {
@@ -68,6 +58,7 @@ impl Date {
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct Time {
     /// Hours after midnight - [0, 23]
     pub hour: u16,
@@ -77,8 +68,6 @@ pub struct Time {
     pub sec: u16,
     /// Milliseconds after the second - [0, 999]
     pub millis: u16,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl Time {
@@ -98,13 +87,7 @@ impl Time {
         assert!(min <= 59, "min out of range");
         assert!(sec <= 59, "sec out of range");
         assert!(millis <= 999, "millis out of range");
-        Self {
-            hour,
-            min,
-            sec,
-            millis,
-            _dummy: (),
-        }
+        Self { hour, min, sec, millis }
     }
 
     pub(crate) fn decode(dos_time: u16, dos_time_hi_res: u8) -> Self {
@@ -112,13 +95,7 @@ impl Time {
         let min = (dos_time >> 5) & 0x3F;
         let sec = (dos_time & 0x1F) * 2 + u16::from(dos_time_hi_res / 100);
         let millis = u16::from(dos_time_hi_res % 100) * 10;
-        Self {
-            hour,
-            min,
-            sec,
-            millis,
-            _dummy: (),
-        }
+        Self { hour, min, sec, millis }
     }
 
     pub(crate) fn encode(self) -> (u16, u8) {
@@ -134,19 +111,18 @@ impl Time {
 ///
 /// Used by `DirEntry` time-related methods.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct DateTime {
     /// A date part
     pub date: Date,
     // A time part
     pub time: Time,
-    // Not-public field to disallow direct instantiation of this struct
-    _dummy: (),
 }
 
 impl DateTime {
     #[must_use]
     pub fn new(date: Date, time: Time) -> Self {
-        Self { date, time, _dummy: () }
+        Self { date, time }
     }
 
     pub(crate) fn decode(dos_date: u16, dos_time: u16, dos_time_hi_res: u8) -> Self {
@@ -183,7 +159,6 @@ impl From<chrono::Date<Local>> for Date {
             year,
             month: date.month() as u16, // safe cast: value in range [1, 12]
             day: date.day() as u16,     // safe cast: value in range [1, 31]
-            _dummy: (),
         }
     }
 }
@@ -193,14 +168,13 @@ impl From<chrono::DateTime<Local>> for DateTime {
     fn from(date_time: chrono::DateTime<Local>) -> Self {
         let millis_leap = date_time.nanosecond() / 1_000_000; // value in the range [0, 1999] (> 999 if leap second)
         let millis = millis_leap.min(999); // during leap second set milliseconds to 999
-        #[allow(clippy::cast_possible_truncation)]
         let date = Date::from(date_time.date());
+        #[allow(clippy::cast_possible_truncation)]
         let time = Time {
             hour: date_time.hour() as u16,  // safe cast: value in range [0, 23]
             min: date_time.minute() as u16, // safe cast: value in range [0, 59]
             sec: date_time.second() as u16, // safe cast: value in range [0, 59]
             millis: millis as u16,          // safe cast: value in range [0, 999]
-            _dummy: (),
         };
         Self::new(date, time)
     }

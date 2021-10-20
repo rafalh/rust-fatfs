@@ -5,8 +5,8 @@ use core::convert::TryInto;
 use core::fmt;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
-use core::iter::FromIterator;
 use core::str;
+use bitflags::bitflags;
 
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
@@ -103,20 +103,22 @@ impl ShortName {
     }
 
     fn as_bytes(&self) -> &[u8] {
-        &self.name[..self.len as usize]
+        &self.name[..usize::from(self.len)]
     }
 
     #[cfg(feature = "alloc")]
     fn to_string<OCC: OemCpConverter>(&self, oem_cp_converter: &OCC) -> String {
         // Strip non-ascii characters from short name
-        let char_iter = self.as_bytes().iter().cloned().map(|c| oem_cp_converter.decode(c));
-        // Build string from character iterator
-        String::from_iter(char_iter)
+        self.as_bytes()
+            .iter()
+            .copied()
+            .map(|c| oem_cp_converter.decode(c))
+            .collect()
     }
 
     fn eq_ignore_case<OCC: OemCpConverter>(&self, name: &str, oem_cp_converter: &OCC) -> bool {
         // Convert name to UTF-8 character iterator
-        let byte_iter = self.as_bytes().iter().cloned();
+        let byte_iter = self.as_bytes().iter().copied();
         let char_iter = byte_iter.map(|c| oem_cp_converter.decode(c));
         // Compare interators ignoring case
         let uppercase_char_iter = char_iter.flat_map(char_to_uppercase);
@@ -164,14 +166,10 @@ impl DirFileEntryData {
     fn lowercase_name(&self) -> ShortName {
         let mut name_copy: [u8; SFN_SIZE] = self.name;
         if self.lowercase_basename() {
-            for c in &mut name_copy[..8] {
-                *c = (*c as char).to_ascii_lowercase() as u8;
-            }
+            name_copy[..8].make_ascii_lowercase();
         }
         if self.lowercase_ext() {
-            for c in &mut name_copy[8..] {
-                *c = (*c as char).to_ascii_lowercase() as u8;
-            }
+            name_copy[8..].make_ascii_lowercase();
         }
         ShortName::new(&name_copy)
     }
@@ -684,7 +682,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
     #[cfg(feature = "lfn")]
     fn eq_name_lfn(&self, name: &str) -> bool {
         if let Some(lfn) = self.long_file_name_as_ucs2_units() {
-            let self_decode_iter = char::decode_utf16(lfn.iter().cloned());
+            let self_decode_iter = char::decode_utf16(lfn.iter().copied());
             let mut other_uppercase_iter = name.chars().flat_map(char_to_uppercase);
             for decode_result in self_decode_iter {
                 if let Ok(self_char) = decode_result {

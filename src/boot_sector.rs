@@ -71,20 +71,14 @@ impl BiosParameterBlock {
             bpb.fs_info_sector = rdr.read_u16_le()?;
             bpb.backup_boot_sector = rdr.read_u16_le()?;
             rdr.read_exact(&mut bpb.reserved_0)?;
-            bpb.drive_num = rdr.read_u8()?;
-            bpb.reserved_1 = rdr.read_u8()?;
-            bpb.ext_sig = rdr.read_u8()?; // 0x29
-            bpb.volume_id = rdr.read_u32_le()?;
-            rdr.read_exact(&mut bpb.volume_label)?;
-            rdr.read_exact(&mut bpb.fs_type_label)?;
-        } else {
-            bpb.drive_num = rdr.read_u8()?;
-            bpb.reserved_1 = rdr.read_u8()?;
-            bpb.ext_sig = rdr.read_u8()?; // 0x29
-            bpb.volume_id = rdr.read_u32_le()?;
-            rdr.read_exact(&mut bpb.volume_label)?;
-            rdr.read_exact(&mut bpb.fs_type_label)?;
         }
+
+        bpb.drive_num = rdr.read_u8()?;
+        bpb.reserved_1 = rdr.read_u8()?;
+        bpb.ext_sig = rdr.read_u8()?; // 0x29
+        bpb.volume_id = rdr.read_u32_le()?;
+        rdr.read_exact(&mut bpb.volume_label)?;
+        rdr.read_exact(&mut bpb.fs_type_label)?;
 
         // when the extended boot signature is anything other than 0x29, the fields are invalid
         if bpb.ext_sig != 0x29 {
@@ -119,20 +113,14 @@ impl BiosParameterBlock {
             wrt.write_u16_le(self.fs_info_sector)?;
             wrt.write_u16_le(self.backup_boot_sector)?;
             wrt.write_all(&self.reserved_0)?;
-            wrt.write_u8(self.drive_num)?;
-            wrt.write_u8(self.reserved_1)?;
-            wrt.write_u8(self.ext_sig)?; // 0x29
-            wrt.write_u32_le(self.volume_id)?;
-            wrt.write_all(&self.volume_label)?;
-            wrt.write_all(&self.fs_type_label)?;
-        } else {
-            wrt.write_u8(self.drive_num)?;
-            wrt.write_u8(self.reserved_1)?;
-            wrt.write_u8(self.ext_sig)?; // 0x29
-            wrt.write_u32_le(self.volume_id)?;
-            wrt.write_all(&self.volume_label)?;
-            wrt.write_all(&self.fs_type_label)?;
         }
+
+        wrt.write_u8(self.drive_num)?;
+        wrt.write_u8(self.reserved_1)?;
+        wrt.write_u8(self.ext_sig)?; // 0x29
+        wrt.write_u32_le(self.volume_id)?;
+        wrt.write_all(&self.volume_label)?;
+        wrt.write_all(&self.fs_type_label)?;
         Ok(())
     }
 
@@ -813,8 +801,7 @@ pub(crate) fn format_boot_sector<E: IoError>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate env_logger;
-    use crate::core::u32;
+    use core::u32;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();

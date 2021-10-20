@@ -5,7 +5,7 @@ Rust FAT FS
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
 [![crates.io](https://img.shields.io/crates/v/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
-[![Minimum rustc version](https://img.shields.io/badge/rustc-1.36+-yellow.svg)](https://blog.rust-lang.org/2019/07/04/Rust-1.36.0.html)
+[![Minimum rustc version](https://img.shields.io/badge/rustc-1.46+-yellow.svg)](https://blog.rust-lang.org/2020/08/27/Rust-1.46.0.html)
 
 A FAT filesystem library implemented in Rust.
 
@@ -28,10 +28,6 @@ Add this to your `Cargo.toml`:
     [dependencies]
     fatfs = "0.4"
 
-and this to your crate root:
-
-    extern crate fatfs;
-
 You can start using the `fatfs` library now:
 
     let img_file = File::open("fat.img")?;
@@ -43,7 +39,6 @@ You can start using the `fatfs` library now:
 Note: it is recommended to wrap the underlying file struct in a buffering/caching object like `BufStream` from
 `fscommon` crate. For example:
 
-    extern crate fscommon;
     let buf_stream = BufStream::new(img_file);
     let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
 

@@ -6,13 +6,12 @@ use core::char;
 use core::cmp;
 use core::convert::TryFrom;
 use core::fmt::Debug;
-use core::iter::FromIterator;
 use core::marker::PhantomData;
 use core::u32;
 
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use crate::dir::{Dir, DirRawStream};
-use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
+use crate::dir_entry::{DirFileEntryData, FileAttributes, SFN_PADDING, SFN_SIZE};
 use crate::error::Error;
 use crate::file::File;
 use crate::io::{self, IoBase, Read, ReadLeExt, Seek, SeekFrom, Write, WriteLeExt};
@@ -89,14 +88,12 @@ impl FsStatusFlags {
     /// Checks if the volume is marked as dirty.
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     #[must_use]
     pub fn dirty(&self) -> bool {
         self.dirty
     }
 
     /// Checks if the volume has the IO Error flag active.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     #[must_use]
     pub fn io_error(&self) -> bool {
         self.io_error
@@ -257,7 +254,6 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     }
 }
 
-#[allow(clippy::use_self)]
 impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     /// If enabled accessed date field in directory entry is updated when reading or writing a file.
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
@@ -620,7 +616,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
                     &self.bpb,
                     FsIoAdapter { fs: self },
                 )),
-                _ => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
+                FatType::Fat32 => DirRawStream::File(File::new(Some(self.bpb.root_dir_first_cluster), None, self)),
             }
         };
         Dir::new(root_rdr, self)
@@ -636,10 +632,10 @@ impl<IO: ReadWriteSeek, TP, OCC: OemCpConverter> FileSystem<IO, TP, OCC> {
     #[cfg(feature = "alloc")]
     pub fn volume_label(&self) -> String {
         // Decode volume label from OEM codepage
-        let volume_label_iter = self.volume_label_as_bytes().iter().cloned();
+        let volume_label_iter = self.volume_label_as_bytes().iter().copied();
         let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
         // Build string from character iterator
-        String::from_iter(char_iter)
+        char_iter.collect()
     }
 }
 
@@ -664,10 +660,10 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
                 .map_or(0, |p| p + 1);
             let label_slice = &volume_label[..len];
             // Decode volume label from OEM codepage
-            let volume_label_iter = label_slice.iter().cloned();
+            let volume_label_iter = label_slice.iter().copied();
             let char_iter = volume_label_iter.map(|c| self.options.oem_cp_converter.decode(c));
             // Build string from character iterator
-            Ok(Some(String::from_iter(char_iter)))
+            Ok(Some(char_iter.collect::<String>()))
         })
     }
 
@@ -1170,7 +1166,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     storage.seek(SeekFrom::Start(fat_pos))?;
     write_zeros(storage, bpb.bytes_from_sectors(sectors_per_all_fats))?;
     {
-        let mut fat_slice = fat_slice::<S, &mut S>(storage, &bpb);
+        let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
         let sectors_per_fat = bpb.sectors_per_fat();
         let bytes_per_fat = bpb.bytes_from_sectors(sectors_per_fat);
         format_fat(&mut fat_slice, fat_type, bpb.media, bytes_per_fat, bpb.total_clusters())?;
@@ -1184,7 +1180,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     write_zeros(storage, bpb.bytes_from_sectors(root_dir_sectors))?;
     if fat_type == FatType::Fat32 {
         let root_dir_first_cluster = {
-            let mut fat_slice = fat_slice::<S, &mut S>(storage, &bpb);
+            let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == bpb.root_dir_first_cluster);
@@ -1196,7 +1192,12 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
         write_zeros(storage, u64::from(bpb.cluster_size()))?;
     }
 
-    // TODO: create volume label dir entry if volume label is set
+    // Create volume label directory entry if volume label is specified in options
+    if let Some(volume_label) = options.volume_label {
+        storage.seek(SeekFrom::Start(root_dir_pos))?;
+        let volume_entry = DirFileEntryData::new(volume_label, FileAttributes::VOLUME_ID);
+        volume_entry.serialize(storage)?;
+    }
 
     storage.seek(SeekFrom::Start(0))?;
     trace!("format_volume end");

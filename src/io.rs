@@ -1,6 +1,4 @@
 use crate::error::IoError;
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
-use alloc::vec::Vec;
 
 /// Provides IO error as an associated type.
 ///
@@ -188,6 +186,11 @@ impl<T> StdIoWrapper<T> {
     /// Creates a new `StdIoWrapper` instance that wraps the provided `inner` instance.
     pub fn new(inner: T) -> Self {
         Self { inner }
+    }
+
+    /// Returns inner struct
+    pub fn into_inner(self) -> T {
+        self.inner
     }
 }
 

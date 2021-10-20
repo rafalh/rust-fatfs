@@ -1,7 +1,3 @@
-extern crate env_logger;
-extern crate fatfs;
-extern crate fscommon;
-
 use std::fs;
 use std::io::prelude::*;
 use std::io::SeekFrom;

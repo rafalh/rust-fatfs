@@ -665,7 +665,6 @@ mod tests {
     use io::StdIoWrapper;
     use std::io::Cursor;
 
-    #[allow(clippy::cognitive_complexity)]
     fn test_fat<S: Read + Write + Seek>(fat_type: FatType, mut cur: S) {
         // based on cluster maps from Wikipedia:
         // https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#Cluster_map

@@ -1,6 +1,3 @@
-extern crate fatfs;
-extern crate fscommon;
-
 use std::fs::OpenOptions;
 use std::io::{self, prelude::*};
 

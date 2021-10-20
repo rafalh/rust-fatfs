@@ -606,7 +606,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
         }
         match raw_entry {
             DirEntryData::File(sfn_entry) => self.skip_volume && sfn_entry.is_volume(),
-            _ => false,
+            DirEntryData::Lfn(_) => false,
         }
     }
 
@@ -789,6 +789,7 @@ impl LfnBuffer {
         };
         for (i, usc2_unit) in usc2_units.enumerate() {
             lfn.ucs2_units[i] = usc2_unit;
+            lfn.len += 1;
         }
         lfn
     }
@@ -807,7 +808,7 @@ impl LfnBuffer {
     }
 
     pub(crate) fn as_ucs2_units(&self) -> &[u16] {
-        &self.ucs2_units
+        &self.ucs2_units[..self.len]
     }
 }
 
@@ -884,7 +885,7 @@ impl LongNameBuilder {
             // last entry is actually first entry in stream
             self.index = index;
             self.chksum = data.checksum();
-            self.buf.set_len(index as usize * LFN_PART_LEN);
+            self.buf.set_len(usize::from(index) * LFN_PART_LEN);
         } else if self.index == 0 || index != self.index - 1 || data.checksum() != self.chksum {
             // Corrupted entry
             warn!(
@@ -900,7 +901,7 @@ impl LongNameBuilder {
             // Decrement LFN index only for non-last entries
             self.index -= 1;
         }
-        let pos = LFN_PART_LEN * (index - 1) as usize;
+        let pos = LFN_PART_LEN * usize::from(index - 1);
         // copy name parts into LFN buffer
         data.copy_name_to_slice(&mut self.buf.ucs2_units[pos..pos + 13]);
     }
@@ -967,7 +968,7 @@ impl Iterator for LfnEntriesGenerator<'_> {
         }
 
         // get next part from reverse iterator
-        if let Some(ref name_part) = self.name_parts_iter.next() {
+        if let Some(name_part) = self.name_parts_iter.next() {
             let lfn_index = self.num - self.index;
             let mut order = lfn_index as u8;
             if self.index == 0 {
@@ -976,7 +977,7 @@ impl Iterator for LfnEntriesGenerator<'_> {
             }
             debug_assert!(order > 0);
             let mut lfn_part = [LFN_PADDING; LFN_PART_LEN];
-            lfn_part[..name_part.len()].copy_from_slice(&name_part);
+            lfn_part[..name_part.len()].copy_from_slice(name_part);
             if name_part.len() < LFN_PART_LEN {
                 // name is only zero-terminated if its length is not multiplicity of LFN_PART_LEN
                 lfn_part[name_part.len()] = 0;
@@ -1216,17 +1217,15 @@ impl ShortNameGenerator {
     fn u16_to_hex(x: u16) -> [u8; 4] {
         // Unwrapping below is safe because each line takes 4 bits of `x` and shifts them to the right so they form
         // a number in range [0, 15]
-        let c1 = char::from_digit((u32::from(x) >> 12) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c2 = char::from_digit((u32::from(x) >> 8) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c3 = char::from_digit((u32::from(x) >> 4) & 0xF, 16)
-            .unwrap()
-            .to_ascii_uppercase() as u8;
-        let c4 = char::from_digit((u32::from(x)) & 0xF, 16).unwrap().to_ascii_uppercase() as u8;
-        [c1, c2, c3, c4]
+        let x_u32 = u32::from(x);
+        let mut hex_bytes = [
+            char::from_digit((x_u32 >> 12) & 0xF, 16).unwrap() as u8,
+            char::from_digit((x_u32 >> 8) & 0xF, 16).unwrap() as u8,
+            char::from_digit((x_u32 >> 4) & 0xF, 16).unwrap() as u8,
+            char::from_digit(x_u32 & 0xF, 16).unwrap() as u8,
+        ];
+        hex_bytes.make_ascii_uppercase();
+        hex_bytes
     }
 }
 
