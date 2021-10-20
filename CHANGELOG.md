@@ -32,6 +32,8 @@ New features:
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.46.0.
 * Build the crate using the 2018 edition.
+* Add support for compile-time configuration of logging levels via Cargo features. By default, all logging levels are
+  enabled, including "trace" and up.
 
 0.3.4 (2020-07-20)
 ------------------
