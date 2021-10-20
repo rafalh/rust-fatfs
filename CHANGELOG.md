@@ -27,6 +27,7 @@ New features:
 * Fix time encoding during a leap second if using `chrono`.
 * Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
 * Fix creating directory entries when `lfn` feature is enabled and `alloc` feature is disabled
+* Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.46.0.
 * Build the crate using the 2018 edition.
