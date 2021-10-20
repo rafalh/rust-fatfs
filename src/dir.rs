@@ -702,7 +702,7 @@ fn validate_long_name<E: IoError>(name: &str) -> Result<(), Error<E>> {
     if name.is_empty() {
         return Err(Error::InvalidFileNameLength);
     }
-    if name.len() > 255 {
+    if name.len() > MAX_LONG_NAME_LEN {
         return Err(Error::InvalidFileNameLength);
     }
     // check if there are only valid characters
@@ -732,7 +732,6 @@ pub(crate) struct LfnBuffer {
     ucs2_units: Vec<u16>,
 }
 
-#[cfg(feature = "lfn")]
 const MAX_LONG_NAME_LEN: usize = 255;
 
 #[cfg(feature = "lfn")]
