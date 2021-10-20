@@ -26,6 +26,7 @@ New features:
   that arguments are in the supported range. They panic if this is not the case.
 * Fix time encoding during a leap second if using `chrono`.
 * Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
+* Fix creating directory entries when `lfn` feature is enabled and `alloc` feature is disabled
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.46.0.
 * Build the crate using the 2018 edition.
