@@ -732,11 +732,13 @@ pub(crate) struct LfnBuffer {
     ucs2_units: Vec<u16>,
 }
 
+#[cfg(feature = "lfn")]
 const MAX_LONG_NAME_LEN: usize = 255;
 
+#[cfg(feature = "lfn")]
 const MAX_LONG_DIR_ENTRIES: usize = (MAX_LONG_NAME_LEN + LFN_PART_LEN - 1) / LFN_PART_LEN;
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(all(feature = "lfn", not(feature = "alloc")))]
 const LONG_NAME_BUFFER_LEN: usize = MAX_LONG_DIR_ENTRIES * LFN_PART_LEN;
 
 #[cfg(all(feature = "lfn", not(feature = "alloc")))]
