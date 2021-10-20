@@ -1,12 +1,12 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
+use bitflags::bitflags;
 use core::char;
 use core::convert::TryInto;
 use core::fmt;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
 use core::str;
-use bitflags::bitflags;
 
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
