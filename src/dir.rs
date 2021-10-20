@@ -732,13 +732,17 @@ pub(crate) struct LfnBuffer {
     ucs2_units: Vec<u16>,
 }
 
+const MAX_LONG_NAME_LEN: usize = 255;
+
+const MAX_LONG_DIR_ENTRIES: usize = (MAX_LONG_NAME_LEN + LFN_PART_LEN - 1) / LFN_PART_LEN;
+
 #[cfg(not(feature = "alloc"))]
-const MAX_LFN_LEN: usize = 256;
+const LONG_NAME_BUFFER_LEN: usize = MAX_LONG_DIR_ENTRIES * LFN_PART_LEN;
 
 #[cfg(all(feature = "lfn", not(feature = "alloc")))]
 #[derive(Clone)]
 pub(crate) struct LfnBuffer {
-    ucs2_units: [u16; MAX_LFN_LEN],
+    ucs2_units: [u16; LONG_NAME_BUFFER_LEN],
     len: usize,
 }
 
@@ -777,14 +781,14 @@ impl LfnBuffer {
 impl LfnBuffer {
     fn new() -> Self {
         Self {
-            ucs2_units: [0_u16; MAX_LFN_LEN],
+            ucs2_units: [0_u16; LONG_NAME_BUFFER_LEN],
             len: 0,
         }
     }
 
     fn from_ucs2_units<I: Iterator<Item = u16>>(usc2_units: I) -> Self {
         let mut lfn = Self {
-            ucs2_units: [0_u16; MAX_LFN_LEN],
+            ucs2_units: [0_u16; LONG_NAME_BUFFER_LEN],
             len: 0,
         };
         for (i, usc2_unit) in usc2_units.enumerate() {
@@ -795,7 +799,7 @@ impl LfnBuffer {
     }
 
     fn clear(&mut self) {
-        self.ucs2_units = [0_u16; MAX_LFN_LEN];
+        self.ucs2_units = [0_u16; LONG_NAME_BUFFER_LEN];
         self.len = 0;
     }
 
@@ -875,7 +879,7 @@ impl LongNameBuilder {
     fn process(&mut self, data: &DirLfnEntryData) {
         let is_last = (data.order() & LFN_ENTRY_LAST_FLAG) != 0;
         let index = data.order() & 0x1F;
-        if index == 0 {
+        if index == 0 || usize::from(index) > MAX_LONG_DIR_ENTRIES {
             // Corrupted entry
             warn!("currupted lfn entry! {:x}", data.order());
             self.clear();
