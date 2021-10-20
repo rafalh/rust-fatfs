@@ -19,6 +19,7 @@ Features:
 * FAT12, FAT16, FAT32 compatibility
 * LFN (Long File Names) extension is supported
 * Basic no_std environment support
+* logging configurable at compile time using cargo features
 
 Usage
 -----
@@ -59,6 +60,13 @@ Additional features:
 a memory allocator implementation.
 * `unicode` - use Unicode-compatible case conversion in file names - you may want to have it disabled for lower memory
 footprint
+* `log_level_*` - enable specific logging levels at compile time.
+The options are as follows:
+  * `log_level_error` - enable only error-level logging.
+  * `log_level_warn` - enable warn-level logging and higher.
+  * `log_level_info` - enable info-level logging and higher.
+  * `log_level_debug` - enable debug-level logging and higher.
+  * `log_level_trace` - (default) enable all logging levels, trace and higher.
 
 Note: above features are enabled by default and were designed primarily for `no_std` usage.
 
