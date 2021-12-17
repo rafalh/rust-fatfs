@@ -17,7 +17,7 @@ fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str) {
     let _ = env_logger::builder().is_test(true).try_init();
     let file = fs::File::open(filename).unwrap();
     let buf_file = BufStream::new(file);
-    let fs = FileSystem::new(buf_file, FsOptions::new()).unwrap();
+    let fs = FileSystem::new(StdIoWrapper::new(buf_file), FsOptions::new()).unwrap();
     f(fs);
 }
 

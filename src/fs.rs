@@ -323,24 +323,14 @@ pub struct FileSystem<IO: ReadWriteSeek, TP, OCC> {
     current_status_flags: Cell<FsStatusFlags>,
 }
 
-pub trait IntoStorage<T: Read + Write + Seek> {
-    fn into_storage(self) -> T;
-}
+// #[cfg(feature = "std")]
+// impl<T: std::io::Read + std::io::Write + std::io::Seek> Into<io::StdIoWrapper<T>> for T {
+//     fn into(self) -> io::StdIoWrapper<Self> {
+//         io::StdIoWrapper::new(self)
+//     }
+// }
 
-impl<T: Read + Write + Seek> IntoStorage<T> for T {
-    fn into_storage(self) -> Self {
-        self
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: std::io::Read + std::io::Write + std::io::Seek> IntoStorage<io::StdIoWrapper<T>> for T {
-    fn into_storage(self) -> io::StdIoWrapper<Self> {
-        io::StdIoWrapper::new(self)
-    }
-}
-
-impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
     /// Supplied `storage` parameter cannot be seeked. If there is a need to read a fragment of disk
@@ -361,9 +351,8 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// # Panics
     ///
     /// Panics in non-optimized build if `storage` position returned by `seek` is not zero.
-    pub fn new<T: IntoStorage<IO>>(storage: T, options: FsOptions<TP, OCC>) -> Result<Self, Error<IO::Error>> {
+    pub fn new(mut disk: IO, options: FsOptions<TP, OCC>) -> Result<Self, Error<IO::Error>> {
         // Make sure given image is not seeked
-        let mut disk = storage.into_storage();
         trace!("FileSystem::new");
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
@@ -1113,7 +1102,7 @@ impl FormatVolumeOptions {
 ///
 /// Panics in non-optimized build if `storage` position returned by `seek` is not zero.
 #[allow(clippy::needless_pass_by_value)]
-pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOptions) -> Result<(), Error<S::Error>> {
+pub fn format_volume<S: ReadWriteSeek>(mut storage: S, options: FormatVolumeOptions) -> Result<(), Error<S::Error>> {
     trace!("format_volume");
     debug_assert!(storage.seek(SeekFrom::Current(0))? == 0);
 
@@ -1136,10 +1125,10 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     if boot.validate::<S::Error>().is_err() {
         return Err(Error::InvalidInput);
     }
-    boot.serialize(storage)?;
+    boot.serialize(&mut storage)?;
     // Make sure entire logical sector is updated (serialize method always writes 512 bytes)
     let bytes_per_sector = boot.bpb.bytes_per_sector;
-    write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
+    write_zeros_until_end_of_sector(&mut storage, bytes_per_sector)?;
 
     let bpb = &boot.bpb;
     if bpb.is_fat32() {
@@ -1150,13 +1139,13 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
             dirty: false,
         };
         storage.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
-        fs_info_sector.serialize(storage)?;
-        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
+        fs_info_sector.serialize(&mut storage)?;
+        write_zeros_until_end_of_sector(&mut storage, bytes_per_sector)?;
 
         // backup boot sector
         storage.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.backup_boot_sector())))?;
-        boot.serialize(storage)?;
-        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
+        boot.serialize(&mut storage)?;
+        write_zeros_until_end_of_sector(&mut storage, bytes_per_sector)?;
     }
 
     // format File Allocation Table
@@ -1164,9 +1153,9 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     let fat_pos = bpb.bytes_from_sectors(reserved_sectors);
     let sectors_per_all_fats = bpb.sectors_per_all_fats();
     storage.seek(SeekFrom::Start(fat_pos))?;
-    write_zeros(storage, bpb.bytes_from_sectors(sectors_per_all_fats))?;
+    write_zeros(&mut storage, bpb.bytes_from_sectors(sectors_per_all_fats))?;
     {
-        let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
+        let mut fat_slice = fat_slice::<S, &mut S>(&mut storage, bpb);
         let sectors_per_fat = bpb.sectors_per_fat();
         let bytes_per_fat = bpb.bytes_from_sectors(sectors_per_fat);
         format_fat(&mut fat_slice, fat_type, bpb.media, bytes_per_fat, bpb.total_clusters())?;
@@ -1177,10 +1166,10 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     let root_dir_sectors = bpb.root_dir_sectors();
     let root_dir_pos = bpb.bytes_from_sectors(root_dir_first_sector);
     storage.seek(SeekFrom::Start(root_dir_pos))?;
-    write_zeros(storage, bpb.bytes_from_sectors(root_dir_sectors))?;
+    write_zeros(&mut storage, bpb.bytes_from_sectors(root_dir_sectors))?;
     if fat_type == FatType::Fat32 {
         let root_dir_first_cluster = {
-            let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
+            let mut fat_slice = fat_slice::<S, &mut S>(&mut storage, bpb);
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == bpb.root_dir_first_cluster);
@@ -1189,14 +1178,14 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
         let fat32_root_dir_first_sector = first_data_sector + data_sectors_before_root_dir;
         let fat32_root_dir_pos = bpb.bytes_from_sectors(fat32_root_dir_first_sector);
         storage.seek(SeekFrom::Start(fat32_root_dir_pos))?;
-        write_zeros(storage, u64::from(bpb.cluster_size()))?;
+        write_zeros(&mut storage, u64::from(bpb.cluster_size()))?;
     }
 
     // Create volume label directory entry if volume label is specified in options
     if let Some(volume_label) = options.volume_label {
         storage.seek(SeekFrom::Start(root_dir_pos))?;
         let volume_entry = DirFileEntryData::new(volume_label, FileAttributes::VOLUME_ID);
-        volume_entry.serialize(storage)?;
+        volume_entry.serialize(&mut storage)?;
     }
 
     storage.seek(SeekFrom::Start(0))?;
