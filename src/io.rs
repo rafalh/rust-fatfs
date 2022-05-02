@@ -125,6 +125,7 @@ pub trait Write: IoBase {
 /// Enumeration of possible methods to seek within an I/O object.
 ///
 /// It is based on the `std::io::SeekFrom` enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeekFrom {
     /// Sets the offset to the provided number of bytes.
     Start(u64),
