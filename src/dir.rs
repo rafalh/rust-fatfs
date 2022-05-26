@@ -600,7 +600,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> DirIter<'a, IO, TP, OCC> {
 }
 
 impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
-    fn should_ship_entry(&self, raw_entry: &DirEntryData) -> bool {
+    fn should_skip_entry(&self, raw_entry: &DirEntryData) -> bool {
         if raw_entry.is_deleted() {
             return true;
         }
@@ -624,7 +624,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC> DirIter<'a, IO, TP, OCC> {
                 return Ok(None);
             }
             // Check if this is deleted or volume ID entry
-            if self.should_ship_entry(&raw_entry) {
+            if self.should_skip_entry(&raw_entry) {
                 trace!("skip entry");
                 lfn_builder.clear();
                 begin_offset = offset;

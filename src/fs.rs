@@ -447,8 +447,8 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.cluster_size()
     }
 
-    pub(crate) fn offset_from_cluster(&self, cluser: u32) -> u64 {
-        self.offset_from_sector(self.sector_from_cluster(cluser))
+    pub(crate) fn offset_from_cluster(&self, cluster: u32) -> u64 {
+        self.offset_from_sector(self.sector_from_cluster(cluster))
     }
 
     pub(crate) fn bytes_from_clusters(&self, clusters: u32) -> u64 {
