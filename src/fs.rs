@@ -101,7 +101,7 @@ impl FsStatusFlags {
         self.io_error
     }
 
-    const fn encode(self) -> u8 {
+    pub(crate) const fn encode(self) -> u8 {
         let mut res = 0_u8;
         if self.dirty {
             res |= 1;
@@ -386,7 +386,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
         // read boot sector
-        let bpb = {
+        let mut bpb = {
             let boot = BootSector::deserialize(&mut disk)?;
             boot.validate()?;
             boot.bpb
@@ -409,6 +409,15 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
 
         // if dirty flag is set completly ignore free_cluster_count in FSInfo
         if bpb_status_flags.dirty() {
+            if options.ignore_dirty_flag {
+                warn!("BPB is dirty, clearing dirty flag.");
+                bpb_status_flags.dirty = false;
+                write_bpb_status_flags(&mut disk, fat_type, bpb_status_flags)?;
+                bpb.set_status_flags(bpb_status_flags);
+            } else {
+                return Err(Error::DirtyFileSystem);
+            }
+
             fs_info.free_cluster_count = None;
         }
 
@@ -426,17 +435,6 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             fs_info: RefCell::new(fs_info),
             current_status_flags: Cell::new(bpb_status_flags),
         };
-
-        if bpb_status_flags.dirty() {
-            if fs.options.ignore_dirty_flag {
-                warn!("BPB is dirty, clearing dirty flag.");
-                bpb_status_flags.dirty = false;
-                fs.set_bpb_status_flags(bpb_status_flags)?;
-                fs.current_status_flags.get_mut().dirty = false;
-            } else {
-                return Err(Error::DirtyFileSystem)
-            }
-        }
 
         let mut fat_status_flags = fs.read_fat_status_flags()?;
         if fat_status_flags.dirty() {
@@ -554,7 +552,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     ///
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
-        let bpb_status = self.bpb.status_flags();
+        let bpb_status = self.current_status_flags.get();
         let fat_status = self.read_fat_status_flags()?;
         Ok(FsStatusFlags {
             dirty: bpb_status.dirty || fat_status.dirty,
@@ -631,28 +629,9 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
 
         status_flags.dirty = dirty;
 
-        self.set_bpb_status_flags(status_flags)?;
-
-        self.current_status_flags.set(status_flags);
-
-        Ok(())
-    }
-
-    #[inline]
-    fn set_bpb_status_flags(&self, status_flags: FsStatusFlags) -> Result<(), Error<IO::Error>> {
-        let encoded = status_flags.encode();
-
-        // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
-        // Compute reserver_1 field offset and write new flags
-        let offset = if self.fat_type() == FatType::Fat32 {
-            0x041
-        } else {
-            0x025
-        };
-
         let mut disk = self.disk.borrow_mut();
-        disk.seek(io::SeekFrom::Start(offset))?;
-        disk.write_u8(encoded)?;
+        write_bpb_status_flags(&mut *disk, self.fat_type(), status_flags)?;
+        self.current_status_flags.set(status_flags);
 
         Ok(())
     }
@@ -792,6 +771,23 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
+}
+
+fn write_bpb_status_flags<IO: Seek + Write>(
+    disk: &mut IO,
+    fat_type: FatType,
+    status_flags: FsStatusFlags,
+) -> Result<(), Error<IO::Error>> {
+    let encoded = status_flags.encode();
+
+    // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
+    // Compute reserver_1 field offset and write new flags
+    let offset = if fat_type == FatType::Fat32 { 0x041 } else { 0x025 };
+
+    disk.seek(io::SeekFrom::Start(offset))?;
+    disk.write_u8(encoded)?;
+
+    Ok(())
 }
 
 fn fat_slice<B: BorrowMut<S>, E, S: ReadWriteSeek>(io: B, bpb: &BiosParameterBlock) -> DiskSlice<B, E, S> {

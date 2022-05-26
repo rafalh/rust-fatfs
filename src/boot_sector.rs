@@ -334,6 +334,10 @@ impl BiosParameterBlock {
         FsStatusFlags::decode(self.reserved_1)
     }
 
+    pub(crate) fn set_status_flags(&mut self, status_flags: FsStatusFlags) {
+        self.reserved_1 = status_flags.encode();
+    }
+
     pub(crate) fn is_fat32(&self) -> bool {
         // because this field must be zero on FAT32, and
         // because it must be non-zero on FAT12/FAT16,
