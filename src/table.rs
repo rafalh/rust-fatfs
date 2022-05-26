@@ -152,6 +152,12 @@ where
     Ok(new_cluster)
 }
 
+const FAT16_IO_ERROR_BIT: u32 = 1 << 14;
+const FAT16_DIRTY_BIT: u32 = 1 << 15;
+
+const FAT32_IO_ERROR_BIT: u32 = 1 << 26;
+const FAT32_DIRTY_BIT: u32 = 1 << 27;
+
 pub(crate) fn read_fat_flags<S, E>(fat: &mut S, fat_type: FatType) -> Result<FsStatusFlags, Error<E>>
 where
     S: Read + Seek,
@@ -166,15 +172,55 @@ where
     };
     let dirty = match fat_type {
         FatType::Fat12 => false,
-        FatType::Fat16 => val & (1 << 15) == 0,
-        FatType::Fat32 => val & (1 << 27) == 0,
+        FatType::Fat16 => val & FAT16_DIRTY_BIT == 0,
+        FatType::Fat32 => val & FAT32_DIRTY_BIT == 0,
     };
     let io_error = match fat_type {
         FatType::Fat12 => false,
-        FatType::Fat16 => val & (1 << 14) == 0,
-        FatType::Fat32 => val & (1 << 26) == 0,
+        FatType::Fat16 => val & FAT16_IO_ERROR_BIT == 0,
+        FatType::Fat32 => val & FAT32_IO_ERROR_BIT == 0,
     };
     Ok(FsStatusFlags { dirty, io_error })
+}
+
+pub(crate) fn write_fat_flags<S, E>(fat: &mut S, fat_type: FatType, fat_status: FsStatusFlags) -> Result<(), Error<E>>
+where
+    S: Read + Write + Seek,
+    E: IoError,
+    Error<E>: From<S::Error>,
+{
+  match fat_type {
+    FatType::Fat12 => {
+      Ok(())
+    },
+    FatType::Fat16 => {
+      let mut val = 0;
+
+      if fat_status.dirty {
+        val |= FAT16_DIRTY_BIT;
+      }
+
+      if fat_status.io_error {
+        val |= FAT16_IO_ERROR_BIT;
+      }
+
+      Fat16::set(fat, 1, FatValue::Data(!val))
+    },
+    FatType::Fat32 => {
+
+      let mut val = 0;
+
+      if fat_status.dirty {
+        val |= FAT32_DIRTY_BIT;
+      }
+
+      if fat_status.io_error {
+        val |= FAT32_IO_ERROR_BIT;
+      }
+
+      Fat32::set(fat, 1, FatValue::Data(!val))
+    },
+  }
 }
 
 pub(crate) fn count_free_clusters<S, E>(fat: &mut S, fat_type: FatType, total_clusters: u32) -> Result<u32, Error<E>>

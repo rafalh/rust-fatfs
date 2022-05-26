@@ -16,7 +16,7 @@ use crate::error::Error;
 use crate::file::File;
 use crate::io::{self, IoBase, Read, ReadLeExt, Seek, SeekFrom, Write, WriteLeExt};
 use crate::table::{
-    alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES,
+    alloc_cluster, count_free_clusters, format_fat, read_fat_flags, write_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES,
 };
 use crate::time::{DefaultTimeProvider, TimeProvider};
 
@@ -603,6 +603,15 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         disk.write_u8(encoded)?;
         self.current_status_flags.set(flags);
         Ok(())
+    }
+
+    pub fn set_fat_dirty_flag(&self, dirty: bool) -> Result<(), Error<IO::Error>> {
+      let mut fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
+      fat_status.dirty = dirty;
+
+      write_fat_flags(&mut self.fat_slice(), self.fat_type, fat_status)?;
+
+      Ok(())
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
