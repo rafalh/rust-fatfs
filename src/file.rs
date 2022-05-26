@@ -353,7 +353,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
             } else {
                 // end of chain reached - allocate new cluster
                 let new_cluster = self.fs.alloc_cluster(self.current_cluster, self.is_dir())?;
-                trace!("allocated cluser {}", new_cluster);
+                trace!("allocated cluster {}", new_cluster);
                 if self.first_cluster.is_none() {
                     self.set_first_cluster(new_cluster);
                 }

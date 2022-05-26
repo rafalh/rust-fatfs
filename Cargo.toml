@@ -32,7 +32,7 @@ log_level_warn  = ["log_level_error"]
 log_level_info  = ["log_level_warn"]
 # Enable logging levels debug and up
 log_level_debug = ["log_level_info"]
-# Enable all logging levels: trace and up 
+# Enable all logging levels: trace and up
 log_level_trace = ["log_level_debug"]
 
 # Default features
