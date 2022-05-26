@@ -46,6 +46,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // Disable warnings to not clutter code with cfg too much
 #![cfg_attr(not(all(feature = "alloc", feature = "lfn")), allow(dead_code, unused_imports))]
+#![deny(missing_debug_implementations)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
