@@ -795,8 +795,8 @@ pub(crate) struct DiskSlice<B, E, S = B> {
     offset: u64,
     mirrors: u8,
     inner: B,
-    phantom_s: PhantomData<S>,
     phantom_e: PhantomData<E>,
+    phantom_s: PhantomData<S>,
 }
 
 impl<B: BorrowMut<S>, E, S: ReadWriteSeek> DiskSlice<B, E, S> {
@@ -807,8 +807,8 @@ impl<B: BorrowMut<S>, E, S: ReadWriteSeek> DiskSlice<B, E, S> {
             mirrors,
             inner,
             offset: 0,
-            phantom_s: PhantomData,
             phantom_e: PhantomData,
+            phantom_s: PhantomData,
         }
     }
 
@@ -836,8 +836,8 @@ impl<B: Clone, E, S> Clone for DiskSlice<B, E, S> {
             mirrors: self.mirrors,
             inner: self.inner.clone(),
             // phantom is needed to add type bounds on the storage type
-            phantom_s: PhantomData,
             phantom_e: PhantomData,
+            phantom_s: PhantomData,
         }
     }
 }
@@ -851,9 +851,9 @@ where
 
 impl<B, E, S> Read for DiskSlice<B, E, S>
 where
-    S: Read + Seek,
     B: BorrowMut<S>,
     E: IoError,
+    S: Read + Seek,
     Error<E>: From<S::Error>,
 {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
@@ -868,9 +868,9 @@ where
 
 impl<B: BorrowMut<S>, E, S> Write for DiskSlice<B, E, S>
 where
-    S: Write + Seek,
     B: BorrowMut<S>,
     E: IoError,
+    S: Write + Seek,
     Error<E>: From<S::Error>,
 {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
@@ -896,9 +896,9 @@ where
 
 impl<B, E, S> Seek for DiskSlice<B, E, S>
 where
-    S: IoBase,
     B: BorrowMut<S>,
     E: IoError,
+    S: IoBase,
     Error<E>: From<S::Error>,
 {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
