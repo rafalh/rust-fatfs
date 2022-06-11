@@ -1,6 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::string::String;
-use core::borrow::{Borrow, BorrowMut};
+use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
 use core::char;
 use core::cmp;
@@ -10,7 +10,7 @@ use core::marker::PhantomData;
 use core::u32;
 
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
-use crate::dir::{self, Dir, DirRawStream};
+use crate::dir::{Dir, DirRawStream};
 use crate::dir_entry::{DirFileEntryData, FileAttributes, SFN_PADDING, SFN_SIZE};
 use crate::error::Error;
 use crate::file::File;
