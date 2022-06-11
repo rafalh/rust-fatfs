@@ -189,38 +189,35 @@ where
     E: IoError,
     Error<E>: From<S::Error>,
 {
-  match fat_type {
-    FatType::Fat12 => {
-      Ok(())
-    },
-    FatType::Fat16 => {
-      let mut val = 0;
+    match fat_type {
+        FatType::Fat12 => Ok(()),
+        FatType::Fat16 => {
+            let mut val = 0;
 
-      if fat_status.dirty {
-        val |= FAT16_DIRTY_BIT;
-      }
+            if fat_status.dirty {
+                val |= FAT16_DIRTY_BIT;
+            }
 
-      if fat_status.io_error {
-        val |= FAT16_IO_ERROR_BIT;
-      }
+            if fat_status.io_error {
+                val |= FAT16_IO_ERROR_BIT;
+            }
 
-      Fat16::set(fat, 1, FatValue::Data(!val))
-    },
-    FatType::Fat32 => {
+            Fat16::set(fat, 1, FatValue::Data(!val))
+        }
+        FatType::Fat32 => {
+            let mut val = 0;
 
-      let mut val = 0;
+            if fat_status.dirty {
+                val |= FAT32_DIRTY_BIT;
+            }
 
-      if fat_status.dirty {
-        val |= FAT32_DIRTY_BIT;
-      }
+            if fat_status.io_error {
+                val |= FAT32_IO_ERROR_BIT;
+            }
 
-      if fat_status.io_error {
-        val |= FAT32_IO_ERROR_BIT;
-      }
-
-      Fat32::set(fat, 1, FatValue::Data(!val))
-    },
-  }
+            Fat32::set(fat, 1, FatValue::Data(!val))
+        }
+    }
 }
 
 pub(crate) fn count_free_clusters<S, E>(fat: &mut S, fat_type: FatType, total_clusters: u32) -> Result<u32, Error<E>>
