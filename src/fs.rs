@@ -398,14 +398,24 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
-        let fs_info = if fat_type == FatType::Fat32 {
+        let mut fs_info = if fat_type == FatType::Fat32 {
             disk.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
             FsInfoSector::deserialize(&mut disk)?
         } else {
             FsInfoSector::default()
         };
 
-        let fs = Self {
+        let mut bpb_status_flags = bpb.status_flags();
+
+        // if dirty flag is set completly ignore free_cluster_count in FSInfo
+        if bpb_status_flags.dirty() {
+            fs_info.free_cluster_count = None;
+        }
+
+        // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
+        fs_info.validate_and_fix(total_clusters);
+
+        let mut fs = Self {
             disk: RefCell::new(disk),
             options,
             fat_type,
@@ -414,30 +424,29 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             root_dir_sectors,
             total_clusters,
             fs_info: RefCell::new(fs_info),
-            current_status_flags: Cell::new(FsStatusFlags {
-                dirty: false,
-                io_error: false,
-            }),
+            current_status_flags: Cell::new(bpb_status_flags),
         };
 
-        {
-            let status_flags = fs.read_status_flags()?;
-            let mut fs_info = fs.fs_info.borrow_mut();
-
-            if status_flags.dirty() {
-                // if dirty flag is set completly ignore free_cluster_count in FSInfo
-                fs_info.free_cluster_count = None;
-
-                if fs.options.ignore_dirty_flag {
-                    warn!("File system is dirty, clearing dirty flag.");
-                    fs.set_dirty_flag(false)?;
-                } else {
-                    return Err(Error::DirtyFileSystem);
-                }
+        if bpb_status_flags.dirty() {
+            if fs.options.ignore_dirty_flag {
+                warn!("BPB is dirty, clearing dirty flag.");
+                bpb_status_flags.dirty = false;
+                fs.set_bpb_status_flags(bpb_status_flags)?;
+                fs.current_status_flags.get_mut().dirty = false;
+            } else {
+                return Err(Error::DirtyFileSystem)
             }
+        }
 
-            // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
-            fs_info.validate_and_fix(total_clusters);
+        let mut fat_status_flags = fs.read_fat_status_flags()?;
+        if fat_status_flags.dirty() {
+            if fs.options.ignore_dirty_flag {
+                warn!("FAT is dirty, clearing dirty flag.");
+                fat_status_flags.dirty = false;
+                fs.set_fat_status_flags(fat_status_flags)?;
+            } else {
+                return Err(Error::DirtyFileSystem);
+            }
         }
 
         trace!("FileSystem::new end");
@@ -546,7 +555,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
         let bpb_status = self.bpb.status_flags();
-        let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
+        let fat_status = self.read_fat_status_flags()?;
         Ok(FsStatusFlags {
             dirty: bpb_status.dirty || fat_status.dirty,
             io_error: bpb_status.io_error || fat_status.io_error,
@@ -623,7 +632,6 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         status_flags.dirty = dirty;
 
         self.set_bpb_status_flags(status_flags)?;
-        self.set_fat_status_flags(status_flags)?;
 
         self.current_status_flags.set(status_flags);
 
@@ -647,6 +655,11 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         disk.write_u8(encoded)?;
 
         Ok(())
+    }
+
+    #[inline]
+    fn read_fat_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
+        read_fat_flags(&mut self.fat_slice(), self.fat_type)
     }
 
     #[inline]
