@@ -267,12 +267,14 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     }
 
     /// Ignore a dirty file system and clear the dirty flag when mounting it.
+    #[must_use]
     pub fn ignore_dirty_flag(mut self, enabled: bool) -> Self {
         self.ignore_dirty_flag = enabled;
         self
     }
 
     /// Changes default OEM code page encoder-decoder.
+    #[must_use]
     pub fn oem_cp_converter<OCC2: OemCpConverter>(self, oem_cp_converter: OCC2) -> FsOptions<TP, OCC2> {
         FsOptions::<TP, OCC2> {
             update_accessed_date: self.update_accessed_date,
@@ -283,6 +285,7 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     }
 
     /// Changes default time provider.
+    #[must_use]
     pub fn time_provider<TP2: TimeProvider>(self, time_provider: TP2) -> FsOptions<TP2, OCC> {
         FsOptions::<TP2, OCC> {
             update_accessed_date: self.update_accessed_date,
@@ -353,6 +356,8 @@ impl<T: std::io::Read + std::io::Write + std::io::Seek> IntoStorage<io::StdIoWra
     }
 }
 
+type FatSlice<'f, IO, TP, OCC, E> = DiskSlice<FsIoAdapter<'f, IO, TP, OCC>, E>;
+
 impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
@@ -393,14 +398,14 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         let fat_type = FatType::from_clusters(total_clusters);
 
         // read FSInfo sector if this is FAT32
-        let mut fs_info = if fat_type == FatType::Fat32 {
+        let fs_info = if fat_type == FatType::Fat32 {
             disk.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
             FsInfoSector::deserialize(&mut disk)?
         } else {
             FsInfoSector::default()
         };
 
-        let mut fs = Self {
+        let fs = Self {
             disk: RefCell::new(disk),
             options,
             fat_type,
@@ -487,7 +492,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice(&self) -> DiskSlice<FsIoAdapter<IO, TP, OCC>, IO::Error> {
+    fn fat_slice(&self) -> FatSlice<'_, IO, TP, OCC, IO::Error> {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
@@ -495,7 +500,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     pub(crate) fn cluster_iter(
         &self,
         cluster: u32,
-    ) -> ClusterIterator<DiskSlice<FsIoAdapter<IO, TP, OCC>, IO::Error>, IO::Error> {
+    ) -> ClusterIterator<FatSlice<'_, IO, TP, OCC, IO::Error>, IO::Error> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
@@ -866,7 +871,7 @@ where
     }
 }
 
-impl<B: BorrowMut<S>, E, S> Write for DiskSlice<B, E, S>
+impl<B, E, S> Write for DiskSlice<B, E, S>
 where
     B: BorrowMut<S>,
     E: IoError,
