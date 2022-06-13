@@ -356,8 +356,6 @@ impl<T: std::io::Read + std::io::Write + std::io::Seek> IntoStorage<io::StdIoWra
     }
 }
 
-type FatSlice<'f, IO, TP, OCC, E> = DiskSlice<FsIoAdapter<'f, IO, TP, OCC>, E>;
-
 impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
@@ -501,7 +499,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.clusters_from_bytes(bytes)
     }
 
-    fn fat_slice(&self) -> FatSlice<'_, IO, TP, OCC, IO::Error> {
+    fn fat_slice(&self) -> impl ReadWriteSeek<Error = Error<IO::Error>> + '_ {
         let io = FsIoAdapter { fs: self };
         fat_slice(io, &self.bpb)
     }
@@ -509,7 +507,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     pub(crate) fn cluster_iter(
         &self,
         cluster: u32,
-    ) -> ClusterIterator<FatSlice<'_, IO, TP, OCC, IO::Error>, IO::Error> {
+    ) -> ClusterIterator<impl ReadWriteSeek<Error = Error<IO::Error>> + '_, IO::Error> {
         let disk_slice = self.fat_slice();
         ClusterIterator::new(disk_slice, self.fat_type, cluster)
     }
