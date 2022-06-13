@@ -424,7 +424,23 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
         fs_info.validate_and_fix(total_clusters);
 
-        let mut fs = Self {
+        let mut fat_status_flags = read_fat_flags(&mut fat_slice::<&mut IO, IO::Error, IO>(&mut disk, &bpb), fat_type)?;
+        if fat_status_flags.dirty() {
+            if options.ignore_dirty_flag {
+                warn!("FAT is dirty, clearing dirty flag.");
+                fat_status_flags.dirty = false;
+                write_fat_flags(
+                    &mut fat_slice::<&mut IO, IO::Error, IO>(&mut disk, &bpb),
+                    fat_type,
+                    fat_status_flags,
+                )?;
+            } else {
+                return Err(Error::DirtyFileSystem);
+            }
+        }
+
+        trace!("FileSystem::new end");
+        Ok(Self {
             disk: RefCell::new(disk),
             options,
             fat_type,
@@ -434,21 +450,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             total_clusters,
             fs_info: RefCell::new(fs_info),
             current_status_flags: Cell::new(bpb_status_flags),
-        };
-
-        let mut fat_status_flags = fs.read_fat_status_flags()?;
-        if fat_status_flags.dirty() {
-            if fs.options.ignore_dirty_flag {
-                warn!("FAT is dirty, clearing dirty flag.");
-                fat_status_flags.dirty = false;
-                fs.set_fat_status_flags(fat_status_flags)?;
-            } else {
-                return Err(Error::DirtyFileSystem);
-            }
-        }
-
-        trace!("FileSystem::new end");
-        Ok(fs)
+        })
     }
 
     /// Returns a type of File Allocation Table (FAT) used by this filesystem.
@@ -553,7 +555,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
         let bpb_status = self.current_status_flags.get();
-        let fat_status = self.read_fat_status_flags()?;
+        let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
         Ok(FsStatusFlags {
             dirty: bpb_status.dirty || fat_status.dirty,
             io_error: bpb_status.io_error || fat_status.io_error,
@@ -619,31 +621,10 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         Ok(())
     }
 
+    #[inline]
     pub(crate) fn set_dirty_flag(&self, dirty: bool) -> Result<(), Error<IO::Error>> {
-        let mut status_flags = self.current_status_flags.get();
-
-        if status_flags.dirty == dirty {
-            // Dirty flag did not change.
-            return Ok(());
-        }
-
-        status_flags.dirty = dirty;
-
         let mut disk = self.disk.borrow_mut();
-        write_bpb_status_flags(&mut *disk, self.fat_type(), status_flags)?;
-        self.current_status_flags.set(status_flags);
-
-        Ok(())
-    }
-
-    #[inline]
-    fn read_fat_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
-        read_fat_flags(&mut self.fat_slice(), self.fat_type)
-    }
-
-    #[inline]
-    fn set_fat_status_flags(&self, status_flags: FsStatusFlags) -> Result<(), Error<IO::Error>> {
-        write_fat_flags(&mut self.fat_slice(), self.fat_type, status_flags)
+        set_dirty_flag(&mut *disk, self.fat_type(), &self.current_status_flags, dirty)
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
@@ -771,6 +752,27 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
+}
+
+fn set_dirty_flag<IO: Seek + Write>(
+    disk: &mut IO,
+    fat_type: FatType,
+    current_status_flags: &Cell<FsStatusFlags>,
+    dirty: bool,
+) -> Result<(), Error<IO::Error>> {
+    let mut status_flags = current_status_flags.get();
+
+    if status_flags.dirty == dirty {
+        // Dirty flag did not change.
+        return Ok(());
+    }
+
+    status_flags.dirty = dirty;
+
+    write_bpb_status_flags(disk, fat_type, status_flags)?;
+    current_status_flags.set(status_flags);
+
+    Ok(())
 }
 
 fn write_bpb_status_flags<IO: Seek + Write>(
