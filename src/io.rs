@@ -238,6 +238,47 @@ impl<T> From<T> for StdIoWrapper<T> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<T: std::fmt::Debug> std::fmt::Debug for StdIoWrapper<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StdIoWrapper").field("inner", &self.inner).finish()
+    }
+}
+
+
+impl<T: IoBase> IoBase for &mut T {
+    type Error = T::Error;
+}
+
+impl<T: Read> Read for &mut T {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        T::read(self, buf)
+    }
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        T::read_exact(self, buf)
+    }
+}
+
+impl<T: Write> Write for &mut T {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        T::write(self, buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        T::write_all(self, buf)
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        T::flush(self, )
+    }
+}
+
+impl<T: Seek> Seek for &mut T {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
+        T::seek(self, pos.into())
+    }
+}
+
 pub(crate) trait ReadLeExt {
     type Error;
     fn read_u8(&mut self) -> Result<u8, Self::Error>;

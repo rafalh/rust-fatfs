@@ -354,7 +354,7 @@ impl<IO: ReadWriteSeek, TP, OCC> FileSystem<IO, TP, OCC> {
     pub fn new(mut disk: IO, options: FsOptions<TP, OCC>) -> Result<Self, Error<IO::Error>> {
         // Make sure given image is not seeked
         trace!("FileSystem::new");
-        debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
+        disk.seek(SeekFrom::Start(0))?;
 
         // read boot sector
         let bpb = {
@@ -1104,7 +1104,7 @@ impl FormatVolumeOptions {
 #[allow(clippy::needless_pass_by_value)]
 pub fn format_volume<S: ReadWriteSeek>(mut storage: S, options: FormatVolumeOptions) -> Result<(), Error<S::Error>> {
     trace!("format_volume");
-    debug_assert!(storage.seek(SeekFrom::Current(0))? == 0);
+    storage.seek(SeekFrom::Start(0))?;
 
     let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
     let total_sectors = if let Some(total_sectors) = options.total_sectors {

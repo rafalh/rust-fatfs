@@ -31,7 +31,7 @@ fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
     let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
     let buf_file = BufStream::new(file);
     let options = FsOptions::new().update_accessed_date(true);
-    FileSystem::new(buf_file, options).unwrap()
+    FileSystem::new(buf_file.into(), options).unwrap()
 }
 
 fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str, test_seq: u32) {
