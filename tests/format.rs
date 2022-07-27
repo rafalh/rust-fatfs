@@ -75,7 +75,7 @@ fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSys
 
 
 #[test]
-fn corrupt() {
+fn test_recover_fs() {
     let _ = env_logger::builder().is_test(true).try_init();
     let storage_vec: Vec<u8> = vec![0xD1_u8; 1024 * 1024];
     let storage_cur = std::io::Cursor::new(storage_vec);
