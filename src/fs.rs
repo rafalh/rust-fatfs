@@ -256,6 +256,7 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
 
 impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     /// If enabled accessed date field in directory entry is updated when reading or writing a file.
+    #[must_use]
     pub fn update_accessed_date(mut self, enabled: bool) -> Self {
         self.update_accessed_date = enabled;
         self

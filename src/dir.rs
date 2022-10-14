@@ -117,6 +117,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> Dir<'a, IO, TP, OCC> {
 
     /// Creates directory entries iterator.
     #[must_use]
+    #[allow(clippy::iter_not_returning_iterator)]
     pub fn iter(&self) -> DirIter<'a, IO, TP, OCC> {
         DirIter::new(self.stream.clone(), self.fs, true)
     }

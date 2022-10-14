@@ -110,7 +110,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
                          bytes_left -= size;
                          Ok(Extent {
                              offset: fs.offset_from_cluster(cluster),
-                             size: size,
+                             size,
                          })
                      },
                      Err(e) => Err(e),

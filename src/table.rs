@@ -519,7 +519,7 @@ impl FatTrait for Fat32 {
     {
         let old_reserved_bits = Self::get_raw(fat, cluster)? & 0xF000_0000;
 
-        if value == FatValue::Free && cluster >= 0x0FFF_FFF7 && cluster <= 0x0FFF_FFFF {
+        if value == FatValue::Free && (0x0FFF_FFF7..=0x0FFF_FFFF).contains(&cluster) {
             // NOTE: it is technically allowed for them to store FAT chain loops,
             //       or even have them all store value '4' as their next cluster.
             //       Some believe only FatValue::Bad should be allowed for this edge case.
