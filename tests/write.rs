@@ -383,8 +383,7 @@ fn test_multiple_files_in_directory(fs: FileSystem) {
         let file = dir
             .iter()
             .map(|r| r.unwrap())
-            .filter(|e| e.file_name() == name)
-            .next()
+            .find(|e| e.file_name() == name)
             .unwrap();
 
         assert_eq!(TEST_STR.len() as u64, file.len(), "Wrong file len on iteration {}", i);
