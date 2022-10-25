@@ -178,6 +178,7 @@ impl From<std::io::SeekFrom> for SeekFrom {
 /// `Read`, `Write`, `Seek` traits from this crate are implemented for this type if
 /// corresponding types from `std::io` are implemented by the inner instance.
 #[cfg(feature = "std")]
+#[derive(Debug)]
 pub struct StdIoWrapper<T> {
     inner: T,
 }

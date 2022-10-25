@@ -312,6 +312,7 @@ impl FileSystemStats {
 /// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
+#[derive(Debug)]
 pub struct FileSystem<IO: ReadWriteSeek, TP, OCC> {
     pub(crate) disk: RefCell<IO>,
     pub(crate) options: FsOptions<TP, OCC>,
@@ -691,6 +692,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Drop for FileSystem<IO, TP, OCC> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct FsIoAdapter<'a, IO: ReadWriteSeek, TP, OCC> {
     fs: &'a FileSystem<IO, TP, OCC>,
 }
@@ -748,6 +750,7 @@ fn fat_slice<S: ReadWriteSeek, B: BorrowMut<S>>(
     DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, bpb, io)
 }
 
+#[derive(Debug)]
 pub(crate) struct DiskSlice<B, S = B> {
     begin: u64,
     size: u64,

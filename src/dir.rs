@@ -21,6 +21,7 @@ use crate::time::TimeProvider;
 
 const LFN_PADDING: u16 = 0xFFFF;
 
+#[derive(Debug)]
 pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
     File(File<'a, IO, TP, OCC>),
     Root(DiskSlice<FsIoAdapter<'a, IO, TP, OCC>, FsIoAdapter<'a, IO, TP, OCC>>),
@@ -105,6 +106,7 @@ enum DirEntryOrShortName<'a, IO: ReadWriteSeek, TP, OCC> {
 ///
 /// This struct is created by the `open_dir` or `create_dir` methods on `Dir`.
 /// The root directory is returned by the `root_dir` method on `FileSystem`.
+#[derive(Debug)]
 pub struct Dir<'a, IO: ReadWriteSeek, TP, OCC> {
     stream: DirRawStream<'a, IO, TP, OCC>,
     fs: &'a FileSystem<IO, TP, OCC>,
@@ -582,6 +584,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Clone for Dir<'_,
 /// An iterator over the directory entries.
 ///
 /// This struct is created by the `iter` method on `Dir`.
+#[derive(Debug)]
 pub struct DirIter<'a, IO: ReadWriteSeek, TP, OCC> {
     stream: DirRawStream<'a, IO, TP, OCC>,
     fs: &'a FileSystem<IO, TP, OCC>,
