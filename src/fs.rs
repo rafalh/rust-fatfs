@@ -410,7 +410,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             if options.ignore_dirty_flag {
                 warn!("BPB is dirty, clearing dirty flag.");
                 bpb_status_flags.dirty = false;
-                write_bpb_status_flags(&mut disk, fat_type, bpb_status_flags)?;
+                Self::write_bpb_status_flags(&mut disk, fat_type, bpb_status_flags)?;
                 bpb.set_status_flags(bpb_status_flags);
             } else {
                 return Err(Error::DirtyFileSystem);
@@ -619,10 +619,40 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         Ok(())
     }
 
+    fn write_bpb_status_flags(
+        disk: &mut IO,
+        fat_type: FatType,
+        status_flags: FsStatusFlags,
+    ) -> Result<(), Error<IO::Error>> {
+        let encoded = status_flags.encode();
+
+        // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
+        // Compute reserver_1 field offset and write new flags
+        let offset = if fat_type == FatType::Fat32 { 0x041 } else { 0x025 };
+
+        disk.seek(io::SeekFrom::Start(offset))?;
+        disk.write_u8(encoded)?;
+
+        Ok(())
+    }
+
     #[inline]
     pub(crate) fn set_dirty_flag(&self, dirty: bool) -> Result<(), Error<IO::Error>> {
         let mut disk = self.disk.borrow_mut();
-        set_dirty_flag(&mut *disk, self.fat_type(), &self.current_status_flags, dirty)
+
+        let mut status_flags = self.current_status_flags.get();
+
+        if status_flags.dirty == dirty {
+            // Dirty flag did not change.
+            return Ok(());
+        }
+
+        status_flags.dirty = dirty;
+
+        Self::write_bpb_status_flags(&mut *disk, self.fat_type(), status_flags)?;
+        self.current_status_flags.set(status_flags);
+
+        Ok(())
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
@@ -750,44 +780,6 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     fn clone(&self) -> Self {
         FsIoAdapter { fs: self.fs }
     }
-}
-
-fn set_dirty_flag<IO: Seek + Write>(
-    disk: &mut IO,
-    fat_type: FatType,
-    current_status_flags: &Cell<FsStatusFlags>,
-    dirty: bool,
-) -> Result<(), Error<IO::Error>> {
-    let mut status_flags = current_status_flags.get();
-
-    if status_flags.dirty == dirty {
-        // Dirty flag did not change.
-        return Ok(());
-    }
-
-    status_flags.dirty = dirty;
-
-    write_bpb_status_flags(disk, fat_type, status_flags)?;
-    current_status_flags.set(status_flags);
-
-    Ok(())
-}
-
-fn write_bpb_status_flags<IO: Seek + Write>(
-    disk: &mut IO,
-    fat_type: FatType,
-    status_flags: FsStatusFlags,
-) -> Result<(), Error<IO::Error>> {
-    let encoded = status_flags.encode();
-
-    // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
-    // Compute reserver_1 field offset and write new flags
-    let offset = if fat_type == FatType::Fat32 { 0x041 } else { 0x025 };
-
-    disk.seek(io::SeekFrom::Start(offset))?;
-    disk.write_u8(encoded)?;
-
-    Ok(())
 }
 
 fn fat_slice<B: BorrowMut<S>, E, S: ReadWriteSeek>(io: B, bpb: &BiosParameterBlock) -> DiskSlice<B, E, S> {
