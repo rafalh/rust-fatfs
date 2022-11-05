@@ -357,6 +357,9 @@ fn test_dirty_flag(tmp_path: &str) {
     let status_flags = fs.read_status_flags().unwrap();
     assert_eq!(status_flags.dirty(), false);
     assert_eq!(status_flags.io_error(), false);
+    // Make sure the dirty flag is cleared after remounting.
+    drop(fs);
+    open_filesystem_rw(tmp_path, false).unwrap();
 }
 
 #[test]
