@@ -4,7 +4,8 @@ Changelog
 0.3.6 (not released yet)
 ------------------------
 Bug fixes:
-* Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
+* Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`
+* Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
 
 0.3.5 (2021-01-23)
 ------------------------

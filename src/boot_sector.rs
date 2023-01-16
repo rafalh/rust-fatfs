@@ -449,8 +449,12 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
         },
     };
     const MAX_CLUSTER_SIZE: u32 = 32 * KB as u32;
-    debug_assert!(bytes_per_cluster.is_power_of_two());
-    cmp::min(cmp::max(bytes_per_cluster, bytes_per_sector as u32), MAX_CLUSTER_SIZE)
+    let bytes_per_cluster_clamped = cmp::min(
+        cmp::max(bytes_per_cluster, u32::from(bytes_per_sector)),
+        MAX_CLUSTER_SIZE,
+    );
+    debug_assert!(bytes_per_cluster_clamped.is_power_of_two());
+    bytes_per_cluster_clamped
 }
 
 fn determine_sectors_per_fat(
@@ -727,6 +731,7 @@ mod tests {
 
     #[test]
     fn test_determine_bytes_per_cluster_fat12() {
+        assert_eq!(determine_bytes_per_cluster(128 * KB, 512, Some(FatType::Fat12)), 512);
         assert_eq!(determine_bytes_per_cluster(1 * MB + 0, 512, Some(FatType::Fat12)), 512);
         assert_eq!(determine_bytes_per_cluster(1 * MB + 1, 512, Some(FatType::Fat12)), 1024);
         assert_eq!(determine_bytes_per_cluster(1 * MB, 4096, Some(FatType::Fat12)), 4096);
