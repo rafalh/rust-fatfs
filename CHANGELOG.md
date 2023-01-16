@@ -34,6 +34,7 @@ New features:
 * Build the crate using the 2018 edition.
 * Add support for compile-time configuration of logging levels via Cargo features. By default, all logging levels are
   enabled, including "trace" and up.
+* Disable chrono default features except `clock`
 
 0.3.4 (2020-07-20)
 ------------------

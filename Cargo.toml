@@ -41,7 +41,7 @@ default = ["chrono", "std", "alloc", "lfn", "unicode", "log_level_trace"]
 [dependencies]
 bitflags = "1.0"
 log = "0.4"
-chrono = { version = "0.4", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
 
 [dev-dependencies]
 env_logger = "0.9"
