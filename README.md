@@ -5,7 +5,7 @@ Rust FAT FS
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
 [![crates.io](https://img.shields.io/crates/v/fatfs)](https://crates.io/crates/fatfs)
 [![Documentation](https://docs.rs/fatfs/badge.svg)](https://docs.rs/fatfs)
-[![Minimum rustc version](https://img.shields.io/badge/rustc-1.46+-yellow.svg)](https://blog.rust-lang.org/2020/08/27/Rust-1.46.0.html)
+[![Minimum rustc version](https://img.shields.io/badge/rustc-1.48+-yellow.svg)](https://blog.rust-lang.org/2020/11/19/Rust-1.48.html)
 
 A FAT filesystem library implemented in Rust.
 
