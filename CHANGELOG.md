@@ -1,7 +1,7 @@
 Changelog
 =========
 
-0.3.6 (not released yet)
+0.3.6 (2023-01-17)
 ------------------------
 Bug fixes:
 * Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`
