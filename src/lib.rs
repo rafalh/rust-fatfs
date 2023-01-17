@@ -47,7 +47,12 @@
 // Disable warnings to not clutter code with cfg too much
 #![cfg_attr(not(all(feature = "alloc", feature = "lfn")), allow(dead_code, unused_imports))]
 #![warn(clippy::pedantic)]
-#![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::cast_possible_truncation,
+    clippy::bool_to_int_with_if, // less readable
+    clippy::uninlined_format_args, // not supported before Rust 1.58.0
+)]
 
 extern crate log;
 

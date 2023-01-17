@@ -629,7 +629,7 @@ fn determine_root_dir_sectors(root_dir_entries: u16, bytes_per_sector: u16, fat_
     if fat_type == FatType::Fat32 {
         0
     } else {
-        let root_dir_bytes = u32::from(root_dir_entries) * DIR_ENTRY_SIZE as u32;
+        let root_dir_bytes = u32::from(root_dir_entries) * DIR_ENTRY_SIZE;
         (root_dir_bytes + u32::from(bytes_per_sector) - 1) / u32::from(bytes_per_sector)
     }
 }

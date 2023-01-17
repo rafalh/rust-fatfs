@@ -698,7 +698,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
                 }
             }
             // both iterators should be at the end here
-            other_uppercase_iter.next() == None
+            other_uppercase_iter.next().is_none()
         } else {
             // entry has no long name
             false
