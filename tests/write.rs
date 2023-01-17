@@ -380,11 +380,7 @@ fn test_multiple_files_in_directory(fs: FileSystem) {
         file.write_all(TEST_STR.as_bytes()).unwrap();
         file.flush().unwrap();
 
-        let file = dir
-            .iter()
-            .map(|r| r.unwrap())
-            .find(|e| e.file_name() == name)
-            .unwrap();
+        let file = dir.iter().map(|r| r.unwrap()).find(|e| e.file_name() == name).unwrap();
 
         assert_eq!(TEST_STR.len() as u64, file.len(), "Wrong file len on iteration {}", i);
     }

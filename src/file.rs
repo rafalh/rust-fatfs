@@ -89,8 +89,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     ///
     /// This returns an iterator over the byte ranges on-disk occupied by
     /// this file.
-    pub fn extents(&mut self) -> impl Iterator<Item=Result<Extent, Error<IO::Error>>> + 'a {
-
+    pub fn extents(&mut self) -> impl Iterator<Item = Result<Extent, Error<IO::Error>>> + 'a {
         let fs = self.fs;
         let cluster_size = fs.cluster_size();
         let mut bytes_left = match self.size() {
@@ -102,20 +101,23 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
             None => return None.into_iter().flatten(),
         };
 
-        Some(core::iter::once(Ok(first)).chain(fs.cluster_iter(first))
-             .map(move |cluster_err| {
-                 match cluster_err {
-                     Ok(cluster) => {
-                         let size = cluster_size.min(bytes_left);
-                         bytes_left -= size;
-                         Ok(Extent {
-                             offset: fs.offset_from_cluster(cluster),
-                             size,
-                         })
-                     },
-                     Err(e) => Err(e),
-                 }
-             })).into_iter().flatten()
+        Some(
+            core::iter::once(Ok(first))
+                .chain(fs.cluster_iter(first))
+                .map(move |cluster_err| match cluster_err {
+                    Ok(cluster) => {
+                        let size = cluster_size.min(bytes_left);
+                        bytes_left -= size;
+                        Ok(Extent {
+                            offset: fs.offset_from_cluster(cluster),
+                            size,
+                        })
+                    }
+                    Err(e) => Err(e),
+                }),
+        )
+        .into_iter()
+        .flatten()
     }
 
     pub(crate) fn abs_pos(&self) -> Option<u64> {
