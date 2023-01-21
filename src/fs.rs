@@ -16,9 +16,11 @@ use crate::error::Error;
 use crate::file::File;
 use crate::io::{self, IoBase, Read, ReadLeExt, Seek, SeekFrom, Write, WriteLeExt};
 use crate::table::{
-    alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES,
+    alloc_cluster, count_free_clusters, format_fat, read_fat_flags, write_fat_flags, ClusterIterator,
+    RESERVED_FAT_ENTRIES,
 };
 use crate::time::{DefaultTimeProvider, TimeProvider};
+use crate::IoError;
 
 // FAT implementation based on:
 //   http://wiki.osdev.org/FAT
@@ -89,17 +91,17 @@ impl FsStatusFlags {
     ///
     /// Dirty flag means volume has been suddenly ejected from filesystem without unmounting.
     #[must_use]
-    pub fn dirty(&self) -> bool {
+    pub const fn dirty(&self) -> bool {
         self.dirty
     }
 
     /// Checks if the volume has the IO Error flag active.
     #[must_use]
-    pub fn io_error(&self) -> bool {
+    pub const fn io_error(&self) -> bool {
         self.io_error
     }
 
-    fn encode(self) -> u8 {
+    pub(crate) const fn encode(self) -> u8 {
         let mut res = 0_u8;
         if self.dirty {
             res |= 1;
@@ -110,7 +112,7 @@ impl FsStatusFlags {
         res
     }
 
-    pub(crate) fn decode(flags: u8) -> Self {
+    pub(crate) const fn decode(flags: u8) -> Self {
         Self {
             dirty: flags & 1 != 0,
             io_error: flags & 2 != 0,
@@ -238,6 +240,7 @@ impl FsInfoSector {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct FsOptions<TP, OCC> {
     pub(crate) update_accessed_date: bool,
+    pub(crate) ignore_dirty_flag: bool,
     pub(crate) oem_cp_converter: OCC,
     pub(crate) time_provider: TP,
 }
@@ -248,6 +251,7 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
     pub fn new() -> Self {
         Self {
             update_accessed_date: false,
+            ignore_dirty_flag: false,
             oem_cp_converter: LossyOemCpConverter::new(),
             time_provider: DefaultTimeProvider::new(),
         }
@@ -262,19 +266,30 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
         self
     }
 
+    /// Ignore a dirty file system and clear the dirty flag when mounting it.
+    #[must_use]
+    pub fn ignore_dirty_flag(mut self, enabled: bool) -> Self {
+        self.ignore_dirty_flag = enabled;
+        self
+    }
+
     /// Changes default OEM code page encoder-decoder.
+    #[must_use]
     pub fn oem_cp_converter<OCC2: OemCpConverter>(self, oem_cp_converter: OCC2) -> FsOptions<TP, OCC2> {
         FsOptions::<TP, OCC2> {
             update_accessed_date: self.update_accessed_date,
+            ignore_dirty_flag: self.ignore_dirty_flag,
             oem_cp_converter,
             time_provider: self.time_provider,
         }
     }
 
     /// Changes default time provider.
+    #[must_use]
     pub fn time_provider<TP2: TimeProvider>(self, time_provider: TP2) -> FsOptions<TP2, OCC> {
         FsOptions::<TP2, OCC> {
             update_accessed_date: self.update_accessed_date,
+            ignore_dirty_flag: self.ignore_dirty_flag,
             oem_cp_converter: self.oem_cp_converter,
             time_provider,
         }
@@ -369,7 +384,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         debug_assert!(disk.seek(SeekFrom::Current(0))? == 0);
 
         // read boot sector
-        let bpb = {
+        let mut bpb = {
             let boot = BootSector::deserialize(&mut disk)?;
             boot.validate()?;
             boot.bpb
@@ -388,16 +403,40 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             FsInfoSector::default()
         };
 
+        let mut bpb_status_flags = bpb.status_flags();
+
         // if dirty flag is set completly ignore free_cluster_count in FSInfo
-        if bpb.status_flags().dirty {
+        if bpb_status_flags.dirty() {
+            if options.ignore_dirty_flag {
+                warn!("BPB is dirty, clearing dirty flag.");
+                bpb_status_flags.dirty = false;
+                Self::write_bpb_status_flags(&mut disk, fat_type, bpb_status_flags)?;
+                bpb.set_status_flags(bpb_status_flags);
+            } else {
+                return Err(Error::DirtyFileSystem);
+            }
+
             fs_info.free_cluster_count = None;
         }
 
         // Validate the numbers stored in the free_cluster_count and next_free_cluster are within bounds for volume
         fs_info.validate_and_fix(total_clusters);
 
-        // return FileSystem struct
-        let status_flags = bpb.status_flags();
+        let mut fat_status_flags = read_fat_flags(&mut fat_slice::<&mut IO, IO::Error, IO>(&mut disk, &bpb), fat_type)?;
+        if fat_status_flags.dirty() {
+            if options.ignore_dirty_flag {
+                warn!("FAT is dirty, clearing dirty flag.");
+                fat_status_flags.dirty = false;
+                write_fat_flags(
+                    &mut fat_slice::<&mut IO, IO::Error, IO>(&mut disk, &bpb),
+                    fat_type,
+                    fat_status_flags,
+                )?;
+            } else {
+                return Err(Error::DirtyFileSystem);
+            }
+        }
+
         trace!("FileSystem::new end");
         Ok(Self {
             disk: RefCell::new(disk),
@@ -408,7 +447,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
             root_dir_sectors,
             total_clusters,
             fs_info: RefCell::new(fs_info),
-            current_status_flags: Cell::new(status_flags),
+            current_status_flags: Cell::new(bpb_status_flags),
         })
     }
 
@@ -513,7 +552,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     ///
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
     pub fn read_status_flags(&self) -> Result<FsStatusFlags, Error<IO::Error>> {
-        let bpb_status = self.bpb.status_flags();
+        let bpb_status = self.current_status_flags.get();
         let fat_status = read_fat_flags(&mut self.fat_slice(), self.fat_type)?;
         Ok(FsStatusFlags {
             dirty: bpb_status.dirty || fat_status.dirty,
@@ -580,28 +619,39 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         Ok(())
     }
 
-    pub(crate) fn set_dirty_flag(&self, dirty: bool) -> Result<(), IO::Error> {
-        // Do not overwrite flags read from BPB on mount
-        let mut flags = self.bpb.status_flags();
-        flags.dirty |= dirty;
-        // Check if flags has changed
-        let current_flags = self.current_status_flags.get();
-        if flags == current_flags {
-            // Nothing to do
-            return Ok(());
-        }
-        let encoded = flags.encode();
+    fn write_bpb_status_flags(
+        disk: &mut IO,
+        fat_type: FatType,
+        status_flags: FsStatusFlags,
+    ) -> Result<(), Error<IO::Error>> {
+        let encoded = status_flags.encode();
+
         // Note: only one field is written to avoid rewriting entire boot-sector which could be dangerous
         // Compute reserver_1 field offset and write new flags
-        let offset = if self.fat_type() == FatType::Fat32 {
-            0x041
-        } else {
-            0x025
-        };
-        let mut disk = self.disk.borrow_mut();
+        let offset = if fat_type == FatType::Fat32 { 0x041 } else { 0x025 };
+
         disk.seek(io::SeekFrom::Start(offset))?;
         disk.write_u8(encoded)?;
-        self.current_status_flags.set(flags);
+
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn set_dirty_flag(&self, dirty: bool) -> Result<(), Error<IO::Error>> {
+        let mut disk = self.disk.borrow_mut();
+
+        let mut status_flags = self.current_status_flags.get();
+
+        if status_flags.dirty == dirty {
+            // Dirty flag did not change.
+            return Ok(());
+        }
+
+        status_flags.dirty = dirty;
+
+        Self::write_bpb_status_flags(&mut *disk, self.fat_type(), status_flags)?;
+        self.current_status_flags.set(status_flags);
+
         Ok(())
     }
 
@@ -696,12 +746,12 @@ pub(crate) struct FsIoAdapter<'a, IO: ReadWriteSeek, TP, OCC> {
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for FsIoAdapter<'_, IO, TP, OCC> {
-    type Error = IO::Error;
+    type Error = Error<IO::Error>;
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        self.fs.disk.borrow_mut().read(buf)
+        Ok(self.fs.disk.borrow_mut().read(buf)?)
     }
 }
 
@@ -715,13 +765,13 @@ impl<IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'_, IO, TP, OCC> {
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
-        self.fs.disk.borrow_mut().flush()
+        Ok(self.fs.disk.borrow_mut().flush()?)
     }
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Seek for FsIoAdapter<'_, IO, TP, OCC> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
-        self.fs.disk.borrow_mut().seek(pos)
+        Ok(self.fs.disk.borrow_mut().seek(pos)?)
     }
 }
 
@@ -732,10 +782,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for FsIoAdapter<'_, IO, TP, OCC> {
     }
 }
 
-fn fat_slice<S: ReadWriteSeek, B: BorrowMut<S>>(
-    io: B,
-    bpb: &BiosParameterBlock,
-) -> impl ReadWriteSeek<Error = Error<S::Error>> {
+fn fat_slice<B: BorrowMut<S>, E, S: ReadWriteSeek>(io: B, bpb: &BiosParameterBlock) -> DiskSlice<B, E, S> {
     let sectors_per_fat = bpb.sectors_per_fat();
     let mirroring_enabled = bpb.mirroring_enabled();
     let (fat_first_sector, mirrors) = if mirroring_enabled {
@@ -748,16 +795,17 @@ fn fat_slice<S: ReadWriteSeek, B: BorrowMut<S>>(
     DiskSlice::from_sectors(fat_first_sector, sectors_per_fat, mirrors, bpb, io)
 }
 
-pub(crate) struct DiskSlice<B, S = B> {
+pub(crate) struct DiskSlice<B, E, S = B> {
     begin: u64,
     size: u64,
     offset: u64,
     mirrors: u8,
     inner: B,
-    phantom: PhantomData<S>,
+    phantom_e: PhantomData<E>,
+    phantom_s: PhantomData<S>,
 }
 
-impl<B: BorrowMut<S>, S: ReadWriteSeek> DiskSlice<B, S> {
+impl<B: BorrowMut<S>, E, S: ReadWriteSeek> DiskSlice<B, E, S> {
     pub(crate) fn new(begin: u64, size: u64, mirrors: u8, inner: B) -> Self {
         Self {
             begin,
@@ -765,7 +813,8 @@ impl<B: BorrowMut<S>, S: ReadWriteSeek> DiskSlice<B, S> {
             mirrors,
             inner,
             offset: 0,
-            phantom: PhantomData,
+            phantom_e: PhantomData,
+            phantom_s: PhantomData,
         }
     }
 
@@ -784,7 +833,7 @@ impl<B: BorrowMut<S>, S: ReadWriteSeek> DiskSlice<B, S> {
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
-impl<B: Clone, S> Clone for DiskSlice<B, S> {
+impl<B: Clone, E, S> Clone for DiskSlice<B, E, S> {
     fn clone(&self) -> Self {
         Self {
             begin: self.begin,
@@ -793,16 +842,26 @@ impl<B: Clone, S> Clone for DiskSlice<B, S> {
             mirrors: self.mirrors,
             inner: self.inner.clone(),
             // phantom is needed to add type bounds on the storage type
-            phantom: PhantomData,
+            phantom_e: PhantomData,
+            phantom_s: PhantomData,
         }
     }
 }
 
-impl<B, S: IoBase> IoBase for DiskSlice<B, S> {
-    type Error = Error<S::Error>;
+impl<B, E, S> IoBase for DiskSlice<B, E, S>
+where
+    E: IoError,
+{
+    type Error = Error<E>;
 }
 
-impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
+impl<B, E, S> Read for DiskSlice<B, E, S>
+where
+    B: BorrowMut<S>,
+    E: IoError,
+    S: Read + Seek,
+    Error<E>: From<S::Error>,
+{
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
         let read_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
@@ -813,7 +872,13 @@ impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
     }
 }
 
-impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
+impl<B, E, S> Write for DiskSlice<B, E, S>
+where
+    B: BorrowMut<S>,
+    E: IoError,
+    S: Write + Seek,
+    Error<E>: From<S::Error>,
+{
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
         let write_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
@@ -835,7 +900,13 @@ impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
     }
 }
 
-impl<B, S: IoBase> Seek for DiskSlice<B, S> {
+impl<B, E, S> Seek for DiskSlice<B, E, S>
+where
+    B: BorrowMut<S>,
+    E: IoError,
+    S: IoBase,
+    Error<E>: From<S::Error>,
+{
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
         let new_offset_opt: Option<u64> = match pos {
             SeekFrom::Current(x) => i64::try_from(self.offset)
@@ -1167,7 +1238,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     storage.seek(SeekFrom::Start(fat_pos))?;
     write_zeros(storage, bpb.bytes_from_sectors(sectors_per_all_fats))?;
     {
-        let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
+        let mut fat_slice = fat_slice::<&mut S, S::Error, S>(storage, bpb);
         let sectors_per_fat = bpb.sectors_per_fat();
         let bytes_per_fat = bpb.bytes_from_sectors(sectors_per_fat);
         format_fat(&mut fat_slice, fat_type, bpb.media, bytes_per_fat, bpb.total_clusters())?;
@@ -1181,7 +1252,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     write_zeros(storage, bpb.bytes_from_sectors(root_dir_sectors))?;
     if fat_type == FatType::Fat32 {
         let root_dir_first_cluster = {
-            let mut fat_slice = fat_slice::<S, &mut S>(storage, bpb);
+            let mut fat_slice = fat_slice::<&mut S, S::Error, S>(storage, bpb);
             alloc_cluster(&mut fat_slice, fat_type, None, None, 1)?
         };
         assert!(root_dir_first_cluster == bpb.root_dir_first_cluster);

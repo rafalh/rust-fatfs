@@ -23,7 +23,7 @@ const LFN_PADDING: u16 = 0xFFFF;
 
 pub(crate) enum DirRawStream<'a, IO: ReadWriteSeek, TP, OCC> {
     File(File<'a, IO, TP, OCC>),
-    Root(DiskSlice<FsIoAdapter<'a, IO, TP, OCC>, FsIoAdapter<'a, IO, TP, OCC>>),
+    Root(DiskSlice<FsIoAdapter<'a, IO, TP, OCC>, IO::Error>),
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> DirRawStream<'_, IO, TP, OCC> {
