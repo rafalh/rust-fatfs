@@ -21,7 +21,7 @@
 //!     let img_file = std::fs::OpenOptions::new().read(true).write(true)
 //!         .open("tmp/fat.img")?;
 //!     let buf_stream = fscommon::BufStream::new(img_file);
-//!     let fs = fatfs::FileSystem::new(buf_stream, fatfs::FsOptions::new())?;
+//!     let fs = fatfs::FileSystem::new(fatfs::StdIoWrapper::new(buf_stream), fatfs::FsOptions::new())?;
 //!     let root_dir = fs.root_dir();
 //!
 //!     // Write a file

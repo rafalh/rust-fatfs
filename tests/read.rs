@@ -1,8 +1,9 @@
 use std::fs;
 use std::io::prelude::*;
-use std::io::SeekFrom;
 use std::str;
 
+use fatfs::Seek;
+use fatfs::SeekFrom;
 use fatfs::{DefaultTimeProvider, FatType, FsOptions, LossyOemCpConverter, StdIoWrapper};
 use fscommon::BufStream;
 
@@ -17,7 +18,7 @@ fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str) {
     let _ = env_logger::builder().is_test(true).try_init();
     let file = fs::File::open(filename).unwrap();
     let buf_file = BufStream::new(file);
-    let fs = FileSystem::new(buf_file, FsOptions::new()).unwrap();
+    let fs = FileSystem::new(buf_file.into(), FsOptions::new()).unwrap();
     f(fs);
 }
 

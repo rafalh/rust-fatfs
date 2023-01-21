@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 
-use fatfs::{DefaultTimeProvider, LossyOemCpConverter, StdIoWrapper};
+use fatfs::{DefaultTimeProvider, LossyOemCpConverter, StdIoWrapper, FsOptions};
 use fscommon::BufStream;
 
 const KB: u64 = 1024;
@@ -71,6 +71,20 @@ fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSys
     let fs = fatfs::FileSystem::new(buffered_stream, fatfs::FsOptions::new()).expect("open fs");
     basic_fs_test(&fs);
     fs
+}
+
+
+#[test]
+fn test_recover_fs() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let storage_vec: Vec<u8> = vec![0xD1_u8; 1024 * 1024];
+    let storage_cur = std::io::Cursor::new(storage_vec);
+    let mut disk = fatfs::StdIoWrapper::from(BufStream::new(storage_cur));
+    assert!(fatfs::FileSystem::new(&mut disk, FsOptions::new()).is_err());
+
+    fatfs::format_volume(&mut disk, fatfs::FormatVolumeOptions::new()).expect("format volume");
+
+    fatfs::FileSystem::new(&mut disk, fatfs::FsOptions::new()).expect("open fs");
 }
 
 #[test]

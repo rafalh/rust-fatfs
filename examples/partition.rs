@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use fatfs::{FileSystem, FsOptions};
+use fatfs::{FileSystem, FsOptions, StdIoWrapper};
 use fscommon::{BufStream, StreamSlice};
 
 fn main() -> io::Result<()> {
@@ -14,7 +14,7 @@ fn main() -> io::Result<()> {
     // Create buffered stream to optimize file access
     let buf_rdr = BufStream::new(partition);
     // Finally initialize filesystem struct using provided partition
-    let fs = FileSystem::new(buf_rdr, FsOptions::new())?;
+    let fs = FileSystem::new(StdIoWrapper::new(buf_rdr), FsOptions::new())?;
     // Read and display volume label
     println!("Volume Label: {}", fs.volume_label());
     // other operations...
