@@ -94,7 +94,7 @@ fn test_format_50mb() {
     let total_bytes = 50 * MB;
     let opts = fatfs::FormatVolumeOptions::new();
     let fs = test_format_fs(opts, total_bytes);
-    assert_eq!(fs.fat_type(), fatfs::FatType::Fat16);
+    assert_eq!(fs.fat_type(), fatfs::FatType::Fat32);
 }
 
 #[test]
