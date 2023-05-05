@@ -290,3 +290,79 @@ impl<T: Write> WriteLeExt for T {
         self.write_all(&n.to_le_bytes())
     }
 }
+
+#[cfg(feature = "embedded-io")]
+mod embedded_io {
+    use crate::{IoBase, IoError, Read, Write, Seek, SeekFrom};
+    use embedded_io::Error;
+    use core::fmt::Debug;
+
+
+    #[derive(Debug)]
+    pub struct EIOErrorWrapper(embedded_io::ErrorKind);
+
+    impl IoError for EIOErrorWrapper
+    {
+        fn is_interrupted(&self) -> bool {
+            false
+        }
+
+        fn new_unexpected_eof_error() -> Self {
+            Self(embedded_io::ErrorKind::Other)
+        }
+
+        fn new_write_zero_error() -> Self {
+            Self(embedded_io::ErrorKind::Other)
+        }
+    }
+
+    impl<T: embedded_io::Io> IoBase for T {
+        type Error = EIOErrorWrapper;
+    }
+
+    impl<T: embedded_io::Io + embedded_io::blocking::Read> Read for T {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+            embedded_io::blocking::Read::read(self, buf).map_err(|e| EIOErrorWrapper(e.kind()))
+        }
+    }
+
+    impl<T: embedded_io::Io + embedded_io::blocking::Write> Write for T {
+        fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+            embedded_io::blocking::Write::write(self, buf).map_err(|e| EIOErrorWrapper(e.kind()))
+        }
+        
+        fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+            embedded_io::blocking::Write::write_all(self, buf).map_err(|e| EIOErrorWrapper(e.kind()))
+        }
+
+        fn flush(&mut self) -> Result<(), Self::Error> {
+            embedded_io::blocking::Write::flush(self).map_err(|e| EIOErrorWrapper(e.kind()))
+        }
+    }
+
+    impl<T: embedded_io::Io + embedded_io::blocking::Seek> Seek for T {
+        fn seek(&mut self, pos: crate::SeekFrom) -> Result<u64, Self::Error> {
+            embedded_io::blocking::Seek::seek(self, pos.into()).map_err(|e| EIOErrorWrapper(e.kind()))
+        }
+    }
+
+    impl From<embedded_io::SeekFrom> for SeekFrom {
+        fn from(value: embedded_io::SeekFrom) -> Self {
+            match value {
+                embedded_io::SeekFrom::Start(v) => SeekFrom::Start(v),
+                embedded_io::SeekFrom::End(v) => SeekFrom::End(v),
+                embedded_io::SeekFrom::Current(v) => SeekFrom::Current(v),
+            }
+        }
+    }
+
+    impl From<SeekFrom> for embedded_io::SeekFrom {
+        fn from(value: SeekFrom) -> Self {
+            match value {
+                SeekFrom::Start(v) => embedded_io::SeekFrom::Start(v),
+                SeekFrom::End(v) => embedded_io::SeekFrom::End(v),
+                SeekFrom::Current(v) => embedded_io::SeekFrom::Current(v),
+            }
+        }
+    }
+}
