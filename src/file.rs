@@ -473,12 +473,12 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(test)]
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> std::io::Seek for File<'_, IO, TP, OCC>
 where
     std::io::Error: From<Error<IO::Error>>,
 {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        Ok(Seek::seek(self, pos.into())?)
+        Ok(Seek::seek(self, crate::StdSeekPosWrapper::from(pos).into())?)
     }
 }

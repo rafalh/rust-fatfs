@@ -1,10 +1,9 @@
 use std::fs;
-use std::io;
 use std::io::prelude::*;
 use std::mem;
 use std::str;
 
-use fatfs::{DefaultTimeProvider, FsOptions, LossyOemCpConverter, StdIoWrapper};
+use fatfs::{DefaultTimeProvider, FsOptions, LossyOemCpConverter, Seek, SeekFrom, StdIoWrapper};
 use fscommon::BufStream;
 
 const FAT12_IMG: &str = "fat12.img";
@@ -47,7 +46,7 @@ fn test_write_short_file(fs: FileSystem) {
     let mut file = root_dir.open_file("short.txt").expect("open file");
     file.truncate().unwrap();
     file.write_all(&TEST_STR.as_bytes()).unwrap();
-    file.seek(io::SeekFrom::Start(0)).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(TEST_STR, str::from_utf8(&buf).unwrap());
@@ -74,13 +73,13 @@ fn test_write_long_file(fs: FileSystem) {
     file.truncate().unwrap();
     let test_str = TEST_STR.repeat(1000);
     file.write_all(&test_str.as_bytes()).unwrap();
-    file.seek(io::SeekFrom::Start(0)).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(test_str, str::from_utf8(&buf).unwrap());
-    file.seek(io::SeekFrom::Start(1234)).unwrap();
+    file.seek(SeekFrom::Start(1234)).unwrap();
     file.truncate().unwrap();
-    file.seek(io::SeekFrom::Start(0)).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
     buf.clear();
     file.read_to_end(&mut buf).unwrap();
     assert_eq!(&test_str[..1234], str::from_utf8(&buf).unwrap());

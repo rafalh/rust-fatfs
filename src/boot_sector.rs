@@ -3,7 +3,7 @@ use core::u16;
 use core::u8;
 
 use crate::dir_entry::DIR_ENTRY_SIZE;
-use crate::error::{Error, IoError};
+use crate::error::{Error, IoError, ReadExactError};
 use crate::fs::{FatType, FormatVolumeOptions, FsStatusFlags};
 use crate::io::{Read, ReadLeExt, Write, WriteLeExt};
 use crate::table::RESERVED_FAT_ENTRIES;
@@ -46,7 +46,10 @@ pub(crate) struct BiosParameterBlock {
 }
 
 impl BiosParameterBlock {
-    fn deserialize<R: Read>(rdr: &mut R) -> Result<Self, R::Error> {
+    fn deserialize<R: Read>(rdr: &mut R) -> Result<Self, R::Error>
+    where
+        R::Error: From<ReadExactError<R::Error>>,
+    {
         let mut bpb = Self {
             bytes_per_sector: rdr.read_u16_le()?,
             sectors_per_cluster: rdr.read_u8()?,
@@ -420,7 +423,10 @@ pub(crate) struct BootSector {
 }
 
 impl BootSector {
-    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> Result<Self, R::Error> {
+    pub(crate) fn deserialize<R: Read>(rdr: &mut R) -> Result<Self, R::Error>
+    where
+        R::Error: From<ReadExactError<R::Error>>,
+    {
         let mut boot = Self::default();
         rdr.read_exact(&mut boot.bootjmp)?;
         rdr.read_exact(&mut boot.oem_name)?;
@@ -802,6 +808,7 @@ pub(crate) fn format_boot_sector<E: IoError>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::StdErrWrapper;
     use core::u32;
 
     fn init() {
@@ -972,9 +979,10 @@ mod tests {
         }
         total_sectors_vec.push(u32::MAX);
         for total_sectors in total_sectors_vec {
-            let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
-                .expect("format_boot_sector");
-            boot.validate::<()>().expect("validate");
+            let (boot, _) =
+                format_boot_sector::<StdErrWrapper>(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
+                    .expect("format_boot_sector");
+            boot.validate::<StdErrWrapper>().expect("validate");
         }
     }
 }

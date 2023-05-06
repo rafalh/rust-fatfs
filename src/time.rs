@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 #[cfg(feature = "chrono")]
 use core::convert::TryFrom;
 use core::fmt::Debug;

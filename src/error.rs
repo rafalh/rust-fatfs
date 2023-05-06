@@ -1,3 +1,12 @@
+use core::fmt::Debug;
+pub use embedded_io::blocking::ReadExactError;
+pub use embedded_io::Error as IoError;
+pub use embedded_io::ErrorKind;
+pub use embedded_io::Io as IoBase;
+
+#[cfg(feature = "std")]
+use crate::io::StdErrWrapper;
+
 /// Error enum with all errors that can be returned by functions from this crate
 ///
 /// Generic parameter `T` is a type of external error returned by the user provided storage
@@ -28,17 +37,41 @@ pub enum Error<T> {
     UnsupportedFileNameCharacter,
 }
 
+impl<T: Debug> IoError for Error<T> {
+    fn kind(&self) -> ErrorKind {
+        ErrorKind::Other
+    }
+}
+
 impl<T: IoError> From<T> for Error<T> {
     fn from(error: T) -> Self {
         Error::Io(error)
     }
 }
 
-#[cfg(feature = "std")]
-impl From<Error<std::io::Error>> for std::io::Error {
-    fn from(error: Error<Self>) -> Self {
+impl<T> From<ReadExactError<Error<T>>> for Error<T> {
+    fn from(error: ReadExactError<Error<T>>) -> Self {
         match error {
-            Error::Io(io_error) => io_error,
+            ReadExactError::UnexpectedEof => Self::UnexpectedEof,
+            ReadExactError::Other(error) => error,
+        }
+    }
+}
+
+impl<T: IoError> From<ReadExactError<T>> for Error<T> {
+    fn from(error: ReadExactError<T>) -> Self {
+        match error {
+            ReadExactError::UnexpectedEof => Self::UnexpectedEof,
+            ReadExactError::Other(error) => error.into(),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<Error<StdErrWrapper>> for std::io::Error {
+    fn from(error: Error<StdErrWrapper>) -> Self {
+        match error {
+            Error::Io(io_error) => io_error.into(),
             Error::UnexpectedEof | Error::NotEnoughSpace => Self::new(std::io::ErrorKind::UnexpectedEof, error),
             Error::WriteZero => Self::new(std::io::ErrorKind::WriteZero, error),
             Error::InvalidInput
@@ -81,57 +114,16 @@ impl<T: std::error::Error + 'static> std::error::Error for Error<T> {
     }
 }
 
-/// Trait that should be implemented by errors returned from the user supplied storage.
-///
-/// Implementations for `std::io::Error` and `()` are provided by this crate.
-pub trait IoError: core::fmt::Debug {
-    fn is_interrupted(&self) -> bool;
-    fn new_unexpected_eof_error() -> Self;
-    fn new_write_zero_error() -> Self;
-}
-
-impl<T: core::fmt::Debug + IoError> IoError for Error<T> {
-    fn is_interrupted(&self) -> bool {
-        match self {
-            Error::<T>::Io(io_error) => io_error.is_interrupted(),
-            _ => false,
-        }
-    }
-
-    fn new_unexpected_eof_error() -> Self {
-        Error::<T>::UnexpectedEof
-    }
-
-    fn new_write_zero_error() -> Self {
-        Error::<T>::WriteZero
-    }
-}
-
-impl IoError for () {
-    fn is_interrupted(&self) -> bool {
-        false
-    }
-
-    fn new_unexpected_eof_error() -> Self {
-        // empty
-    }
-
-    fn new_write_zero_error() -> Self {
-        // empty
+#[cfg(feature = "std")]
+impl core::fmt::Display for StdErrWrapper {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "pls implement")
     }
 }
 
 #[cfg(feature = "std")]
-impl IoError for std::io::Error {
-    fn is_interrupted(&self) -> bool {
-        self.kind() == std::io::ErrorKind::Interrupted
-    }
-
-    fn new_unexpected_eof_error() -> Self {
-        Self::new(std::io::ErrorKind::UnexpectedEof, "failed to fill whole buffer")
-    }
-
-    fn new_write_zero_error() -> Self {
-        Self::new(std::io::ErrorKind::WriteZero, "failed to write whole buffer")
+impl std::error::Error for StdErrWrapper {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
     }
 }

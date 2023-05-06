@@ -17,7 +17,7 @@ exclude = [
 
 [features]
 # Use Rust std library
-std = []
+std = ["embedded-io/std"]
 # LFN (Long File Name) support
 lfn = []
 # Use dynamic allocation. When used without std please enable core_io/collections
@@ -41,6 +41,7 @@ default = ["chrono", "std", "alloc", "lfn", "unicode", "log_level_trace"]
 [dependencies]
 bitflags = "1.0"
 log = "0.4"
+embedded-io = "0.4.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
 
 [dev-dependencies]

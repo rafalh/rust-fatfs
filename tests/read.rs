@@ -1,9 +1,8 @@
 use std::fs;
 use std::io::prelude::*;
-use std::io::SeekFrom;
 use std::str;
 
-use fatfs::{DefaultTimeProvider, FatType, FsOptions, LossyOemCpConverter, StdIoWrapper};
+use fatfs::{DefaultTimeProvider, FatType, FsOptions, LossyOemCpConverter, Seek, SeekFrom, StdIoWrapper};
 use fscommon::BufStream;
 
 const TEST_TEXT: &str = "Rust is cool!\n";
