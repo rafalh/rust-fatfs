@@ -35,6 +35,7 @@ New features:
 * Add support for compile-time configuration of logging levels via Cargo features. By default, all logging levels are
   enabled, including "trace" and up.
 * Disable chrono default features except `clock`
+* Use chrono naive types instead of deprecated `chrono::Date` (BREAKING CHANGE)
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB

@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io;
 
-use chrono::{DateTime, Local};
+use chrono::NaiveDateTime;
 use fatfs::{FileSystem, FsOptions};
 use fscommon::BufStream;
 
@@ -33,7 +33,7 @@ fn main() -> io::Result<()> {
     };
     for r in dir.iter() {
         let e = r?;
-        let modified = DateTime::<Local>::from(e.modified())
+        let modified = NaiveDateTime::from(e.modified())
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
         println!("{:4}  {}  {}", format_file_size(e.len()), modified, e.file_name());
