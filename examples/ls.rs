@@ -29,7 +29,7 @@ fn main() -> io::Result<()> {
     let dir = match env::args().nth(1) {
         None => root_dir,
         Some(ref path) if path == "." => root_dir,
-        Some(ref path) => root_dir.open_dir(&path)?,
+        Some(ref path) => root_dir.open_dir(path)?,
     };
     for r in dir.iter() {
         let e = r?;

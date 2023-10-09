@@ -875,7 +875,7 @@ mod tests {
         let total_sectors = total_sectors as u32;
 
         let sectors_per_cluster = (bytes_per_cluster / u32::from(bytes_per_sector)) as u8;
-        let root_dir_size = root_dir_entries * DIR_ENTRY_SIZE as u32;
+        let root_dir_size = root_dir_entries * DIR_ENTRY_SIZE;
         let root_dir_sectors = (root_dir_size + u32::from(bytes_per_sector) - 1) / u32::from(bytes_per_sector);
         let sectors_per_fat = determine_sectors_per_fat(
             total_sectors,
@@ -978,7 +978,7 @@ mod tests {
         total_sectors_vec.push(8227);
         for total_sectors in total_sectors_vec {
             let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
-                .expect(&format!("format_boot_sector total_sectors: {}", total_sectors));
+                .unwrap_or_else(|_| panic!("format_boot_sector total_sectors: {}", total_sectors));
             boot.validate::<()>().expect("validate");
         }
     }

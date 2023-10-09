@@ -17,36 +17,36 @@ const TEST_STR2: &str = "Rust is cool!\n";
 
 type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<fs::File>>, DefaultTimeProvider, LossyOemCpConverter>;
 
-fn call_with_tmp_img<F: Fn(&str) -> ()>(f: F, filename: &str, test_seq: u32) {
+fn call_with_tmp_img<F: Fn(&str)>(f: F, filename: &str, test_seq: u32) {
     let _ = env_logger::builder().is_test(true).try_init();
     let img_path = format!("{}/{}", IMG_DIR, filename);
     let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
     fs::create_dir(TMP_DIR).ok();
-    fs::copy(&img_path, &tmp_path).unwrap();
+    fs::copy(img_path, &tmp_path).unwrap();
     f(tmp_path.as_str());
     fs::remove_file(tmp_path).unwrap();
 }
 
 fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
-    let file = fs::OpenOptions::new().read(true).write(true).open(&tmp_path).unwrap();
+    let file = fs::OpenOptions::new().read(true).write(true).open(tmp_path).unwrap();
     let buf_file = BufStream::new(file);
     let options = FsOptions::new().update_accessed_date(true);
     FileSystem::new(buf_file, options).unwrap()
 }
 
-fn call_with_fs<F: Fn(FileSystem) -> ()>(f: F, filename: &str, test_seq: u32) {
+fn call_with_fs<F: Fn(FileSystem)>(f: F, filename: &str, test_seq: u32) {
     let callback = |tmp_path: &str| {
         let fs = open_filesystem_rw(tmp_path);
         f(fs);
     };
-    call_with_tmp_img(&callback, filename, test_seq);
+    call_with_tmp_img(callback, filename, test_seq);
 }
 
 fn test_write_short_file(fs: FileSystem) {
     let root_dir = fs.root_dir();
     let mut file = root_dir.open_file("short.txt").expect("open file");
     file.truncate().unwrap();
-    file.write_all(&TEST_STR.as_bytes()).unwrap();
+    file.write_all(TEST_STR.as_bytes()).unwrap();
     file.seek(io::SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
@@ -73,7 +73,7 @@ fn test_write_long_file(fs: FileSystem) {
     let mut file = root_dir.open_file("long.txt").expect("open file");
     file.truncate().unwrap();
     let test_str = TEST_STR.repeat(1000);
-    file.write_all(&test_str.as_bytes()).unwrap();
+    file.write_all(test_str.as_bytes()).unwrap();
     file.seek(io::SeekFrom::Start(0)).unwrap();
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).unwrap();
@@ -147,7 +147,7 @@ fn test_create_file(fs: FileSystem) {
         let mut file = root_dir
             .create_file("very/long/path/new-file-with-long-name.txt")
             .unwrap();
-        file.write_all(&TEST_STR.as_bytes()).unwrap();
+        file.write_all(TEST_STR.as_bytes()).unwrap();
     }
     // check for dir entry
     names = dir.iter().map(|r| r.unwrap().file_name()).collect::<Vec<String>>();
@@ -340,21 +340,21 @@ fn test_dirty_flag(tmp_path: &str) {
     // Open filesystem, make change, and forget it - should become dirty
     let fs = open_filesystem_rw(tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
-    assert_eq!(status_flags.dirty(), false);
-    assert_eq!(status_flags.io_error(), false);
+    assert!(!status_flags.dirty());
+    assert!(!status_flags.io_error());
     fs.root_dir().create_file("abc.txt").unwrap();
     mem::forget(fs);
     // Check if volume is dirty now
     let fs = open_filesystem_rw(tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
-    assert_eq!(status_flags.dirty(), true);
-    assert_eq!(status_flags.io_error(), false);
+    assert!(status_flags.dirty());
+    assert!(!status_flags.io_error());
     fs.unmount().unwrap();
     // Make sure remounting does not clear the dirty flag
     let fs = open_filesystem_rw(tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
-    assert_eq!(status_flags.dirty(), true);
-    assert_eq!(status_flags.io_error(), false);
+    assert!(status_flags.dirty());
+    assert!(!status_flags.io_error());
 }
 
 #[test]
@@ -388,15 +388,15 @@ fn test_multiple_files_in_directory(fs: FileSystem) {
 
 #[test]
 fn test_multiple_files_in_directory_fat12() {
-    call_with_fs(&test_multiple_files_in_directory, FAT12_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT12_IMG, 8)
 }
 
 #[test]
 fn test_multiple_files_in_directory_fat16() {
-    call_with_fs(&test_multiple_files_in_directory, FAT16_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT16_IMG, 8)
 }
 
 #[test]
 fn test_multiple_files_in_directory_fat32() {
-    call_with_fs(&test_multiple_files_in_directory, FAT32_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT32_IMG, 8)
 }

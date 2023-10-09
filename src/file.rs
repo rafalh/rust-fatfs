@@ -92,13 +92,11 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     pub fn extents(&mut self) -> impl Iterator<Item = Result<Extent, Error<IO::Error>>> + 'a {
         let fs = self.fs;
         let cluster_size = fs.cluster_size();
-        let mut bytes_left = match self.size() {
-            Some(s) => s,
-            None => return None.into_iter().flatten(),
+        let Some(mut bytes_left) = self.size() else {
+            return None.into_iter().flatten();
         };
-        let first = match self.first_cluster {
-            Some(f) => f,
-            None => return None.into_iter().flatten(),
+        let Some(first) = self.first_cluster else {
+            return None.into_iter().flatten();
         };
 
         Some(
@@ -277,9 +275,8 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
         } else {
             self.current_cluster
         };
-        let current_cluster = match current_cluster_opt {
-            Some(n) => n,
-            None => return Ok(0),
+        let Some(current_cluster) = current_cluster_opt else {
+            return Ok(0);
         };
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
@@ -421,9 +418,7 @@ impl<IO: ReadWriteSeek, TP, OCC> Seek for File<'_, IO, TP, OCC> {
                 .and_then(|s| i64::from(s).checked_add(o))
                 .and_then(|n| u32::try_from(n).ok()),
         };
-        let mut new_offset = if let Some(new_offset) = new_offset_opt {
-            new_offset
-        } else {
+        let Some(mut new_offset) = new_offset_opt else {
             error!("Invalid seek offset");
             return Err(Error::InvalidInput);
         };

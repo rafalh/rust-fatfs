@@ -387,7 +387,7 @@ impl DirEntryData {
             Err(err) => {
                 return Err(err);
             }
-            Ok(_) => {}
+            Ok(()) => {}
         }
         let attrs = FileAttributes::from_bits_truncate(rdr.read_u8()?);
         if attrs & FileAttributes::LFN == FileAttributes::LFN {
@@ -744,7 +744,7 @@ mod tests {
     fn short_name_without_ext() {
         let oem_cp_conv = LossyOemCpConverter::new();
         assert_eq!(ShortName::new(b"FOO        ").to_string(&oem_cp_conv), "FOO");
-        assert_eq!(ShortName::new(&b"LOOK AT    ").to_string(&oem_cp_conv), "LOOK AT");
+        assert_eq!(ShortName::new(b"LOOK AT    ").to_string(&oem_cp_conv), "LOOK AT");
     }
 
     #[test]
