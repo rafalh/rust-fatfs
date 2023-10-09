@@ -36,6 +36,9 @@ New features:
   enabled, including "trace" and up.
 * Disable chrono default features except `clock`
 
+Bug fixes:
+* Fix formatting volumes with size in range 4096-4199 KB
+
 0.3.4 (2020-07-20)
 ------------------
 Bug fixes:

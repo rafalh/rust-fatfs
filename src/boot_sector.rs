@@ -479,7 +479,7 @@ impl Default for BootSector {
 
 pub(crate) fn estimate_fat_type(total_bytes: u64) -> FatType {
     // Used only to select cluster size if FAT type has not been overriden in options
-    if total_bytes < 4 * MB_64 {
+    if total_bytes < 4200 * KB_64 {
         FatType::Fat12
     } else if total_bytes < 512 * MB_64 {
         FatType::Fat16
@@ -612,7 +612,7 @@ fn try_fs_geometry(
         total_sectors - u32::from(reserved_sectors) - root_dir_sectors - sectors_per_fat * u32::from(fats);
     let total_clusters = data_sectors / u32::from(sectors_per_cluster);
     if fat_type != FatType::from_clusters(total_clusters) {
-        error!("Invalid FAT type");
+        error!("Invalid FAT type (expect {:?} due to {} clusters", FatType::from_clusters(total_clusters), total_clusters);
         return Err(Error::InvalidInput);
     }
     debug_assert!(total_clusters >= fat_type.min_clusters());
@@ -810,8 +810,8 @@ mod tests {
 
     #[test]
     fn test_estimate_fat_type() {
-        assert_eq!(estimate_fat_type(3 * MB_64), FatType::Fat12);
-        assert_eq!(estimate_fat_type(4 * MB_64), FatType::Fat16);
+        assert_eq!(estimate_fat_type(4 * MB_64), FatType::Fat12);
+        assert_eq!(estimate_fat_type(5 * MB_64), FatType::Fat16);
         assert_eq!(estimate_fat_type(511 * MB_64), FatType::Fat16);
         assert_eq!(estimate_fat_type(512 * MB_64), FatType::Fat32);
     }
@@ -971,9 +971,10 @@ mod tests {
             size = size + size / 7;
         }
         total_sectors_vec.push(u32::MAX);
+        total_sectors_vec.push(8227);
         for total_sectors in total_sectors_vec {
             let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
-                .expect("format_boot_sector");
+                .expect(&format!("format_boot_sector total_sectors: {}", total_sectors));
             boot.validate::<()>().expect("validate");
         }
     }
