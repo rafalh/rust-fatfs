@@ -30,7 +30,7 @@ New features:
 * Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
 * Fix index out of range panic when reading 248+ characters long file names with `alloc` feature disabled
 * Remove `byteorder` dependency.
-* Bump up minimal Rust compiler version to 1.48.0.
+* Bump up minimal Rust compiler version to 1.60.0.
 * Build the crate using the 2018 edition.
 * Add support for compile-time configuration of logging levels via Cargo features. By default, all logging levels are
   enabled, including "trace" and up.

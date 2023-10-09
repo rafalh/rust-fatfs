@@ -15,7 +15,7 @@ jobs:
           - rust_version: nightly
             run_tests: true
           # Minimal supported rustc version
-          - rust_version: 1.56.0
+          - rust_version: 1.60.0
             run_tests: false
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.rust_version == 'nightly' }}
