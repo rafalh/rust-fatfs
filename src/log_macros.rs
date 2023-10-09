@@ -51,7 +51,12 @@ macro_rules! log {
             log::log!(target: $target, lvl, $($arg)+);
         }
     });
-    ($lvl:expr, $($arg:tt)+) => (log!(target: log::__log_module_path!(), $lvl, $($arg)+))
+    ($lvl:expr, $($arg:tt)+) => ({
+        let lvl = $lvl;
+        if lvl <= $crate::log_macros::MAX_LOG_LEVEL {
+            log::log!(lvl, $($arg)+);
+        }
+    })
 }
 
 #[macro_export]
