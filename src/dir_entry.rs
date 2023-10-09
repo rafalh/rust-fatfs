@@ -19,7 +19,7 @@ use crate::time::{Date, DateTime};
 
 bitflags! {
     /// A FAT file attributes.
-    #[derive(Default)]
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FileAttributes: u8 {
         const READ_ONLY  = 0x01;
         const HIDDEN     = 0x02;
@@ -27,8 +27,8 @@ bitflags! {
         const VOLUME_ID  = 0x08;
         const DIRECTORY  = 0x10;
         const ARCHIVE    = 0x20;
-        const LFN        = Self::READ_ONLY.bits | Self::HIDDEN.bits
-                         | Self::SYSTEM.bits | Self::VOLUME_ID.bits;
+        const LFN        = Self::READ_ONLY.bits() | Self::HIDDEN.bits()
+                         | Self::SYSTEM.bits() | Self::VOLUME_ID.bits();
     }
 }
 
