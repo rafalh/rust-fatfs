@@ -20,6 +20,8 @@ pub enum Error<T> {
     DirectoryIsNotEmpty,
     /// File system internal structures are corrupted/invalid.
     CorruptedFileSystem,
+    /// File system is marked dirty.
+    DirtyFileSystem,
     /// There is not enough free space on the storage to finish the requested operation.
     NotEnoughSpace,
     /// The provided file name is either too long or empty.
@@ -47,7 +49,7 @@ impl From<Error<std::io::Error>> for std::io::Error {
             | Error::DirectoryIsNotEmpty => Self::new(std::io::ErrorKind::InvalidInput, error),
             Error::NotFound => Self::new(std::io::ErrorKind::NotFound, error),
             Error::AlreadyExists => Self::new(std::io::ErrorKind::AlreadyExists, error),
-            Error::CorruptedFileSystem => Self::new(std::io::ErrorKind::InvalidData, error),
+            Error::CorruptedFileSystem | Error::DirtyFileSystem => Self::new(std::io::ErrorKind::InvalidData, error),
         }
     }
 }
@@ -66,6 +68,7 @@ impl<T: core::fmt::Display> core::fmt::Display for Error<T> {
             Error::NotFound => write!(f, "No such file or directory"),
             Error::AlreadyExists => write!(f, "File or directory already exists"),
             Error::CorruptedFileSystem => write!(f, "Corrupted file system"),
+            Error::DirtyFileSystem => write!(f, "Dirty file system"),
         }
     }
 }
