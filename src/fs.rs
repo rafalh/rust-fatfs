@@ -2,7 +2,8 @@
 use alloc::string::String;
 use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
-use core::char;
+use core::mem::ManuallyDrop;
+use core::{char, ptr};
 use core::cmp;
 use core::convert::TryFrom;
 use core::fmt::Debug;
@@ -436,10 +437,6 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         &full_label_slice[..len]
     }
 
-    fn offset_from_sector(&self, sector: u32) -> u64 {
-        self.bpb.bytes_from_sectors(sector)
-    }
-
     fn sector_from_cluster(&self, cluster: u32) -> u32 {
         self.first_data_sector + self.bpb.sectors_from_clusters(cluster - RESERVED_FAT_ENTRIES)
     }
@@ -449,7 +446,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     }
 
     pub(crate) fn offset_from_cluster(&self, cluster: u32) -> u64 {
-        self.offset_from_sector(self.sector_from_cluster(cluster))
+        self.bpb.bytes_from_sectors(self.sector_from_cluster(cluster))
     }
 
     pub(crate) fn bytes_from_clusters(&self, clusters: u32) -> u64 {
@@ -551,32 +548,39 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         Ok(free_cluster_count)
     }
 
-    /// Unmounts the filesystem.
-    ///
-    /// Updates the FS Information Sector if needed.
+    /// Updates the FS Information Sector if needed and unmounts the filesystem.
     ///
     /// # Errors
     ///
     /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
-    pub fn unmount(self) -> Result<(), Error<IO::Error>> {
-        self.unmount_internal()
+    pub fn unmount(mut self) -> Result<IO, Error<IO::Error>> {
+        self.flush()?;
+
+        // SAFETY: The `disk` field is only dropped once.
+        let mut disk = unsafe {
+            let mut fs = ManuallyDrop::new(self);
+            ptr::read(fs.disk.get_mut())
+        };
+        disk.seek(SeekFrom::Start(0))?;
+        Ok(disk)
     }
 
-    fn unmount_internal(&self) -> Result<(), Error<IO::Error>> {
-        self.flush_fs_info()?;
-        self.set_dirty_flag(false)?;
-        Ok(())
-    }
-
-    fn flush_fs_info(&self) -> Result<(), Error<IO::Error>> {
-        let mut fs_info = self.fs_info.borrow_mut();
+    /// Updates the FS information sector if needed.
+    ///
+    /// # Errors
+    ///
+    /// `Error::Io` will be returned if the underlying storage object returned an I/O error.
+    pub fn flush(&mut self) -> Result<(), Error<IO::Error>> {
+        let fs_info = self.fs_info.get_mut();
         if self.fat_type == FatType::Fat32 && fs_info.dirty {
-            let mut disk = self.disk.borrow_mut();
-            let fs_info_sector_offset = self.offset_from_sector(u32::from(self.bpb.fs_info_sector));
+            let fs_info_sector_offset = self.bpb.bytes_from_sectors(self.bpb.fs_info_sector.into());
+            let disk = self.disk.get_mut();
             disk.seek(SeekFrom::Start(fs_info_sector_offset))?;
-            fs_info.serialize(&mut *disk)?;
+            fs_info.serialize(disk)?;
             fs_info.dirty = false;
         }
+
+        self.set_dirty_flag(false)?;
         Ok(())
     }
 
@@ -685,7 +689,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> FileSystem<IO, TP
 /// `Drop` implementation tries to unmount the filesystem when dropping.
 impl<IO: ReadWriteSeek, TP, OCC> Drop for FileSystem<IO, TP, OCC> {
     fn drop(&mut self) {
-        if let Err(err) = self.unmount_internal() {
+        if let Err(err) = self.flush() {
             error!("unmount failed {:?}", err);
         }
     }
