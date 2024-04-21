@@ -695,21 +695,14 @@ fn format_bpb<E: IoError>(
     let reserved_0 = [0_u8; 12];
 
     // setup volume label
-    let mut volume_label = [0_u8; 11];
-    if let Some(volume_label_from_opts) = options.volume_label {
-        volume_label.copy_from_slice(&volume_label_from_opts);
-    } else {
-        volume_label.copy_from_slice(b"NO NAME    ");
-    }
+    let volume_label = options.volume_label.unwrap_or(*b"NO NAME    ");
 
     // setup fs_type_label field
-    let mut fs_type_label = [0_u8; 8];
-    let fs_type_label_str = match fat_type {
+    let fs_type_label = *match layout.fat_type {
         FatType::Fat12 => b"FAT12   ",
         FatType::Fat16 => b"FAT16   ",
         FatType::Fat32 => b"FAT32   ",
     };
-    fs_type_label.copy_from_slice(fs_type_label_str);
 
     // create Bios Parameter Block struct
     let is_fat32 = layout.fat_type == FatType::Fat32;
