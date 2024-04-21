@@ -1,4 +1,3 @@
-use core::cmp;
 use core::slice;
 use core::u16;
 use core::u8;
@@ -514,10 +513,7 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
             }
         }
     };
-    let bytes_per_cluster_clamped = cmp::min(
-        cmp::max(bytes_per_cluster, u32::from(bytes_per_sector)),
-        MAX_CLUSTER_SIZE,
-    );
+    let bytes_per_cluster_clamped = bytes_per_cluster.clamp(bytes_per_sector.into(), MAX_CLUSTER_SIZE);
     debug_assert!(bytes_per_cluster_clamped.is_power_of_two());
     bytes_per_cluster_clamped
 }

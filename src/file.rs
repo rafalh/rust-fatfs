@@ -1,4 +1,3 @@
-use core::cmp;
 use core::convert::TryFrom;
 
 use crate::dir_entry::DirEntryEditor;
@@ -281,7 +280,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
         let bytes_left_in_file = self.bytes_left_in_file().unwrap_or(bytes_left_in_cluster);
-        let read_size = cmp::min(cmp::min(buf.len(), bytes_left_in_cluster), bytes_left_in_file);
+        let read_size = buf.len().min(bytes_left_in_cluster).min(bytes_left_in_file);
         if read_size == 0 {
             return Ok(0);
         }
@@ -325,8 +324,7 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
         let offset_in_cluster = self.offset % cluster_size;
         let bytes_left_in_cluster = (cluster_size - offset_in_cluster) as usize;
         let bytes_left_until_max_file_size = (MAX_FILE_SIZE - self.offset) as usize;
-        let write_size = cmp::min(buf.len(), bytes_left_in_cluster);
-        let write_size = cmp::min(write_size, bytes_left_until_max_file_size);
+        let write_size = buf.len().min(bytes_left_in_cluster).min(bytes_left_until_max_file_size);
         // Exit early if we are going to write no data
         if write_size == 0 {
             return Ok(0);

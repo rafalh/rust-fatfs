@@ -3,7 +3,6 @@ use alloc::string::String;
 use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
 use core::char;
-use core::cmp;
 use core::convert::TryFrom;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -805,7 +804,7 @@ impl<B, S: IoBase> IoBase for DiskSlice<B, S> {
 impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
-        let read_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
+        let read_size = (buf.len() as u64).min(self.size - self.offset) as usize;
         self.inner.borrow_mut().seek(SeekFrom::Start(offset))?;
         let size = self.inner.borrow_mut().read(&mut buf[..read_size])?;
         self.offset += size as u64;
@@ -816,7 +815,7 @@ impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
 impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
-        let write_size = cmp::min(self.size - self.offset, buf.len() as u64) as usize;
+        let write_size = (buf.len() as u64).min(self.size - self.offset) as usize;
         if write_size == 0 {
             return Ok(0);
         }
@@ -905,7 +904,7 @@ impl OemCpConverter for LossyOemCpConverter {
 pub(crate) fn write_zeros<IO: ReadWriteSeek>(disk: &mut IO, mut len: u64) -> Result<(), IO::Error> {
     const ZEROS: [u8; 512] = [0_u8; 512];
     while len > 0 {
-        let write_size = cmp::min(len, ZEROS.len() as u64) as usize;
+        let write_size = len.min(ZEROS.len() as u64) as usize;
         disk.write_all(&ZEROS[..write_size])?;
         len -= write_size as u64;
     }

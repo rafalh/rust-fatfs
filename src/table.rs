@@ -1,5 +1,4 @@
 use core::borrow::BorrowMut;
-use core::cmp;
 use core::marker::PhantomData;
 
 use crate::error::{Error, IoError};
@@ -227,7 +226,7 @@ where
     }
     // mark special entries 0x0FFFFFF0 - 0x0FFFFFFF as BAD if they exists on FAT32 volume
     if end_cluster > 0x0FFF_FFF0 {
-        let end_bad_cluster = cmp::min(0x0FFF_FFFF + 1, end_cluster);
+        let end_bad_cluster = (0x0FFF_FFFF + 1).min(end_cluster);
         for cluster in 0x0FFF_FFF0..end_bad_cluster {
             write_fat(fat, fat_type, cluster, FatValue::Bad)?;
         }

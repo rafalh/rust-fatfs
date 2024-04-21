@@ -1,7 +1,6 @@
 #[cfg(all(not(feature = "std"), feature = "alloc", feature = "lfn"))]
 use alloc::vec::Vec;
 use core::char;
-use core::cmp;
 use core::num;
 use core::str;
 #[cfg(feature = "lfn")]
@@ -1131,7 +1130,7 @@ impl ShortNameGenerator {
 
     fn check_for_long_prefix_collision(&mut self, short_name: &[u8; SFN_SIZE]) {
         // check for long prefix form collision (TEXTFI~1.TXT)
-        let long_prefix_len = cmp::min(self.basename_len, 6);
+        let long_prefix_len = 6.min(self.basename_len);
         if short_name[long_prefix_len] != b'~' {
             return;
         }
@@ -1146,7 +1145,7 @@ impl ShortNameGenerator {
 
     fn check_for_short_prefix_collision(&mut self, short_name: &[u8; SFN_SIZE]) {
         // check for short prefix + checksum form collision (TE021F~1.TXT)
-        let short_prefix_len = cmp::min(self.basename_len, 2);
+        let short_prefix_len = 2.min(self.basename_len);
         if short_name[short_prefix_len + 4] != b'~' {
             return;
         }
@@ -1205,12 +1204,12 @@ impl ShortNameGenerator {
     fn build_prefixed_name(&self, num: u32, with_chksum: bool) -> [u8; SFN_SIZE] {
         let mut buf = [SFN_PADDING; SFN_SIZE];
         let prefix_len = if with_chksum {
-            let prefix_len = cmp::min(self.basename_len, 2);
+            let prefix_len = 2.min(self.basename_len);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
             buf[prefix_len..prefix_len + 4].copy_from_slice(&Self::u16_to_hex(self.chksum));
             prefix_len + 4
         } else {
-            let prefix_len = cmp::min(self.basename_len, 6);
+            let prefix_len = 6.min(self.basename_len);
             buf[..prefix_len].copy_from_slice(&self.short_name[..prefix_len]);
             prefix_len
         };
