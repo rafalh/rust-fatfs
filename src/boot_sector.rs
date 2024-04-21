@@ -651,9 +651,11 @@ fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors:
         determine_bytes_per_cluster(total_bytes, options.bytes_per_sector, options.fat_type)
     });
 
-    let sectors_per_cluster = bytes_per_cluster / u32::from(options.bytes_per_sector);
-    assert!(sectors_per_cluster <= u32::from(u8::MAX));
-    let sectors_per_cluster = sectors_per_cluster as u8;
+    let sectors_per_cluster_32 = bytes_per_cluster / u32::from(options.bytes_per_sector);
+    let Ok(sectors_per_cluster) = sectors_per_cluster_32.try_into() else {
+        error!("Too many sectors per cluster, please try a different volume size");
+        return Err(Error::InvalidInput);
+    };
 
     for &fat_type in &[FatType::Fat32, FatType::Fat16, FatType::Fat12] {
         let root_dir_sectors =
@@ -691,9 +693,6 @@ fn format_bpb<E: IoError>(
         .drive_num
         .unwrap_or_else(|| if layout.fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
-    // reserved_0 is always zero
-    let reserved_0 = [0_u8; 12];
-
     // setup volume label
     let volume_label = options.volume_label.unwrap_or(*b"NO NAME    ");
 
@@ -709,34 +708,44 @@ fn format_bpb<E: IoError>(
     let sectors_per_fat_16 = if is_fat32 {
         0
     } else {
-        debug_assert!(layout.sectors_per_fat <= u32::from(u16::MAX));
-        layout.sectors_per_fat as u16
+        let Ok(sectors_per_fat_16) = layout.sectors_per_fat.try_into() else {
+            error!("FAT is too big, please try a different volume size");
+            return Err(Error::InvalidInput);
+        };
+        sectors_per_fat_16
     };
+    let sectors_per_fat_32 = if is_fat32 { layout.sectors_per_fat } else { 0 };
+
+    let root_entries = if is_fat32 { 0 } else { options.max_root_dir_entries };
+
+    let total_sectors_16 = if is_fat32 {
+        0
+    } else {
+        total_sectors.try_into().unwrap_or(0)
+    };
+    let total_sectors_32 = if total_sectors_16 == 0 { total_sectors } else { 0 };
+
     let bpb = BiosParameterBlock {
         bytes_per_sector: options.bytes_per_sector,
         sectors_per_cluster: layout.sectors_per_cluster,
         reserved_sectors: layout.reserved_sectors,
         fats: options.fats,
-        root_entries: if is_fat32 { 0 } else { options.max_root_dir_entries },
-        total_sectors_16: if total_sectors < 0x10000 {
-            total_sectors as u16
-        } else {
-            0
-        },
+        root_entries,
+        total_sectors_16,
         media: options.media,
         sectors_per_fat_16,
         sectors_per_track: options.sectors_per_track,
         heads: options.heads,
         hidden_sectors: 0,
-        total_sectors_32: if total_sectors >= 0x10000 { total_sectors } else { 0 },
+        total_sectors_32,
         // FAT32 fields start
-        sectors_per_fat_32: if is_fat32 { layout.sectors_per_fat } else { 0 },
+        sectors_per_fat_32,
         extended_flags: 0, // mirroring enabled
         fs_version: 0,
         root_dir_first_cluster: if is_fat32 { 2 } else { 0 },
         fs_info_sector: if is_fat32 { 1 } else { 0 },
         backup_boot_sector: if is_fat32 { 6 } else { 0 },
-        reserved_0,
+        reserved_0: [0_u8; 12],
         // FAT32 fields end
         drive_num,
         reserved_1: 0,
