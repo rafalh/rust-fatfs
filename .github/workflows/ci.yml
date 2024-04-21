@@ -27,41 +27,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.rust_version }}
-          override: true
+        run: |
+          rustup install ${{ matrix.rust_version }}
+          rustup default ${{ matrix.rust_version }}
+          rustc --version
 
-      - name: Print Rust compiler version
-        run: rustc --version
+      - name: Build
+        run: cargo build
 
-      - name: Run cargo build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-
-      - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose
+      - name: Run tests
+        run: cargo test --verbose
         if: ${{ matrix.run_tests }}
 
-      - name: Run cargo build - no_std
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features
+      - name: Build - no_std
+        run: cargo build --no-default-features
 
-      - name: Run cargo build - no_std, lfn
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features --features lfn
+      - name: Build - no_std, lfn
+        run: cargo build --no-default-features --features lfn
 
-      - name: Run cargo build - no_std, alloc, lfn, unicode
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features --features alloc,lfn,unicode
+      - name: Build - no_std, alloc, lfn, unicode
+        run: cargo build --no-default-features --features alloc,lfn,unicode
