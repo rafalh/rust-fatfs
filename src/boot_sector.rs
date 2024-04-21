@@ -577,7 +577,7 @@ fn determine_sectors_per_fat(
     sectors_per_fat as u32
 }
 
-fn try_fs_geometry(
+fn try_fs_layout(
     total_sectors: u32,
     bytes_per_sector: u16,
     sectors_per_cluster: u8,
@@ -638,25 +638,41 @@ fn determine_root_dir_sectors(root_dir_entries: u16, bytes_per_sector: u16, fat_
     }
 }
 
-fn determine_fs_geometry<E: IoError>(
-    total_sectors: u32,
-    bytes_per_sector: u16,
+struct FsLayout {
+    fat_type: FatType,
+    reserved_sectors: u16,
+    sectors_per_fat: u32,
     sectors_per_cluster: u8,
-    root_dir_entries: u16,
-    fats: u8,
-) -> Result<(FatType, u16, u32), Error<E>> {
+}
+
+fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors: u32) -> Result<FsLayout, Error<E>> {
+    let bytes_per_cluster = options.bytes_per_cluster.unwrap_or_else(|| {
+        let total_bytes = u64::from(total_sectors) * u64::from(options.bytes_per_sector);
+        determine_bytes_per_cluster(total_bytes, options.bytes_per_sector, options.fat_type)
+    });
+
+    let sectors_per_cluster = bytes_per_cluster / u32::from(options.bytes_per_sector);
+    assert!(sectors_per_cluster <= u32::from(u8::MAX));
+    let sectors_per_cluster = sectors_per_cluster as u8;
+
     for &fat_type in &[FatType::Fat32, FatType::Fat16, FatType::Fat12] {
-        let root_dir_sectors = determine_root_dir_sectors(root_dir_entries, bytes_per_sector, fat_type);
-        let result = try_fs_geometry(
+        let root_dir_sectors =
+            determine_root_dir_sectors(options.max_root_dir_entries, options.bytes_per_sector, fat_type);
+        let result = try_fs_layout(
             total_sectors,
-            bytes_per_sector,
+            options.bytes_per_sector,
             sectors_per_cluster,
             fat_type,
             root_dir_sectors,
-            fats,
+            options.fats,
         );
         if let Ok((reserved_sectors, sectors_per_fat)) = result {
-            return Ok((fat_type, reserved_sectors, sectors_per_fat));
+            return Ok(FsLayout {
+                fat_type,
+                reserved_sectors,
+                sectors_per_fat,
+                sectors_per_cluster,
+            });
         }
     }
 
@@ -668,29 +684,12 @@ fn format_bpb<E: IoError>(
     options: &FormatVolumeOptions,
     total_sectors: u32,
 ) -> Result<(BiosParameterBlock, FatType), Error<E>> {
-    let bytes_per_cluster = options.bytes_per_cluster.unwrap_or_else(|| {
-        let total_bytes = u64::from(total_sectors) * u64::from(options.bytes_per_sector);
-        determine_bytes_per_cluster(total_bytes, options.bytes_per_sector, options.fat_type)
-    });
-
-    let sectors_per_cluster = bytes_per_cluster / u32::from(options.bytes_per_sector);
-    assert!(sectors_per_cluster <= u32::from(u8::MAX));
-    let sectors_per_cluster = sectors_per_cluster as u8;
-
-    let fats = options.fats;
-    let root_dir_entries = options.max_root_dir_entries;
-    let (fat_type, reserved_sectors, sectors_per_fat) = determine_fs_geometry(
-        total_sectors,
-        options.bytes_per_sector,
-        sectors_per_cluster,
-        root_dir_entries,
-        fats,
-    )?;
+    let layout = determine_fs_layout(options, total_sectors)?;
 
     // drive_num should be 0 for floppy disks and 0x80 for hard disks - determine it using FAT type
     let drive_num = options
         .drive_num
-        .unwrap_or_else(|| if fat_type == FatType::Fat12 { 0 } else { 0x80 });
+        .unwrap_or_else(|| if layout.fat_type == FatType::Fat12 { 0 } else { 0x80 });
 
     // reserved_0 is always zero
     let reserved_0 = [0_u8; 12];
@@ -713,19 +712,19 @@ fn format_bpb<E: IoError>(
     fs_type_label.copy_from_slice(fs_type_label_str);
 
     // create Bios Parameter Block struct
-    let is_fat32 = fat_type == FatType::Fat32;
+    let is_fat32 = layout.fat_type == FatType::Fat32;
     let sectors_per_fat_16 = if is_fat32 {
         0
     } else {
-        debug_assert!(sectors_per_fat <= u32::from(u16::MAX));
-        sectors_per_fat as u16
+        debug_assert!(layout.sectors_per_fat <= u32::from(u16::MAX));
+        layout.sectors_per_fat as u16
     };
     let bpb = BiosParameterBlock {
         bytes_per_sector: options.bytes_per_sector,
-        sectors_per_cluster,
-        reserved_sectors,
-        fats,
-        root_entries: if is_fat32 { 0 } else { root_dir_entries },
+        sectors_per_cluster: layout.sectors_per_cluster,
+        reserved_sectors: layout.reserved_sectors,
+        fats: options.fats,
+        root_entries: if is_fat32 { 0 } else { options.max_root_dir_entries },
         total_sectors_16: if total_sectors < 0x10000 {
             total_sectors as u16
         } else {
@@ -738,7 +737,7 @@ fn format_bpb<E: IoError>(
         hidden_sectors: 0,
         total_sectors_32: if total_sectors >= 0x10000 { total_sectors } else { 0 },
         // FAT32 fields start
-        sectors_per_fat_32: if is_fat32 { sectors_per_fat } else { 0 },
+        sectors_per_fat_32: if is_fat32 { layout.sectors_per_fat } else { 0 },
         extended_flags: 0, // mirroring enabled
         fs_version: 0,
         root_dir_first_cluster: if is_fat32 { 2 } else { 0 },
@@ -755,12 +754,12 @@ fn format_bpb<E: IoError>(
     };
 
     // Check if number of clusters is proper for used FAT type
-    if FatType::from_clusters(bpb.total_clusters()) != fat_type {
+    if FatType::from_clusters(bpb.total_clusters()) != layout.fat_type {
         error!("Total number of clusters and FAT type does not match, please try a different volume size");
         return Err(Error::InvalidInput);
     }
 
-    Ok((bpb, fat_type))
+    Ok((bpb, layout.fat_type))
 }
 
 pub(crate) fn format_boot_sector<E: IoError>(
