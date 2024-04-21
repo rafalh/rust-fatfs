@@ -987,4 +987,42 @@ mod tests {
             boot.validate::<()>().expect("validate");
         }
     }
+
+    fn test_determine_fs_layout(fat_type: FatType, min_size: u64, max_size: u64) {
+        init();
+
+        let bytes_per_sector = 512_u16;
+        // test all partition sizes from 24 KB to 127 MB
+        let mut total_sectors_vec = Vec::new();
+        let mut size = min_size;
+        while size < max_size {
+            total_sectors_vec.push((size / u64::from(bytes_per_sector)).try_into().unwrap());
+            size += size / 7;
+        }
+        total_sectors_vec.push((max_size / u64::from(bytes_per_sector)).try_into().unwrap());
+        for total_sectors in total_sectors_vec {
+            let options = FormatVolumeOptions::new().fat_type(fat_type);
+            let layout = determine_fs_layout::<()>(&options, total_sectors)
+                .unwrap_or_else(|e| panic!("determine_fs_layout(total_sectors={}): {:?}", total_sectors, e));
+            assert_eq!(layout.fat_type, fat_type);
+        }
+    }
+
+    #[test]
+    fn test_determine_fs_layout_fat12() {
+        // approximately: 21 KB - 127 MB
+        test_determine_fs_layout(FatType::Fat12, 21 * KB_64, 127 * MB_64);
+    }
+
+    #[test]
+    fn test_determine_fs_layout_fat16() {
+        // approximately: 4.1 MB - 1.9 GB
+        test_determine_fs_layout(FatType::Fat16, 4120 * KB_64, 2047 * MB_64);
+    }
+
+    #[test]
+    fn test_determine_fs_layout_fat32() {
+        // approximately: 33 MB - 1.9 TB
+        test_determine_fs_layout(FatType::Fat32, 33 * MB_64, 2048 * GB_64 - 1);
+    }
 }
