@@ -1,4 +1,5 @@
 use core::cmp;
+use core::slice;
 use core::u16;
 use core::u8;
 
@@ -657,11 +658,10 @@ fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors:
         return Err(Error::InvalidInput);
     };
 
-    let allowed_fat_types = if options.fat_type.is_some() {
-        options.fat_type.as_slice()
-    } else {
-        &[FatType::Fat32, FatType::Fat16, FatType::Fat12]
-    };
+    let allowed_fat_types: &[FatType] = options
+        .fat_type
+        .as_ref()
+        .map_or(&[FatType::Fat32, FatType::Fat16, FatType::Fat12], slice::from_ref);
 
     for &fat_type in allowed_fat_types {
         let root_dir_sectors =
