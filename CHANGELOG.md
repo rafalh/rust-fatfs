@@ -39,6 +39,7 @@ New features:
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB
+* Always respect `fat_type` from `FormatVolumeOptions`
 
 0.3.4 (2020-07-20)
 ------------------

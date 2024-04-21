@@ -657,7 +657,13 @@ fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors:
         return Err(Error::InvalidInput);
     };
 
-    for &fat_type in &[FatType::Fat32, FatType::Fat16, FatType::Fat12] {
+    let allowed_fat_types = if options.fat_type.is_some() {
+        options.fat_type.as_slice()
+    } else {
+        &[FatType::Fat32, FatType::Fat16, FatType::Fat12]
+    };
+
+    for &fat_type in allowed_fat_types {
         let root_dir_sectors =
             determine_root_dir_sectors(options.max_root_dir_entries, options.bytes_per_sector, fat_type);
         let result = try_fs_layout(
