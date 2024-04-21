@@ -667,22 +667,21 @@ fn determine_fs_geometry<E: IoError>(
 fn format_bpb<E: IoError>(
     options: &FormatVolumeOptions,
     total_sectors: u32,
-    bytes_per_sector: u16,
 ) -> Result<(BiosParameterBlock, FatType), Error<E>> {
     let bytes_per_cluster = options.bytes_per_cluster.unwrap_or_else(|| {
-        let total_bytes = u64::from(total_sectors) * u64::from(bytes_per_sector);
-        determine_bytes_per_cluster(total_bytes, bytes_per_sector, options.fat_type)
+        let total_bytes = u64::from(total_sectors) * u64::from(options.bytes_per_sector);
+        determine_bytes_per_cluster(total_bytes, options.bytes_per_sector, options.fat_type)
     });
 
-    let sectors_per_cluster = bytes_per_cluster / u32::from(bytes_per_sector);
+    let sectors_per_cluster = bytes_per_cluster / u32::from(options.bytes_per_sector);
     assert!(sectors_per_cluster <= u32::from(u8::MAX));
     let sectors_per_cluster = sectors_per_cluster as u8;
 
-    let fats = options.fats.unwrap_or(2_u8);
-    let root_dir_entries = options.max_root_dir_entries.unwrap_or(512);
+    let fats = options.fats;
+    let root_dir_entries = options.max_root_dir_entries;
     let (fat_type, reserved_sectors, sectors_per_fat) = determine_fs_geometry(
         total_sectors,
-        bytes_per_sector,
+        options.bytes_per_sector,
         sectors_per_cluster,
         root_dir_entries,
         fats,
@@ -722,7 +721,7 @@ fn format_bpb<E: IoError>(
         sectors_per_fat as u16
     };
     let bpb = BiosParameterBlock {
-        bytes_per_sector,
+        bytes_per_sector: options.bytes_per_sector,
         sectors_per_cluster,
         reserved_sectors,
         fats,
@@ -732,10 +731,10 @@ fn format_bpb<E: IoError>(
         } else {
             0
         },
-        media: options.media.unwrap_or(0xF8),
+        media: options.media,
         sectors_per_fat_16,
-        sectors_per_track: options.sectors_per_track.unwrap_or(0x20),
-        heads: options.heads.unwrap_or(0x40),
+        sectors_per_track: options.sectors_per_track,
+        heads: options.heads,
         hidden_sectors: 0,
         total_sectors_32: if total_sectors >= 0x10000 { total_sectors } else { 0 },
         // FAT32 fields start
@@ -750,7 +749,7 @@ fn format_bpb<E: IoError>(
         drive_num,
         reserved_1: 0,
         ext_sig: 0x29,
-        volume_id: options.volume_id.unwrap_or(0x1234_5678),
+        volume_id: options.volume_id,
         volume_label,
         fs_type_label,
     };
@@ -767,10 +766,9 @@ fn format_bpb<E: IoError>(
 pub(crate) fn format_boot_sector<E: IoError>(
     options: &FormatVolumeOptions,
     total_sectors: u32,
-    bytes_per_sector: u16,
 ) -> Result<(BootSector, FatType), Error<E>> {
     let mut boot = BootSector::default();
-    let (bpb, fat_type) = format_bpb(options, total_sectors, bytes_per_sector)?;
+    let (bpb, fat_type) = format_bpb(options, total_sectors)?;
     boot.bpb = bpb;
     boot.oem_name.copy_from_slice(b"MSWIN4.1");
     // Boot code copied from FAT32 boot sector initialized by mkfs.fat
@@ -977,7 +975,7 @@ mod tests {
         total_sectors_vec.push(u32::MAX);
         total_sectors_vec.push(8227);
         for total_sectors in total_sectors_vec {
-            let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors, bytes_per_sector)
+            let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors)
                 .unwrap_or_else(|_| panic!("format_boot_sector total_sectors: {}", total_sectors));
             boot.validate::<()>().expect("validate");
         }

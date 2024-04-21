@@ -925,20 +925,39 @@ fn write_zeros_until_end_of_sector<IO: ReadWriteSeek>(disk: &mut IO, bytes_per_s
 ///
 /// This struct implements a builder pattern.
 /// Options are specified as an argument for `format_volume` function.
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct FormatVolumeOptions {
-    pub(crate) bytes_per_sector: Option<u16>,
+    pub(crate) bytes_per_sector: u16,
     pub(crate) total_sectors: Option<u32>,
     pub(crate) bytes_per_cluster: Option<u32>,
     pub(crate) fat_type: Option<FatType>,
-    pub(crate) max_root_dir_entries: Option<u16>,
-    pub(crate) fats: Option<u8>,
-    pub(crate) media: Option<u8>,
-    pub(crate) sectors_per_track: Option<u16>,
-    pub(crate) heads: Option<u16>,
+    pub(crate) max_root_dir_entries: u16,
+    pub(crate) fats: u8,
+    pub(crate) media: u8,
+    pub(crate) sectors_per_track: u16,
+    pub(crate) heads: u16,
     pub(crate) drive_num: Option<u8>,
-    pub(crate) volume_id: Option<u32>,
+    pub(crate) volume_id: u32,
     pub(crate) volume_label: Option<[u8; SFN_SIZE]>,
+}
+
+impl Default for FormatVolumeOptions {
+    fn default() -> Self {
+        Self {
+            bytes_per_sector: 512,
+            total_sectors: None,
+            bytes_per_cluster: None,
+            fat_type: None,
+            max_root_dir_entries: 512,
+            fats: 2,
+            media: 0xF8,
+            sectors_per_track: 0x20,
+            heads: 0x40,
+            drive_num: None,
+            volume_id: 0x1234_5678,
+            volume_label: None,
+        }
+    }
 }
 
 impl FormatVolumeOptions {
@@ -996,7 +1015,7 @@ impl FormatVolumeOptions {
             bytes_per_sector.count_ones() == 1 && bytes_per_sector >= 512,
             "Invalid bytes_per_sector"
         );
-        self.bytes_per_sector = Some(bytes_per_sector);
+        self.bytes_per_sector = bytes_per_sector;
         self
     }
 
@@ -1017,7 +1036,7 @@ impl FormatVolumeOptions {
     /// Default is `512`.
     #[must_use]
     pub fn max_root_dir_entries(mut self, max_root_dir_entries: u16) -> Self {
-        self.max_root_dir_entries = Some(max_root_dir_entries);
+        self.max_root_dir_entries = max_root_dir_entries;
         self
     }
 
@@ -1032,7 +1051,7 @@ impl FormatVolumeOptions {
     #[must_use]
     pub fn fats(mut self, fats: u8) -> Self {
         assert!((1..=2).contains(&fats), "Invalid number of FATs");
-        self.fats = Some(fats);
+        self.fats = fats;
         self
     }
 
@@ -1041,7 +1060,7 @@ impl FormatVolumeOptions {
     /// Default is `0xF8`.
     #[must_use]
     pub fn media(mut self, media: u8) -> Self {
-        self.media = Some(media);
+        self.media = media;
         self
     }
 
@@ -1050,7 +1069,7 @@ impl FormatVolumeOptions {
     /// Default is `0x20`.
     #[must_use]
     pub fn sectors_per_track(mut self, sectors_per_track: u16) -> Self {
-        self.sectors_per_track = Some(sectors_per_track);
+        self.sectors_per_track = sectors_per_track;
         self
     }
 
@@ -1059,7 +1078,7 @@ impl FormatVolumeOptions {
     /// Default is `0x40`.
     #[must_use]
     pub fn heads(mut self, heads: u16) -> Self {
-        self.heads = Some(heads);
+        self.heads = heads;
         self
     }
 
@@ -1077,7 +1096,7 @@ impl FormatVolumeOptions {
     /// Default is `0x12345678`.
     #[must_use]
     pub fn volume_id(mut self, volume_id: u32) -> Self {
-        self.volume_id = Some(volume_id);
+        self.volume_id = volume_id;
         self
     }
 
@@ -1118,12 +1137,11 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     trace!("format_volume");
     debug_assert!(storage.seek(SeekFrom::Current(0))? == 0);
 
-    let bytes_per_sector = options.bytes_per_sector.unwrap_or(512);
     let total_sectors = if let Some(total_sectors) = options.total_sectors {
         total_sectors
     } else {
         let total_bytes: u64 = storage.seek(SeekFrom::End(0))?;
-        let total_sectors_64 = total_bytes / u64::from(bytes_per_sector);
+        let total_sectors_64 = total_bytes / u64::from(options.bytes_per_sector);
         storage.seek(SeekFrom::Start(0))?;
         if total_sectors_64 > u64::from(u32::MAX) {
             error!("Volume has too many sectors: {}", total_sectors_64);
@@ -1133,7 +1151,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
     };
 
     // Create boot sector, validate and write to storage device
-    let (boot, fat_type) = format_boot_sector(&options, total_sectors, bytes_per_sector)?;
+    let (boot, fat_type) = format_boot_sector(&options, total_sectors)?;
     if boot.validate::<S::Error>().is_err() {
         return Err(Error::InvalidInput);
     }
