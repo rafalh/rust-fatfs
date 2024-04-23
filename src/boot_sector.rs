@@ -150,13 +150,6 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
-        if self.sectors_per_cluster < 1 || self.sectors_per_cluster > 128 {
-            error!(
-                "invalid sectors_per_cluster value in BPB: expected value in range [1, 128] but got {}",
-                self.sectors_per_cluster
-            );
-            return Err(Error::CorruptedFileSystem);
-        }
 
         // bytes per sector is u16, sectors per cluster is u8, so guaranteed no overflow in multiplication
         let bytes_per_cluster = u32::from(self.bytes_per_sector) * u32::from(self.sectors_per_cluster);
