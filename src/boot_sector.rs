@@ -125,7 +125,7 @@ impl BiosParameterBlock {
     }
 
     fn validate_bytes_per_sector<E: IoError>(&self) -> Result<(), Error<E>> {
-        if self.bytes_per_sector.count_ones() != 1 {
+        if !self.bytes_per_sector.is_power_of_two() {
             error!(
                 "invalid bytes_per_sector value in BPB: expected a power of two but got {}",
                 self.bytes_per_sector
@@ -143,7 +143,7 @@ impl BiosParameterBlock {
     }
 
     fn validate_sectors_per_cluster<E: IoError>(&self) -> Result<(), Error<E>> {
-        if self.sectors_per_cluster.count_ones() != 1 {
+        if !self.sectors_per_cluster.is_power_of_two() {
             error!(
                 "invalid sectors_per_cluster value in BPB: expected a power of two but got {}",
                 self.sectors_per_cluster
