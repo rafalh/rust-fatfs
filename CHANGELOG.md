@@ -36,6 +36,7 @@ New features:
   enabled, including "trace" and up.
 * Disable chrono default features except `clock`
 * Use chrono naive types instead of deprecated `chrono::Date` (BREAKING CHANGE)
+* Add defaults for `FileSystem` generic parameters: `TP = DefaultTimeProvider`, `OCC = LossyOemCpConverter`
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB
