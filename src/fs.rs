@@ -311,7 +311,7 @@ impl FileSystemStats {
 /// A FAT filesystem object.
 ///
 /// `FileSystem` struct is representing a state of a mounted FAT volume.
-pub struct FileSystem<IO: ReadWriteSeek, TP, OCC> {
+pub struct FileSystem<IO: ReadWriteSeek, TP = DefaultTimeProvider, OCC = LossyOemCpConverter> {
     pub(crate) disk: RefCell<IO>,
     pub(crate) options: FsOptions<TP, OCC>,
     fat_type: FatType,
