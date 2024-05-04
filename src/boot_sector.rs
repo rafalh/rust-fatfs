@@ -486,22 +486,40 @@ fn determine_bytes_per_cluster(total_bytes: u64, bytes_per_sector: u16, fat_type
 
     let fat_type = fat_type.unwrap_or_else(|| estimate_fat_type(total_bytes));
     let bytes_per_cluster = match fat_type {
-        FatType::Fat12 => (total_bytes.next_power_of_two() / MB_64 * 512) as u32,
+        FatType::Fat12 => {
+            // approximate cluster count: (1024, 2048]
+            (total_bytes.next_power_of_two() / MB_64 * 512) as u32
+        }
         FatType::Fat16 => {
             if total_bytes <= 16 * MB_64 {
+                // cluster size: 1 KB
+                // approximate cluster count: (4096, 16384]
                 KB_32
             } else if total_bytes <= 128 * MB_64 {
+                // cluster size: 2 KB
+                // approximate cluster count: (8192, 65536]
                 2 * KB_32
             } else {
+                // cluster size: 4 KB or more
+                // approximate cluster count: (32768, 65536]
                 ((total_bytes.next_power_of_two() / (64 * MB_64)) as u32) * KB_32
             }
         }
         FatType::Fat32 => {
             if total_bytes <= 260 * MB_64 {
+                // cluster size: 512 B
+                // approximate cluster count: (65_536, 532_480]
                 512
             } else if total_bytes <= 8 * GB_64 {
+                // cluster size: 4 KB
+                // approximate cluster count: (66_560, 2_097_152]
+                // Note: for minimal volume size (260 MB + 1 sector) it always results in enough cluster for this FAT type
+                // unless there is more than ~7000 reserved sectors
                 4 * KB_32
             } else {
+                // cluster size: 8 KB or more
+                // approximate cluster count: (1_048_576, 2_097_152]
+                // at 32 GB it already uses maximal cluster size and then cluster count goes out of the above range
                 ((total_bytes.next_power_of_two() / (2 * GB_64)) as u32) * KB_32
             }
         }
@@ -652,6 +670,8 @@ fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors:
         .as_ref()
         .map_or(&[FatType::Fat32, FatType::Fat16, FatType::Fat12], slice::from_ref);
 
+    // Note: this loop is needed because in case of user-provided cluster size it is hard to reliably determine
+    // a proper FAT type. In case of automatic cluster size actual FAT type is determined in `estimate_fat_type`
     for &fat_type in allowed_fat_types {
         let root_dir_sectors =
             determine_root_dir_sectors(options.max_root_dir_entries, options.bytes_per_sector, fat_type);
