@@ -13,6 +13,28 @@ pub trait IoBase {
 ///
 /// It is based on the `std::io::Read` trait.
 pub trait Read: IoBase {
+    /// Read the exact number of bytes required to fill `buf`.
+    ///
+    /// This function reads as many bytes as necessary to completely fill the specified buffer `buf`.
+    ///
+    /// # Errors
+    ///
+    /// If this function encounters an error for which `IoError::is_interrupted` returns true then the error is ignored
+    /// and the operation will continue.
+    ///
+    /// If this function encounters an end of file before completely filling the buffer, it returns an error
+    /// instantiated by a call to `IoError::new_unexpected_eof_error`. The contents of `buf` are unspecified in this
+    /// case.
+    ///
+    /// If this function returns an error, it is unspecified how many bytes it has read, but it will never read more
+    /// than would be necessary to completely fill the buffer.
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error>;
+}
+
+/// The `ReadFile` trait allows for reading bytes from a source.
+///
+/// It is based on the `std::io::Read` trait.
+pub trait ReadFile: Read {
     /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
     ///
     /// This function does not provide any guarantees about whether it blocks waiting for data, but if an object needs
@@ -78,6 +100,32 @@ pub trait Read: IoBase {
 ///
 /// It is based on the `std::io::Write` trait.
 pub trait Write: IoBase {
+    /// Attempts to write an entire buffer into this writer.
+    ///
+    /// This method will continuously call `write` until there is no more data to be written or an error is returned.
+    /// Errors for which `IoError::is_interrupted` method returns true are being skipped. This method will not return
+    /// until the entire buffer has been successfully written or such an error occurs.
+    /// If `write` returns 0 before the entire buffer has been written this method will return an error instantiated by
+    /// a call to `IoError::new_write_zero_error`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return the first error for which `IoError::is_interrupted` method returns false that `write`
+    /// returns.
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
+
+    /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
+    ///
+    /// # Errors
+    ///
+    /// It is considered an error if not all bytes could be written due to I/O errors or EOF being reached.
+    fn flush(&mut self) -> Result<(), Self::Error>;
+}
+
+/// The `WriteFile` trait allows for writing bytes into the sink.
+///
+/// It is based on the `std::io::Write` trait.
+pub trait WriteFile: Write {
     /// Write a buffer into this writer, returning how many bytes were written.
     ///
     /// # Errors
@@ -201,7 +249,7 @@ impl<T> IoBase for StdIoWrapper<T> {
 }
 
 #[cfg(feature = "std")]
-impl<T: std::io::Read> Read for StdIoWrapper<T> {
+impl<T: std::io::Read> ReadFile for StdIoWrapper<T> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.inner.read(buf)
     }
@@ -211,11 +259,14 @@ impl<T: std::io::Read> Read for StdIoWrapper<T> {
 }
 
 #[cfg(feature = "std")]
-impl<T: std::io::Write> Write for StdIoWrapper<T> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        self.inner.write(buf)
+impl<T: std::io::Read> Read for StdIoWrapper<T> {
+    #[inline]
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        <Self as ReadFile>::read_exact(self, buf)
     }
-
+}
+#[cfg(feature = "std")]
+impl<T: std::io::Write> Write for StdIoWrapper<T> {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
         self.inner.write_all(buf)
     }

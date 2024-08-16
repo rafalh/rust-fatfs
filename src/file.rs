@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 use crate::dir_entry::DirEntryEditor;
 use crate::error::Error;
 use crate::fs::{FileSystem, ReadWriteSeek};
-use crate::io::{IoBase, Read, Seek, SeekFrom, Write};
+use crate::io::{IoBase, Read, ReadFile, Seek, SeekFrom, Write, WriteFile};
 use crate::time::{Date, DateTime, TimeProvider};
 
 const MAX_FILE_SIZE: u32 = core::u32::MAX;
@@ -254,7 +254,7 @@ impl<IO: ReadWriteSeek, TP, OCC> IoBase for File<'_, IO, TP, OCC> {
     type Error = Error<IO::Error>;
 }
 
-impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> ReadFile for File<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         trace!("File::read");
         let cluster_size = self.fs.cluster_size();
@@ -286,15 +286,10 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
         }
         trace!("read {} bytes in cluster {}", read_size, current_cluster);
         let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + u64::from(offset_in_cluster);
-        let read_bytes = {
-            let mut disk = self.fs.disk.borrow_mut();
-            disk.seek(SeekFrom::Start(offset_in_fs))?;
-            disk.read(&mut buf[..read_size])?
-        };
-        if read_bytes == 0 {
-            return Ok(0);
-        }
-        self.offset += read_bytes as u32;
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.seek(SeekFrom::Start(offset_in_fs))?;
+        disk.read_exact(&mut buf[..read_size])?;
+        self.offset += read_size as u32;
         self.current_cluster = Some(current_cluster);
 
         if let Some(ref mut e) = self.entry {
@@ -303,7 +298,14 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
                 e.set_accessed(now);
             }
         }
-        Ok(read_bytes)
+        Ok(read_size)
+    }
+}
+
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for File<'_, IO, TP, OCC> {
+    #[inline]
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        <Self as ReadFile>::read_exact(self, buf)
     }
 }
 
@@ -313,11 +315,11 @@ where
     std::io::Error: From<Error<IO::Error>>,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        Ok(Read::read(self, buf)?)
+        Ok(ReadFile::read(self, buf)?)
     }
 }
 
-impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> WriteFile for File<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         trace!("File::write");
         let cluster_size = self.fs.cluster_size();
@@ -365,23 +367,30 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
         };
         trace!("write {} bytes in cluster {}", write_size, current_cluster);
         let offset_in_fs = self.fs.offset_from_cluster(current_cluster) + u64::from(offset_in_cluster);
-        let written_bytes = {
-            let mut disk = self.fs.disk.borrow_mut();
-            disk.seek(SeekFrom::Start(offset_in_fs))?;
-            disk.write(&buf[..write_size])?
-        };
-        if written_bytes == 0 {
-            return Ok(0);
-        }
+        let mut disk = self.fs.disk.borrow_mut();
+        disk.seek(SeekFrom::Start(offset_in_fs))?;
+        disk.write_all(&buf[..write_size])?;
         // some bytes were writter - update position and optionally size
-        self.offset += written_bytes as u32;
+        self.offset += write_size as u32;
         self.current_cluster = Some(current_cluster);
         self.update_dir_entry_after_write();
-        Ok(written_bytes)
+        Ok(write_size)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
         Self::flush(self)
+    }
+}
+
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for File<'_, IO, TP, OCC> {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        <Self as WriteFile>::write_all(self, buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        <Self as WriteFile>::flush(self)
     }
 }
 
@@ -391,7 +400,8 @@ where
     std::io::Error: From<Error<IO::Error>>,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        Ok(Write::write(self, buf)?)
+        Write::write_all(self, buf)?;
+        Ok(buf.len())
     }
 
     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
