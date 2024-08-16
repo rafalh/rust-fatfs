@@ -15,6 +15,7 @@ use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
 use crate::error::{Error, IoError};
 use crate::file::File;
 use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, OemCpConverter, ReadWriteSeek};
+use crate::io::private::Sealed;
 use crate::io::{self, IoBase, Read, ReadFile, Seek, SeekFrom, Write, WriteFile};
 use crate::time::TimeProvider;
 
@@ -50,6 +51,8 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
         }
     }
 }
+
+impl<IO: ReadWriteSeek, TP, OCC> Sealed for DirRawStream<'_, IO, TP, OCC> {}
 
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for DirRawStream<'_, IO, TP, OCC> {
     type Error = Error<IO::Error>;

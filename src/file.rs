@@ -3,6 +3,7 @@ use core::convert::TryFrom;
 use crate::dir_entry::DirEntryEditor;
 use crate::error::Error;
 use crate::fs::{FileSystem, ReadWriteSeek};
+use crate::io::private::Sealed;
 use crate::io::{IoBase, Read, ReadFile, Seek, SeekFrom, Write, WriteFile};
 use crate::time::{Date, DateTime, TimeProvider};
 
@@ -249,6 +250,8 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for File<'_, IO, TP, OCC> {
         }
     }
 }
+
+impl<IO: ReadWriteSeek, TP, OCC> Sealed for File<'_, IO, TP, OCC> {}
 
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for File<'_, IO, TP, OCC> {
     type Error = Error<IO::Error>;

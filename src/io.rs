@@ -1,4 +1,5 @@
 use crate::error::IoError;
+use crate::io::private::Sealed;
 
 /// Provides IO error as an associated type.
 ///
@@ -7,6 +8,10 @@ use crate::error::IoError;
 pub trait IoBase {
     /// Type of errors returned by input/output operations.
     type Error: IoError;
+}
+
+pub(crate) mod private {
+    pub trait Sealed {}
 }
 
 /// The `Read` trait allows for reading bytes from a source.
@@ -34,7 +39,7 @@ pub trait Read: IoBase {
 /// The `ReadFile` trait allows for reading bytes from a source.
 ///
 /// It is based on the `std::io::Read` trait.
-pub trait ReadFile: Read {
+pub trait ReadFile: Read + Sealed {
     /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
     ///
     /// This function does not provide any guarantees about whether it blocks waiting for data, but if an object needs
@@ -125,7 +130,7 @@ pub trait Write: IoBase {
 /// The `WriteFile` trait allows for writing bytes into the sink.
 ///
 /// It is based on the `std::io::Write` trait.
-pub trait WriteFile: Write {
+pub trait WriteFile: Write + Sealed {
     /// Write a buffer into this writer, returning how many bytes were written.
     ///
     /// # Errors
@@ -242,6 +247,9 @@ impl<T> StdIoWrapper<T> {
         self.inner
     }
 }
+
+#[cfg(feature = "std")]
+impl<T> Sealed for StdIoWrapper<T> {}
 
 #[cfg(feature = "std")]
 impl<T> IoBase for StdIoWrapper<T> {
