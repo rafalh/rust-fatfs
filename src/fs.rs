@@ -577,6 +577,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     fn unmount_internal(&self) -> Result<(), Error<IO::Error>> {
         self.flush_fs_info()?;
         self.set_dirty_flag(false)?;
+        self.disk.borrow_mut().flush()?;
         Ok(())
     }
 

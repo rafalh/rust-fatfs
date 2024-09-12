@@ -49,6 +49,7 @@ Bug fixes:
 * Fill FAT32 root directory clusters with zeros after allocation to avoid interpreting old data as directory entries
 * Put '.' and '..' in the first two directory entries. (fixes "Expected a valid '.' entry in this slot." fsck error)
 * Set the cluster number to 0 in the ".." directory entry if it points to the root dir
+* Flush on unmount
 
 0.3.4 (2020-07-20)
 ------------------
