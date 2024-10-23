@@ -214,6 +214,10 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
         disk.flush()?;
         Ok(())
     }
+
+    pub(crate) fn is_root_dir(&self) -> bool {
+        self.entry.is_none()
+    }
 }
 
 impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> File<'_, IO, TP, OCC> {
