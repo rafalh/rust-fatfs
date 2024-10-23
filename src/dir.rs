@@ -38,6 +38,13 @@ impl<IO: ReadWriteSeek, TP, OCC> DirRawStream<'_, IO, TP, OCC> {
             DirRawStream::Root(_) => None,
         }
     }
+
+    pub(crate) fn is_root_dir(&self) -> bool {
+        match self {
+            DirRawStream::File(file) => file.is_root_dir(),
+            DirRawStream::Root(_) => true,
+        }
+    }
 }
 
 // Note: derive cannot be used because of invalid bounds. See: https://github.com/rust-lang/rust/issues/26925
@@ -304,8 +311,13 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 let sfn_entry = self.create_sfn_entry(dot_sfn, FileAttributes::DIRECTORY, entry.first_cluster());
                 dir.write_entry(".", sfn_entry)?;
                 let dotdot_sfn = ShortNameGenerator::generate_dotdot();
-                let sfn_entry =
-                    self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, self.stream.first_cluster());
+                // cluster of the root dir shall be set to 0 in directory entries.
+                let dotdot_cluster = if self.stream.is_root_dir() {
+                    None
+                } else {
+                    self.stream.first_cluster()
+                };
+                let sfn_entry = self.create_sfn_entry(dotdot_sfn, FileAttributes::DIRECTORY, dotdot_cluster);
                 dir.write_entry("..", sfn_entry)?;
                 Ok(dir)
             }
