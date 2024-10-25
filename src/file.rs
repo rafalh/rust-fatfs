@@ -188,7 +188,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     fn is_dir(&self) -> bool {
         match self.entry {
             Some(ref e) => e.inner().is_dir(),
-            None => false,
+            None => true, // root directory
         }
     }
 

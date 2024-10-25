@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 
-use fatfs::StdIoWrapper;
+use fatfs::{FatType, StdIoWrapper};
 use fscommon::BufStream;
 
 const KB: u64 = 1024;
@@ -9,6 +9,20 @@ const MB: u64 = KB * 1024;
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 
 type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<io::Cursor<Vec<u8>>>>>;
+
+fn init_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
+fn format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
+    init_logger();
+    // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
+    let storage_vec: Vec<u8> = vec![0xD1_u8; total_bytes as usize];
+    let storage_cur = io::Cursor::new(storage_vec);
+    let mut buffered_stream = fatfs::StdIoWrapper::from(BufStream::new(storage_cur));
+    fatfs::format_volume(&mut buffered_stream, opts).expect("format volume");
+    fatfs::FileSystem::new(buffered_stream, fatfs::FsOptions::new()).expect("open fs")
+}
 
 fn basic_fs_test(fs: &FileSystem) {
     let stats = fs.stats().expect("stats");
@@ -60,14 +74,7 @@ fn basic_fs_test(fs: &FileSystem) {
 }
 
 fn test_format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
-    let _ = env_logger::builder().is_test(true).try_init();
-    // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
-    let storage_vec: Vec<u8> = vec![0xD1_u8; total_bytes as usize];
-    let storage_cur = io::Cursor::new(storage_vec);
-    let mut buffered_stream = fatfs::StdIoWrapper::from(BufStream::new(storage_cur));
-    fatfs::format_volume(&mut buffered_stream, opts).expect("format volume");
-
-    let fs = fatfs::FileSystem::new(buffered_stream, fatfs::FsOptions::new()).expect("open fs");
+    let fs = format_fs(opts, total_bytes);
     basic_fs_test(&fs);
     fs
 }
@@ -134,4 +141,20 @@ fn test_format_volume_label_and_id() {
         Some("VOLUMELABEL".to_string())
     );
     assert_eq!(fs.volume_id(), 1234);
+}
+
+#[test]
+fn test_zero_root_dir_clusters() {
+    init_logger();
+    let total_bytes = 33 * MB;
+    let opts = fatfs::FormatVolumeOptions::new().fat_type(FatType::Fat32);
+    let fs = format_fs(opts, total_bytes);
+    let root_dir = fs.root_dir();
+
+    // create a bunch of files to force allocation of second root directory cluster (64 is combined size of LFN + SFN)
+    let files_to_create = fs.cluster_size() as usize / 64 + 1;
+    for i in 0..files_to_create {
+        root_dir.create_file(&format!("f{}", i)).unwrap();
+    }
+    assert_eq!(root_dir.iter().count(), files_to_create);
 }
