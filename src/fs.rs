@@ -2,11 +2,9 @@
 use alloc::string::String;
 use core::borrow::BorrowMut;
 use core::cell::{Cell, RefCell};
-use core::char;
 use core::convert::TryFrom;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use core::u32;
 
 use crate::boot_sector::{format_boot_sector, BiosParameterBlock, BootSector};
 use crate::dir::{Dir, DirRawStream};

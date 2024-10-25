@@ -1,6 +1,5 @@
 #[cfg(all(not(feature = "std"), feature = "alloc", feature = "lfn"))]
 use alloc::vec::Vec;
-use core::char;
 use core::num;
 use core::str;
 #[cfg(feature = "lfn")]

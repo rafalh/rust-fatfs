@@ -6,7 +6,6 @@ use core::convert::TryInto;
 use core::fmt;
 #[cfg(not(feature = "unicode"))]
 use core::iter;
-use core::str;
 
 #[cfg(feature = "lfn")]
 use crate::dir::LfnBuffer;
