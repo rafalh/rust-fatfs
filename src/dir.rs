@@ -14,7 +14,8 @@ use crate::dir_entry::{SFN_PADDING, SFN_SIZE};
 use crate::error::{Error, IoError};
 use crate::file::File;
 use crate::fs::{DiskSlice, FileSystem, FsIoAdapter, OemCpConverter, ReadWriteSeek};
-use crate::io::{self, IoBase, Read, Seek, SeekFrom, Write};
+use crate::io::private::Sealed;
+use crate::io::{self, IoBase, Read, ReadFile, Seek, SeekFrom, Write, WriteFile};
 use crate::time::TimeProvider;
 
 const LFN_PADDING: u16 = 0xFFFF;
@@ -57,11 +58,13 @@ impl<IO: ReadWriteSeek, TP, OCC> Clone for DirRawStream<'_, IO, TP, OCC> {
     }
 }
 
+impl<IO: ReadWriteSeek, TP, OCC> Sealed for DirRawStream<'_, IO, TP, OCC> {}
+
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for DirRawStream<'_, IO, TP, OCC> {
     type Error = Error<IO::Error>;
 }
 
-impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> ReadFile for DirRawStream<'_, IO, TP, OCC> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         match self {
             DirRawStream::File(file) => file.read(buf),
@@ -70,7 +73,14 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP,
     }
 }
 
-impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP, OCC> {
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Read for DirRawStream<'_, IO, TP, OCC> {
+    #[inline]
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        <Self as ReadFile>::read_exact(self, buf)
+    }
+}
+
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> WriteFile for DirRawStream<'_, IO, TP, OCC> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         match self {
             DirRawStream::File(file) => file.write(buf),
@@ -79,9 +89,21 @@ impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP
     }
     fn flush(&mut self) -> Result<(), Self::Error> {
         match self {
-            DirRawStream::File(file) => file.flush(),
-            DirRawStream::Root(raw) => raw.flush(),
+            DirRawStream::File(file) => <File<_, _, _> as WriteFile>::flush(file),
+            DirRawStream::Root(raw) => <DiskSlice<_, _> as WriteFile>::flush(raw),
         }
+    }
+}
+
+impl<IO: ReadWriteSeek, TP: TimeProvider, OCC> Write for DirRawStream<'_, IO, TP, OCC> {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        <Self as WriteFile>::write_all(self, buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        <Self as WriteFile>::flush(self)
     }
 }
 
