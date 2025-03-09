@@ -239,8 +239,15 @@ impl BiosParameterBlock {
             );
             return Err(Error::CorruptedFileSystem);
         }
-        if (self.total_sectors_16 == 0) == (self.total_sectors_32 == 0) {
-            error!("Invalid BPB (total_sectors_16 or total_sectors_32 should be non-zero)");
+        if self.total_sectors_16 == 0 && self.total_sectors_32 == 0 {
+            error!("Invalid BPB: total_sectors_16 or total_sectors_32 should be non-zero");
+            return Err(Error::CorruptedFileSystem);
+        }
+        if self.total_sectors_16 != 0
+            && self.total_sectors_32 != 0
+            && self.total_sectors_16 as u32 != self.total_sectors_32
+        {
+            error!("Invalid BPB: total_sectors_16 and total_sectors_32 are non-zero and have conflicting values");
             return Err(Error::CorruptedFileSystem);
         }
         let total_sectors = self.total_sectors();

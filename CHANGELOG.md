@@ -39,6 +39,7 @@ New features:
 * Add defaults for `FileSystem` generic parameters: `TP = DefaultTimeProvider`, `OCC = LossyOemCpConverter`
 * Structures `FsOptions`, `ChronoTimeProvider`, `NullTimeProvider` and `LossyOemCpConverter` now implement `Default` trait
 * Undeprecate `set_created`, `set_accessed`, `set_modified` methods on `File` - there are scenarios where those methods are needed
+* Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB
