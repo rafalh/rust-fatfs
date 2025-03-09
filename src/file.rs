@@ -148,7 +148,6 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     /// Sets date and time of creation for this file.
     ///
     /// Note: it is set to a value from the `TimeProvider` when creating a file.
-    /// Deprecated: if needed implement a custom `TimeProvider`.
     #[deprecated]
     pub fn set_created(&mut self, date_time: DateTime) {
         if let Some(ref mut e) = self.entry {
@@ -159,7 +158,6 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     /// Sets date of last access for this file.
     ///
     /// Note: it is overwritten by a value from the `TimeProvider` on every file read operation.
-    /// Deprecated: if needed implement a custom `TimeProvider`.
     #[deprecated]
     pub fn set_accessed(&mut self, date: Date) {
         if let Some(ref mut e) = self.entry {
@@ -170,7 +168,6 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     /// Sets date and time of last modification for this file.
     ///
     /// Note: it is overwritten by a value from the `TimeProvider` on every file write operation.
-    /// Deprecated: if needed implement a custom `TimeProvider`.
     #[deprecated]
     pub fn set_modified(&mut self, date_time: DateTime) {
         if let Some(ref mut e) = self.entry {
