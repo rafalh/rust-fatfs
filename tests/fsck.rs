@@ -1,4 +1,4 @@
-#![cfg(target_os="linux")]
+#![cfg(target_os = "linux")]
 use fatfs::Write;
 
 const KB: u32 = 1024;
