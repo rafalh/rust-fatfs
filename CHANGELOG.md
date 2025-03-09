@@ -37,6 +37,7 @@ New features:
 * Disable chrono default features except `clock`
 * Use chrono naive types instead of deprecated `chrono::Date` (BREAKING CHANGE)
 * Add defaults for `FileSystem` generic parameters: `TP = DefaultTimeProvider`, `OCC = LossyOemCpConverter`
+* Structures `FsOptions`, `ChronoTimeProvider`, `NullTimeProvider` and `LossyOemCpConverter` now implement `Default` trait
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB
