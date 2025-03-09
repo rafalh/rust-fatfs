@@ -237,6 +237,7 @@ pub struct FsOptions<TP, OCC> {
     pub(crate) update_accessed_date: bool,
     pub(crate) oem_cp_converter: OCC,
     pub(crate) time_provider: TP,
+    pub(crate) strict: bool,
 }
 
 impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
@@ -247,6 +248,7 @@ impl FsOptions<DefaultTimeProvider, LossyOemCpConverter> {
             update_accessed_date: false,
             oem_cp_converter: LossyOemCpConverter::new(),
             time_provider: DefaultTimeProvider::new(),
+            strict: true,
         }
     }
 }
@@ -265,6 +267,7 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
             update_accessed_date: self.update_accessed_date,
             oem_cp_converter,
             time_provider: self.time_provider,
+            strict: self.strict,
         }
     }
 
@@ -274,6 +277,17 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
             update_accessed_date: self.update_accessed_date,
             oem_cp_converter: self.oem_cp_converter,
             time_provider,
+            strict: self.strict,
+        }
+    }
+
+    /// If enabled more validations are performed to check if file-system is conforming to specification.
+    pub fn strict(self, strict: bool) -> Self {
+        Self {
+            update_accessed_date: self.update_accessed_date,
+            oem_cp_converter: self.oem_cp_converter,
+            time_provider: self.time_provider,
+            strict,
         }
     }
 }
@@ -368,7 +382,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         // read boot sector
         let bpb = {
             let boot = BootSector::deserialize(&mut disk)?;
-            boot.validate()?;
+            boot.validate(options.strict)?;
             boot.bpb
         };
 
@@ -1149,7 +1163,7 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
 
     // Create boot sector, validate and write to storage device
     let (boot, fat_type) = format_boot_sector(&options, total_sectors)?;
-    if boot.validate::<S::Error>().is_err() {
+    if boot.validate::<S::Error>(true).is_err() {
         return Err(Error::InvalidInput);
     }
     boot.serialize(storage)?;

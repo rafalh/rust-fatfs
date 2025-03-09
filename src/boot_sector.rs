@@ -447,15 +447,15 @@ impl BootSector {
         Ok(())
     }
 
-    pub(crate) fn validate<E: IoError>(&self) -> Result<(), Error<E>> {
-        if self.boot_sig != [0x55, 0xAA] {
+    pub(crate) fn validate<E: IoError>(&self, strict: bool) -> Result<(), Error<E>> {
+        if strict && self.boot_sig != [0x55, 0xAA] {
             error!(
                 "Invalid boot sector signature: expected [0x55, 0xAA] but got {:?}",
                 self.boot_sig
             );
             return Err(Error::CorruptedFileSystem);
         }
-        if self.bootjmp[0] != 0xEB && self.bootjmp[0] != 0xE9 {
+        if strict && self.bootjmp[0] != 0xEB && self.bootjmp[0] != 0xE9 {
             warn!("Unknown opcode {:x} in bootjmp boot sector field", self.bootjmp[0]);
         }
         self.bpb.validate()?;
@@ -997,7 +997,7 @@ mod tests {
         for total_sectors in total_sectors_vec {
             let (boot, _) = format_boot_sector::<()>(&FormatVolumeOptions::new(), total_sectors)
                 .unwrap_or_else(|_| panic!("format_boot_sector total_sectors: {}", total_sectors));
-            boot.validate::<()>().expect("validate");
+            boot.validate::<()>(true).expect("validate");
         }
     }
 
