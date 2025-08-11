@@ -11,7 +11,8 @@ use crate::dir::{Dir, DirRawStream};
 use crate::dir_entry::{DirFileEntryData, FileAttributes, SFN_PADDING, SFN_SIZE};
 use crate::error::Error;
 use crate::file::File;
-use crate::io::{self, IoBase, Read, ReadLeExt, Seek, SeekFrom, Write, WriteLeExt};
+use crate::io::private::Sealed;
+use crate::io::{self, IoBase, Read, ReadFile, ReadLeExt, Seek, SeekFrom, Write, WriteFile, WriteLeExt};
 use crate::table::{
     alloc_cluster, count_free_clusters, format_fat, read_fat_flags, ClusterIterator, RESERVED_FAT_ENTRIES,
 };
@@ -706,23 +707,26 @@ pub(crate) struct FsIoAdapter<'a, IO: ReadWriteSeek, TP, OCC> {
     fs: &'a FileSystem<IO, TP, OCC>,
 }
 
+impl<IO: ReadWriteSeek, TP, OCC> Sealed for FsIoAdapter<'_, IO, TP, OCC> {}
+
 impl<IO: ReadWriteSeek, TP, OCC> IoBase for FsIoAdapter<'_, IO, TP, OCC> {
     type Error = IO::Error;
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Read for FsIoAdapter<'_, IO, TP, OCC> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        self.fs.disk.borrow_mut().read(buf)
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        self.fs.disk.borrow_mut().read_exact(buf)
     }
 }
 
 impl<IO: ReadWriteSeek, TP, OCC> Write for FsIoAdapter<'_, IO, TP, OCC> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        let size = self.fs.disk.borrow_mut().write(buf)?;
-        if size > 0 {
-            self.fs.set_dirty_flag(true)?;
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        if buf.is_empty() {
+            Ok(())
+        } else {
+            self.fs.disk.borrow_mut().write_all(buf)?;
+            self.fs.set_dirty_flag(true)
         }
-        Ok(size)
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
@@ -809,22 +813,31 @@ impl<B: Clone, S> Clone for DiskSlice<B, S> {
     }
 }
 
+impl<B, S: IoBase> Sealed for DiskSlice<B, S> {}
+
 impl<B, S: IoBase> IoBase for DiskSlice<B, S> {
     type Error = Error<S::Error>;
 }
 
-impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
+impl<B: BorrowMut<S>, S: Read + Seek> ReadFile for DiskSlice<B, S> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
         let read_size = (buf.len() as u64).min(self.size - self.offset) as usize;
         self.inner.borrow_mut().seek(SeekFrom::Start(offset))?;
-        let size = self.inner.borrow_mut().read(&mut buf[..read_size])?;
-        self.offset += size as u64;
-        Ok(size)
+        self.inner.borrow_mut().read_exact(&mut buf[..read_size])?;
+        self.offset += read_size as u64;
+        Ok(read_size)
     }
 }
 
-impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
+impl<B: BorrowMut<S>, S: Read + Seek> Read for DiskSlice<B, S> {
+    #[inline]
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+        <Self as ReadFile>::read_exact(self, buf)
+    }
+}
+
+impl<B: BorrowMut<S>, S: Write + Seek> WriteFile for DiskSlice<B, S> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let offset = self.begin + self.offset;
         let write_size = (buf.len() as u64).min(self.size - self.offset) as usize;
@@ -843,6 +856,18 @@ impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
 
     fn flush(&mut self) -> Result<(), Self::Error> {
         Ok(self.inner.borrow_mut().flush()?)
+    }
+}
+
+impl<B: BorrowMut<S>, S: Write + Seek> Write for DiskSlice<B, S> {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        <Self as WriteFile>::write_all(self, buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        <Self as WriteFile>::flush(self)
     }
 }
 
