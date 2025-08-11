@@ -282,6 +282,7 @@ impl<TP: TimeProvider, OCC: OemCpConverter> FsOptions<TP, OCC> {
     }
 
     /// If enabled more validations are performed to check if file-system is conforming to specification.
+    #[must_use]
     pub fn strict(self, strict: bool) -> Self {
         Self {
             update_accessed_date: self.update_accessed_date,
@@ -617,7 +618,7 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     }
 
     /// Returns a root directory object allowing for futher penetration of a filesystem structure.
-    pub fn root_dir(&self) -> Dir<IO, TP, OCC> {
+    pub fn root_dir(&self) -> Dir<'_, IO, TP, OCC> {
         trace!("root_dir");
         let root_rdr = {
             match self.fat_type {
