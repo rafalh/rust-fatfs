@@ -460,6 +460,12 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         self.bpb.cluster_size()
     }
 
+    /// Get sector size in bytes
+    #[must_use]
+    pub fn bytes_per_sector(&self) -> u16 {
+        self.bpb.bytes_per_sector()
+    }
+
     pub(crate) fn offset_from_cluster(&self, cluster: u32) -> u64 {
         self.offset_from_sector(self.sector_from_cluster(cluster))
     }

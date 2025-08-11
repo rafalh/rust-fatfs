@@ -42,6 +42,7 @@ New features:
 * Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
 * Change `open_dir` from recursion to loop
+* Expose `bytes_per_sector` and `first_cluster`
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB

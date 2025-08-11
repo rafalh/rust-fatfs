@@ -395,6 +395,10 @@ impl BiosParameterBlock {
         u32::from(self.sectors_per_cluster) * u32::from(self.bytes_per_sector)
     }
 
+    pub(crate) fn bytes_per_sector(&self) -> u16 {
+        self.bytes_per_sector
+    }
+
     pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {
         let cluster_size = u64::from(self.cluster_size());
         ((bytes + cluster_size - 1) / cluster_size) as u32
