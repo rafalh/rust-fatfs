@@ -217,7 +217,7 @@ where
             fat.write_u32_le(u32::from(media) | 0xFFF_FF00)?;
             fat.write_u32_le(0xFFFF_FFFF)?;
         }
-    };
+    }
     // mark entries at the end of FAT as used (after FAT but before sector end)
     let start_cluster = total_clusters + RESERVED_FAT_ENTRIES;
     let end_cluster = (bytes_per_fat * BITS_PER_BYTE / u64::from(fat_type.bits_per_fat_entry())) as u32;
@@ -531,7 +531,7 @@ impl FatTrait for Fat32 {
                 "cluster number {} is a special value in FAT to indicate {}; it should never be set as free",
                 cluster, tmp
             );
-        };
+        }
         let raw_val = match value {
             FatValue::Free => 0,
             FatValue::Bad => 0x0FFF_FFF7,
