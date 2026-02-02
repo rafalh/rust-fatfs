@@ -22,6 +22,14 @@ fn test_fsck_1mb() {
     )
     .expect("format volume");
 
+    let fsck_status = std::process::Command::new("fsck.vfat")
+        .args(&["-y", "/tmp/test.img"])
+        .spawn()
+        .expect("spawn fsck")
+        .wait()
+        .expect("wait on fsck");
+    assert!(fsck_status.success(), "fsck was not successful ({fsck_status:?})");
+
     let fs = fatfs::FileSystem::new(image, fatfs::FsOptions::new()).expect("open fs");
     fs.root_dir().create_dir("dir1").expect("create dir1");
     fs.root_dir()
@@ -39,7 +47,7 @@ fn test_fsck_1mb() {
     core::mem::drop(fs);
 
     let fsck_status = std::process::Command::new("fsck.vfat")
-        .args(&["-n", "/tmp/test.img"])
+        .args(&["-y", "/tmp/test.img"])
         .spawn()
         .expect("spawn fsck")
         .wait()
