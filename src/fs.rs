@@ -1173,16 +1173,6 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
 
     let bpb = &boot.bpb;
     if bpb.is_fat32() {
-        // FSInfo sector
-        let fs_info_sector = FsInfoSector {
-            free_cluster_count: None,
-            next_free_cluster: None,
-            dirty: false,
-        };
-        storage.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
-        fs_info_sector.serialize(storage)?;
-        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
-
         // backup boot sector
         storage.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.backup_boot_sector())))?;
         boot.serialize(storage)?;
@@ -1220,6 +1210,16 @@ pub fn format_volume<S: ReadWriteSeek>(storage: &mut S, options: FormatVolumeOpt
         let fat32_root_dir_pos = bpb.bytes_from_sectors(fat32_root_dir_first_sector);
         storage.seek(SeekFrom::Start(fat32_root_dir_pos))?;
         write_zeros(storage, u64::from(bpb.cluster_size()))?;
+
+        let free_cluster_count = bpb.total_clusters() - 1;
+        let fs_info_sector = FsInfoSector {
+            free_cluster_count: Some(free_cluster_count),
+            next_free_cluster: Some(root_dir_first_cluster + 1),
+            dirty: false,
+        };
+        storage.seek(SeekFrom::Start(bpb.bytes_from_sectors(bpb.fs_info_sector())))?;
+        fs_info_sector.serialize(storage)?;
+        write_zeros_until_end_of_sector(storage, bytes_per_sector)?;
     }
 
     // Create volume label directory entry if volume label is specified in options
