@@ -47,3 +47,4 @@ chrono = { version = "0.4", default-features = false, features = ["clock"], opti
 [dev-dependencies]
 env_logger = "0.9"
 fscommon = "0.1"
+tempfile = "3.24.0"
