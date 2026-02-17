@@ -58,6 +58,13 @@ fn test_fsck_1mb_fat12() {
 }
 
 #[test]
+fn test_fsck_33mb_fat16() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    create_and_fsck_image(FatType::Fat16, 33 * MB);
+}
+
+#[test]
 fn test_fsck_33mb_fat32() {
     let _ = env_logger::builder().is_test(true).try_init();
 
