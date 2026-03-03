@@ -22,6 +22,8 @@ jobs:
     env:
       RUST_LOG: warn
       RUST_BACKTRACE: 1
+      # Needed before Rust 1.70 for faster index download
+      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
