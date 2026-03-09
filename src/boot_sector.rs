@@ -245,7 +245,7 @@ impl BiosParameterBlock {
         }
         if self.total_sectors_16 != 0
             && self.total_sectors_32 != 0
-            && self.total_sectors_16 as u32 != self.total_sectors_32
+            && u32::from(self.total_sectors_16) != self.total_sectors_32
         {
             error!("Invalid BPB: total_sectors_16 and total_sectors_32 are non-zero and have conflicting values");
             return Err(Error::CorruptedFileSystem);
@@ -393,6 +393,10 @@ impl BiosParameterBlock {
 
     pub(crate) fn cluster_size(&self) -> u32 {
         u32::from(self.sectors_per_cluster) * u32::from(self.bytes_per_sector)
+    }
+
+    pub(crate) fn bytes_per_sector(&self) -> u16 {
+        self.bytes_per_sector
     }
 
     pub(crate) fn clusters_from_bytes(&self, bytes: u64) -> u32 {

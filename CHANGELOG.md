@@ -41,6 +41,8 @@ New features:
 * Undeprecate `set_created`, `set_accessed`, `set_modified` methods on `File` - there are scenarios where those methods are needed
 * Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
+* Change `open_dir` from recursion to loop
+* Expose `bytes_per_sector` and `first_cluster`
 
 Bug fixes:
 * Fix formatting volumes with size in range 4096-4199 KB
@@ -48,6 +50,7 @@ Bug fixes:
 * Fill FAT32 root directory clusters with zeros after allocation to avoid interpreting old data as directory entries
 * Put '.' and '..' in the first two directory entries. (fixes "Expected a valid '.' entry in this slot." fsck error)
 * Set the cluster number to 0 in the ".." directory entry if it points to the root dir
+* Flush on unmount
 
 0.3.4 (2020-07-20)
 ------------------
