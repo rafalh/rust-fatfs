@@ -24,7 +24,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install toolchain
         run: |
