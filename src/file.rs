@@ -75,7 +75,7 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
             debug_assert!(self.offset > 0);
             self.fs.truncate_cluster_chain(current_cluster)
         } else {
-            debug_assert!(self.offset == 0);
+            debug_assert_eq!(self.offset, 0);
             if let Some(n) = self.first_cluster {
                 self.fs.free_cluster_chain(n)?;
                 self.first_cluster = None;

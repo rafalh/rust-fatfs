@@ -185,7 +185,7 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
                 Err(err) => return Err(err),
                 // directory already exists - return it
                 Ok(e) => return Ok(DirEntryOrShortName::DirEntry(e)),
-            };
+            }
             // try to generate short name
             if let Ok(name) = short_name_gen.generate() {
                 return Ok(DirEntryOrShortName::ShortName(name));

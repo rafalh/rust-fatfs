@@ -314,7 +314,7 @@ impl DirLfnEntryData {
     }
 
     pub(crate) fn copy_name_to_slice(&self, lfn_part: &mut [u16]) {
-        debug_assert!(lfn_part.len() == LFN_PART_LEN);
+        debug_assert_eq!(lfn_part.len(), LFN_PART_LEN);
         lfn_part[0..5].copy_from_slice(&self.name_0);
         lfn_part[5..11].copy_from_slice(&self.name_1);
         lfn_part[11..13].copy_from_slice(&self.name_2);
