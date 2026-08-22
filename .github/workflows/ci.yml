@@ -15,15 +15,13 @@ jobs:
           - rust_version: nightly
             run_tests: true
           # Minimal supported rustc version
-          - rust_version: 1.68.0
+          - rust_version: 1.71.0
             run_tests: false
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.rust_version == 'nightly' }}
     env:
       RUST_LOG: warn
       RUST_BACKTRACE: 1
-      # Needed before Rust 1.70 for faster index download
-      CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
