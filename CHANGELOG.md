@@ -43,6 +43,7 @@ New features:
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
 
 Bug fixes:
+* Fix panic when a file name starts with a multibyte UTF-8 character
 * Fix formatting volumes with size in range 4096-4199 KB
 * Always respect `fat_type` from `FormatVolumeOptions`
 * Fill FAT32 root directory clusters with zeros after allocation to avoid interpreting old data as directory entries

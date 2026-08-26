@@ -1072,7 +1072,7 @@ impl ShortNameGenerator {
         let mut short_name = [SFN_PADDING; SFN_SIZE];
         // find extension after last dot
         // Note: short file name cannot start with the extension
-        let dot_index_opt = name[1..].rfind('.').map(|index| index + 1);
+        let dot_index_opt = name.rfind('.').filter(|index| *index != 0);
         // copy basename (part of filename before a dot)
         let basename_src = dot_index_opt.map_or(name, |dot_index| &name[..dot_index]);
         let (basename_len, basename_fits, basename_lossy) =
@@ -1288,6 +1288,14 @@ mod tests {
             Some(*b"BASHRC~1SWP")
         );
         assert_eq!(ShortNameGenerator::new(".foo").generate().ok(), Some(*b"FOO~1      "));
+    }
+
+    #[test]
+    fn test_generate_short_name_multibyte() {
+        assert_eq!(
+            ShortNameGenerator::new("日本語.txt").generate().ok(),
+            Some(*b"___~1   TXT")
+        );
     }
 
     #[test]
