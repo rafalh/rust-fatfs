@@ -336,6 +336,35 @@ fn test_rename_file_fat32() {
     call_with_fs(test_rename_file, FAT32_IMG, 6)
 }
 
+fn test_rename_dir(fs: FileSystem) {
+    let root_dir = fs.root_dir();
+    root_dir.create_dir("rename-source").unwrap();
+    let destination = root_dir.create_dir("rename-destination").unwrap();
+
+    root_dir.rename("rename-source", &destination, "moved").unwrap();
+    let parent = destination.open_dir("moved/..").unwrap();
+    assert!(parent.open_dir("moved").is_ok());
+
+    destination.rename("moved", &root_dir, "moved-back").unwrap();
+    let parent = root_dir.open_dir("moved-back/..").unwrap();
+    assert!(parent.open_dir("moved-back").is_ok());
+}
+
+#[test]
+fn test_rename_dir_fat12() {
+    call_with_fs(test_rename_dir, FAT12_IMG, 9)
+}
+
+#[test]
+fn test_rename_dir_fat16() {
+    call_with_fs(test_rename_dir, FAT16_IMG, 9)
+}
+
+#[test]
+fn test_rename_dir_fat32() {
+    call_with_fs(test_rename_dir, FAT32_IMG, 9)
+}
+
 fn test_dirty_flag(tmp_path: &str) {
     // Open filesystem, make change, and forget it - should become dirty
     let fs = open_filesystem_rw(tmp_path);

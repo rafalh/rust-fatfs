@@ -610,6 +610,12 @@ impl<'a, IO: ReadWriteSeek, TP, OCC: OemCpConverter> DirEntry<'a, IO, TP, OCC> {
         self.data.first_cluster(self.fs.fat_type())
     }
 
+    pub(crate) fn set_first_cluster(&self, first_cluster: Option<u32>) -> Result<(), IO::Error> {
+        let mut editor = self.editor();
+        editor.set_first_cluster(first_cluster, self.fs.fat_type());
+        editor.flush(self.fs)
+    }
+
     fn editor(&self) -> DirEntryEditor {
         DirEntryEditor::new(self.data.clone(), self.entry_pos)
     }

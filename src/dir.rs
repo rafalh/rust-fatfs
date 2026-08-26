@@ -458,6 +458,16 @@ impl<'a, IO: ReadWriteSeek, TP: TimeProvider, OCC: OemCpConverter> Dir<'a, IO, T
         // save new directory entry
         let sfn_entry = e.data.renamed(short_name);
         dst_dir.write_entry(dst_name, sfn_entry)?;
+        if e.is_dir() {
+            let parent_cluster = if dst_dir.stream.is_root_dir() {
+                None
+            } else {
+                dst_dir.stream.first_cluster()
+            };
+            e.to_dir()
+                .find_entry("..", Some(true), None)?
+                .set_first_cluster(parent_cluster)?;
+        }
         Ok(())
     }
 
