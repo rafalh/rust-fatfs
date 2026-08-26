@@ -1287,7 +1287,6 @@ mod tests {
             ShortNameGenerator::new(".bashrc.swp").generate().ok(),
             Some(*b"BASHRC~1SWP")
         );
-        assert_eq!(ShortNameGenerator::new(".foo").generate().ok(), Some(*b"FOO~1      "));
     }
 
     #[test]
@@ -1296,6 +1295,11 @@ mod tests {
             ShortNameGenerator::new("日本語.txt").generate().ok(),
             Some(*b"___~1   TXT")
         );
+    }
+
+    #[test]
+    fn test_generate_short_name_leading_dot() {
+        assert_eq!(ShortNameGenerator::new(".foo").generate().ok(), Some(*b"FOO~1      "));
     }
 
     #[test]
