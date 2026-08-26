@@ -1268,7 +1268,39 @@ impl ShortNameGenerator {
 
 #[cfg(test)]
 mod tests {
+    use std::io as std_io;
+
+    use fscommon::BufStream;
+
     use super::*;
+    use crate::{format_volume, FatType, FormatVolumeOptions, FsOptions, StdIoWrapper};
+
+    #[test]
+    fn test_rename_dir_updates_dotdot_cluster() {
+        for (fat_type, total_bytes) in [
+            (FatType::Fat12, 2 * 1024 * 1024),
+            (FatType::Fat16, 16 * 1024 * 1024),
+            (FatType::Fat32, 64 * 1024 * 1024),
+        ] {
+            let storage = std_io::Cursor::new(vec![0; total_bytes]);
+            let mut storage = StdIoWrapper::from(BufStream::new(storage));
+            format_volume(&mut storage, FormatVolumeOptions::new().fat_type(fat_type)).unwrap();
+            let fs = FileSystem::new(storage, FsOptions::new()).unwrap();
+            let root_dir = fs.root_dir();
+            root_dir.create_dir("rename-source").unwrap();
+            let destination = root_dir.create_dir("rename-destination").unwrap();
+
+            root_dir.rename("rename-source", &destination, "moved").unwrap();
+            let moved = destination.open_dir("moved").unwrap();
+            let dotdot = moved.find_entry("..", Some(true), None).unwrap();
+            assert_eq!(dotdot.first_cluster(), destination.stream.first_cluster());
+
+            destination.rename("moved", &root_dir, "moved-back").unwrap();
+            let moved_back = root_dir.open_dir("moved-back").unwrap();
+            let dotdot = moved_back.find_entry("..", Some(true), None).unwrap();
+            assert_eq!(dotdot.first_cluster(), None);
+        }
+    }
 
     #[test]
     fn test_split_path() {
