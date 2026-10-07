@@ -387,3 +387,53 @@ fn test_multiple_files_in_directory_fat16() {
 fn test_multiple_files_in_directory_fat32() {
     call_with_fs(test_multiple_files_in_directory, FAT32_IMG)
 }
+
+fn test_set_attributes(fs: FileSystem) {
+    let root_dir = fs.root_dir();
+    let mut file = root_dir.create_file("attrs.txt").unwrap();
+    assert_eq!(file.attributes(), fatfs::FileAttributes::empty());
+    file.write_all(TEST_STR.as_bytes()).unwrap();
+    file.set_attributes(
+        fatfs::FileAttributes::READ_ONLY | fatfs::FileAttributes::HIDDEN | fatfs::FileAttributes::SYSTEM,
+    );
+    drop(file);
+    let entry = root_dir
+        .iter()
+        .map(Result::unwrap)
+        .find(|e| e.file_name() == "attrs.txt")
+        .unwrap();
+    assert_eq!(
+        entry.attributes(),
+        fatfs::FileAttributes::READ_ONLY | fatfs::FileAttributes::HIDDEN | fatfs::FileAttributes::SYSTEM
+    );
+    // The directory and volume label bits cannot be set or cleared.
+    let mut file = root_dir.open_file("attrs.txt").unwrap();
+    file.set_attributes(fatfs::FileAttributes::DIRECTORY | fatfs::FileAttributes::ARCHIVE);
+    drop(file);
+    let entry = root_dir
+        .iter()
+        .map(Result::unwrap)
+        .find(|e| e.file_name() == "attrs.txt")
+        .unwrap();
+    assert_eq!(entry.attributes(), fatfs::FileAttributes::ARCHIVE);
+    assert!(entry.is_file());
+    // The contents are not touched.
+    let mut buf = Vec::new();
+    entry.to_file().read_to_end(&mut buf).unwrap();
+    assert_eq!(TEST_STR, str::from_utf8(&buf).unwrap());
+}
+
+#[test]
+fn test_set_attributes_fat12() {
+    call_with_fs(test_set_attributes, FAT12_IMG, 9)
+}
+
+#[test]
+fn test_set_attributes_fat16() {
+    call_with_fs(test_set_attributes, FAT16_IMG, 9)
+}
+
+#[test]
+fn test_set_attributes_fat32() {
+    call_with_fs(test_set_attributes, FAT32_IMG, 9)
+}
