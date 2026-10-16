@@ -5,7 +5,6 @@ use fatfs::{FatType, Write};
 const KB: u32 = 1024;
 const MB: u32 = KB * 1024;
 
-#[cfg(target_os = "macos")]
 fn find_fsck_command(img_path: &str) -> Option<Command> {
     let fsck_names = &["fsck.vfat", "fsck_msdos"];
     for name in fsck_names {
