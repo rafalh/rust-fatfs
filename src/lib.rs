@@ -16,7 +16,8 @@
 //! use std::io::prelude::*;
 //!
 //! fn main() -> std::io::Result<()> {
-//!     # std::fs::copy("resources/fat16.img", "tmp/fat.img")?;
+//!     std::fs::create_dir("tmp");
+//!     std::fs::copy("resources/fat16.img", "tmp/fat.img").expect("copy");
 //!     // Initialize a filesystem object
 //!     let img_file = std::fs::OpenOptions::new().read(true).write(true)
 //!         .open("tmp/fat.img")?;

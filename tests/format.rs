@@ -1,27 +1,16 @@
-use std::io;
+mod common;
+
 use std::io::prelude::*;
 
-use fatfs::{FatType, StdIoWrapper};
-use fscommon::BufStream;
+use fatfs::FatType;
 
-const KB: u64 = 1024;
-const MB: u64 = KB * 1024;
+use crate::common::{create_temp_fs, init_logger, MemBackedFs as FileSystem, MB};
+
 const TEST_STR: &str = "Hi there Rust programmer!\n";
-
-type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<io::Cursor<Vec<u8>>>>>;
-
-fn init_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
 
 fn format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
     init_logger();
-    // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
-    let storage_vec: Vec<u8> = vec![0xD1_u8; total_bytes as usize];
-    let storage_cur = io::Cursor::new(storage_vec);
-    let mut buffered_stream = fatfs::StdIoWrapper::from(BufStream::new(storage_cur));
-    fatfs::format_volume(&mut buffered_stream, opts).expect("format volume");
-    fatfs::FileSystem::new(buffered_stream, fatfs::FsOptions::new()).expect("open fs")
+    create_temp_fs(opts, total_bytes)
 }
 
 fn basic_fs_test(fs: &FileSystem) {
@@ -163,7 +152,7 @@ fn test_zero_root_dir_clusters() {
 fn test_format_hidden_sectors() {
     init_logger();
     for (fat_type, total_bytes) in [(FatType::Fat16, 64 * MB), (FatType::Fat32, 64 * MB)] {
-        let storage = io::Cursor::new(vec![0_u8; total_bytes as usize]);
+        let storage = std::io::Cursor::new(vec![0_u8; total_bytes as usize]);
         let mut stream = fatfs::StdIoWrapper::from(storage);
         let opts = fatfs::FormatVolumeOptions::new()
             .fat_type(fat_type)
@@ -175,7 +164,43 @@ fn test_format_hidden_sectors() {
         if fat_type == FatType::Fat32 {
             assert_eq!(disk[6 * 512 + 0x1C..6 * 512 + 0x20], 2048_u32.to_le_bytes());
         }
-        let fs = fatfs::FileSystem::new(io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
+        let fs = fatfs::FileSystem::new(std::io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
         assert_eq!(fs.fat_type(), fat_type);
     }
+}
+
+#[test]
+fn test_format_reserved_sectors() {
+    init_logger();
+    for (fat_type, reserved_sectors) in [(FatType::Fat16, 4_u16), (FatType::Fat32, 32)] {
+        let storage = std::io::Cursor::new(vec![0_u8; 64 * MB as usize]);
+        let mut stream = fatfs::StdIoWrapper::from(storage);
+        let opts = fatfs::FormatVolumeOptions::new()
+            .fat_type(fat_type)
+            .reserved_sectors(reserved_sectors);
+        fatfs::format_volume(&mut stream, opts).expect("format volume");
+        let disk = stream.into_inner().into_inner();
+        // BPB_RsvdSecCnt, at offset 0x0E of the boot sector (and of its backup copy on FAT32)
+        assert_eq!(disk[0x0E..0x10], reserved_sectors.to_le_bytes());
+        if fat_type == FatType::Fat32 {
+            assert_eq!(disk[6 * 512 + 0x0E..6 * 512 + 0x10], reserved_sectors.to_le_bytes());
+        }
+        // the first FAT starts right after them, with the media byte in its first entry
+        assert_eq!(disk[usize::from(reserved_sectors) * 512], 0xF8);
+        let fs = fatfs::FileSystem::new(std::io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
+        assert_eq!(fs.fat_type(), fat_type);
+        let mut file = fs.root_dir().create_file("test.txt").expect("create file");
+        file.write_all(TEST_STR.as_bytes()).expect("write file");
+    }
+}
+
+#[test]
+fn test_format_too_few_reserved_sectors() {
+    init_logger();
+    let storage = std::io::Cursor::new(vec![0_u8; 64 * MB as usize]);
+    let mut stream = fatfs::StdIoWrapper::from(storage);
+    let opts = fatfs::FormatVolumeOptions::new()
+        .fat_type(FatType::Fat32)
+        .reserved_sectors(4);
+    assert!(fatfs::format_volume(&mut stream, opts).is_err());
 }
