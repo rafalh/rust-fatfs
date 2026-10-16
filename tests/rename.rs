@@ -1,21 +1,19 @@
-use std::io as std_io;
+mod common;
 
-use fscommon::BufStream;
+use fatfs::{FatType, FormatVolumeOptions};
 
-use fatfs::*;
-use fatfs::{format_volume, FatType, FormatVolumeOptions, FsOptions, StdIoWrapper};
+use crate::common::{create_temp_fs, init_logger};
 
 #[test]
 fn test_rename_dir_updates_dotdot_cluster() {
+    init_logger();
     for (fat_type, total_bytes) in [
         (FatType::Fat12, 2 * 1024 * 1024),
         (FatType::Fat16, 16 * 1024 * 1024),
         (FatType::Fat32, 64 * 1024 * 1024),
     ] {
-        let storage = std_io::Cursor::new(vec![0; total_bytes]);
-        let mut storage = StdIoWrapper::from(BufStream::new(storage));
-        format_volume(&mut storage, FormatVolumeOptions::new().fat_type(fat_type)).unwrap();
-        let fs = FileSystem::new(storage, FsOptions::new()).unwrap();
+        let fs = create_temp_fs(FormatVolumeOptions::new().fat_type(fat_type), total_bytes);
+
         let root_dir = fs.root_dir();
         root_dir.create_dir("rename-source").unwrap();
         let destination = root_dir.create_dir("rename-destination").unwrap();
