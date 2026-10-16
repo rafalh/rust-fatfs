@@ -149,6 +149,27 @@ fn test_zero_root_dir_clusters() {
 }
 
 #[test]
+fn test_format_hidden_sectors() {
+    init_logger();
+    for (fat_type, total_bytes) in [(FatType::Fat16, 64 * MB), (FatType::Fat32, 64 * MB)] {
+        let storage = std::io::Cursor::new(vec![0_u8; total_bytes as usize]);
+        let mut stream = fatfs::StdIoWrapper::from(storage);
+        let opts = fatfs::FormatVolumeOptions::new()
+            .fat_type(fat_type)
+            .hidden_sectors(2048);
+        fatfs::format_volume(&mut stream, opts).expect("format volume");
+        let disk = stream.into_inner().into_inner();
+        // BPB_HiddSec, at offset 0x1C of the boot sector (and of its backup copy on FAT32)
+        assert_eq!(disk[0x1C..0x20], 2048_u32.to_le_bytes());
+        if fat_type == FatType::Fat32 {
+            assert_eq!(disk[6 * 512 + 0x1C..6 * 512 + 0x20], 2048_u32.to_le_bytes());
+        }
+        let fs = fatfs::FileSystem::new(std::io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
+        assert_eq!(fs.fat_type(), fat_type);
+    }
+}
+
+#[test]
 fn test_format_reserved_sectors() {
     init_logger();
     for (fat_type, reserved_sectors) in [(FatType::Fat16, 4_u16), (FatType::Fat32, 32)] {

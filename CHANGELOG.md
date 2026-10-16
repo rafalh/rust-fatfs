@@ -28,6 +28,8 @@ New features:
 * Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
 * Fix creating directory entries when `lfn` feature is enabled and `alloc` feature is disabled
 * Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
+* Add `FormatVolumeOptions::hidden_sectors` to format a volume that starts after the first sector of a disk, such as
+  a partition, for the BIOS boot code that reads it.
 * Add `FormatVolumeOptions::reserved_sectors` to format a FAT32 volume with Microsoft's 32 reserved sectors, which
   the boot code of Windows NT needs.
 * Add `File::attributes` and `File::set_attributes` to read and change the read-only, hidden, system and archive

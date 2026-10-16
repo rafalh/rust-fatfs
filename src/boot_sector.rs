@@ -763,7 +763,7 @@ fn format_bpb<E: IoError>(
         sectors_per_fat_16,
         sectors_per_track: options.sectors_per_track,
         heads: options.heads,
-        hidden_sectors: 0,
+        hidden_sectors: options.hidden_sectors,
         total_sectors_32,
         // FAT32 fields start
         sectors_per_fat_32,

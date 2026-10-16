@@ -962,6 +962,7 @@ pub struct FormatVolumeOptions {
     pub(crate) sectors_per_track: u16,
     pub(crate) heads: u16,
     pub(crate) drive_num: Option<u8>,
+    pub(crate) hidden_sectors: u32,
     pub(crate) reserved_sectors: Option<u16>,
     pub(crate) volume_id: u32,
     pub(crate) volume_label: Option<[u8; SFN_SIZE]>,
@@ -980,6 +981,7 @@ impl Default for FormatVolumeOptions {
             sectors_per_track: 0x20,
             heads: 0x40,
             drive_num: None,
+            hidden_sectors: 0,
             reserved_sectors: None,
             volume_id: 0x1234_5678,
             volume_label: None,
@@ -1115,6 +1117,17 @@ impl FormatVolumeOptions {
     #[must_use]
     pub fn drive_num(mut self, drive_num: u8) -> Self {
         self.drive_num = Some(drive_num);
+        self
+    }
+
+    /// Set the number of hidden sectors for Bios Parameters Block: the sectors on the disk before
+    /// the volume, i.e. the start of its partition.
+    ///
+    /// Boot code that loads the operating system through the BIOS reads it to find the volume, so
+    /// it must be the partition's first sector on a bootable partition. Default is `0`.
+    #[must_use]
+    pub fn hidden_sectors(mut self, hidden_sectors: u32) -> Self {
+        self.hidden_sectors = hidden_sectors;
         self
     }
 
