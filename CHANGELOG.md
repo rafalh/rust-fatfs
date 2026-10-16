@@ -44,6 +44,7 @@ New features:
 * Bump the `env_logger` dev-dependency to 0.11.
 
 Bug fixes:
+* Update the `..` entry when moving a directory to a different parent
 * Fix panic when a file name starts with a multibyte UTF-8 character
 * Fix formatting volumes with size in range 4096-4199 KB
 * Always respect `fat_type` from `FormatVolumeOptions`
