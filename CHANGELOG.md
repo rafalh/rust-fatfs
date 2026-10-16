@@ -41,9 +41,11 @@ New features:
 * Undeprecate `set_created`, `set_accessed`, `set_modified` methods on `File` - there are scenarios where those methods are needed
 * Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
+* Bump the `env_logger` dev-dependency to 0.11.
 
 Bug fixes:
 * Update the `..` entry when moving a directory to a different parent
+* Fix panic when a file name starts with a multibyte UTF-8 character
 * Fix formatting volumes with size in range 4096-4199 KB
 * Always respect `fat_type` from `FormatVolumeOptions`
 * Fill FAT32 root directory clusters with zeros after allocation to avoid interpreting old data as directory entries
