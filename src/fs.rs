@@ -359,6 +359,11 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// image (e.g. partition) library user should wrap the file struct in a struct limiting
     /// access to partition bytes only e.g. `fscommon::StreamSlice`.
     ///
+    /// It is strongly recommended to use buffered I/O with `storage`.
+    /// This library frequently performs small read and write operations; passing an
+    /// unbuffered storage implementation will result in severe performance degradation.
+    /// Because I/O buffering strategies are often OS-dependent, buffering is left to the caller.
+    ///
     /// Note: creating multiple filesystem objects with a single underlying storage can
     /// cause a filesystem corruption.
     ///
