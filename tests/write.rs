@@ -1,45 +1,29 @@
-use std::fs;
+mod common;
+
 use std::io;
 use std::io::prelude::*;
 use std::mem;
 use std::str;
 
-use fatfs::{FsOptions, StdIoWrapper};
-use fscommon::BufStream;
+use tempfile::TempPath;
 
-const FAT12_IMG: &str = "fat12.img";
-const FAT16_IMG: &str = "fat16.img";
-const FAT32_IMG: &str = "fat32.img";
-const IMG_DIR: &str = "resources";
-const TMP_DIR: &str = "tmp";
+use crate::common::{
+    copy_fs_img, init_logger, open_fs_rw, FileBackedFs as FileSystem, FAT12_IMG, FAT16_IMG, FAT32_IMG,
+};
+
 const TEST_STR: &str = "Hi there Rust programmer!\n";
 const TEST_STR2: &str = "Rust is cool!\n";
 
-type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<fs::File>>>;
-
-fn call_with_tmp_img<F: Fn(&str)>(f: F, filename: &str, test_seq: u32) {
-    let _ = env_logger::builder().is_test(true).try_init();
-    let img_path = format!("{}/{}", IMG_DIR, filename);
-    let tmp_path = format!("{}/{}-{}", TMP_DIR, test_seq, filename);
-    fs::create_dir(TMP_DIR).ok();
-    fs::copy(img_path, &tmp_path).unwrap();
-    f(tmp_path.as_str());
-    fs::remove_file(tmp_path).unwrap();
+fn call_with_tmp_img<F: Fn(TempPath)>(f: F, filename: &str) {
+    let tmp_path = copy_fs_img(filename);
+    f(tmp_path);
 }
 
-fn open_filesystem_rw(tmp_path: &str) -> FileSystem {
-    let file = fs::OpenOptions::new().read(true).write(true).open(tmp_path).unwrap();
-    let buf_file = BufStream::new(file);
-    let options = FsOptions::new().update_accessed_date(true);
-    FileSystem::new(buf_file, options).unwrap()
-}
-
-fn call_with_fs<F: Fn(FileSystem)>(f: F, filename: &str, test_seq: u32) {
-    let callback = |tmp_path: &str| {
-        let fs = open_filesystem_rw(tmp_path);
-        f(fs);
-    };
-    call_with_tmp_img(callback, filename, test_seq);
+fn call_with_fs<F: Fn(FileSystem)>(f: F, filename: &str) {
+    init_logger();
+    let tmp_path = copy_fs_img(filename);
+    let fs = open_fs_rw(&tmp_path);
+    f(fs);
 }
 
 fn test_write_short_file(fs: FileSystem) {
@@ -55,17 +39,17 @@ fn test_write_short_file(fs: FileSystem) {
 
 #[test]
 fn test_write_file_fat12() {
-    call_with_fs(test_write_short_file, FAT12_IMG, 1)
+    call_with_fs(test_write_short_file, FAT12_IMG)
 }
 
 #[test]
 fn test_write_file_fat16() {
-    call_with_fs(test_write_short_file, FAT16_IMG, 1)
+    call_with_fs(test_write_short_file, FAT16_IMG)
 }
 
 #[test]
 fn test_write_file_fat32() {
-    call_with_fs(test_write_short_file, FAT32_IMG, 1)
+    call_with_fs(test_write_short_file, FAT32_IMG)
 }
 
 fn test_write_long_file(fs: FileSystem) {
@@ -88,17 +72,17 @@ fn test_write_long_file(fs: FileSystem) {
 
 #[test]
 fn test_write_long_file_fat12() {
-    call_with_fs(test_write_long_file, FAT12_IMG, 2)
+    call_with_fs(test_write_long_file, FAT12_IMG)
 }
 
 #[test]
 fn test_write_long_file_fat16() {
-    call_with_fs(test_write_long_file, FAT16_IMG, 2)
+    call_with_fs(test_write_long_file, FAT16_IMG)
 }
 
 #[test]
 fn test_write_long_file_fat32() {
-    call_with_fs(test_write_long_file, FAT32_IMG, 2)
+    call_with_fs(test_write_long_file, FAT32_IMG)
 }
 
 fn test_remove(fs: FileSystem) {
@@ -121,17 +105,17 @@ fn test_remove(fs: FileSystem) {
 
 #[test]
 fn test_remove_fat12() {
-    call_with_fs(test_remove, FAT12_IMG, 3)
+    call_with_fs(test_remove, FAT12_IMG)
 }
 
 #[test]
 fn test_remove_fat16() {
-    call_with_fs(test_remove, FAT16_IMG, 3)
+    call_with_fs(test_remove, FAT16_IMG)
 }
 
 #[test]
 fn test_remove_fat32() {
-    call_with_fs(test_remove, FAT32_IMG, 3)
+    call_with_fs(test_remove, FAT32_IMG)
 }
 
 fn test_create_file(fs: FileSystem) {
@@ -188,17 +172,17 @@ fn test_create_file(fs: FileSystem) {
 
 #[test]
 fn test_create_file_fat12() {
-    call_with_fs(test_create_file, FAT12_IMG, 4)
+    call_with_fs(test_create_file, FAT12_IMG)
 }
 
 #[test]
 fn test_create_file_fat16() {
-    call_with_fs(test_create_file, FAT16_IMG, 4)
+    call_with_fs(test_create_file, FAT16_IMG)
 }
 
 #[test]
 fn test_create_file_fat32() {
-    call_with_fs(test_create_file, FAT32_IMG, 4)
+    call_with_fs(test_create_file, FAT32_IMG)
 }
 
 fn test_create_dir(fs: FileSystem) {
@@ -260,17 +244,17 @@ fn test_create_dir(fs: FileSystem) {
 
 #[test]
 fn test_create_dir_fat12() {
-    call_with_fs(test_create_dir, FAT12_IMG, 5)
+    call_with_fs(test_create_dir, FAT12_IMG)
 }
 
 #[test]
 fn test_create_dir_fat16() {
-    call_with_fs(test_create_dir, FAT16_IMG, 5)
+    call_with_fs(test_create_dir, FAT16_IMG)
 }
 
 #[test]
 fn test_create_dir_fat32() {
-    call_with_fs(test_create_dir, FAT32_IMG, 5)
+    call_with_fs(test_create_dir, FAT32_IMG)
 }
 
 fn test_rename_file(fs: FileSystem) {
@@ -323,35 +307,35 @@ fn test_rename_file(fs: FileSystem) {
 
 #[test]
 fn test_rename_file_fat12() {
-    call_with_fs(test_rename_file, FAT12_IMG, 6)
+    call_with_fs(test_rename_file, FAT12_IMG)
 }
 
 #[test]
 fn test_rename_file_fat16() {
-    call_with_fs(test_rename_file, FAT16_IMG, 6)
+    call_with_fs(test_rename_file, FAT16_IMG)
 }
 
 #[test]
 fn test_rename_file_fat32() {
-    call_with_fs(test_rename_file, FAT32_IMG, 6)
+    call_with_fs(test_rename_file, FAT32_IMG)
 }
 
-fn test_dirty_flag(tmp_path: &str) {
+fn test_dirty_flag(tmp_path: TempPath) {
     // Open filesystem, make change, and forget it - should become dirty
-    let fs = open_filesystem_rw(tmp_path);
+    let fs = open_fs_rw(&tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
     assert!(!status_flags.dirty());
     assert!(!status_flags.io_error());
     fs.root_dir().create_file("abc.txt").unwrap();
     mem::forget(fs);
     // Check if volume is dirty now
-    let fs = open_filesystem_rw(tmp_path);
+    let fs = open_fs_rw(&tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
     assert!(status_flags.dirty());
     assert!(!status_flags.io_error());
     fs.unmount().unwrap();
     // Make sure remounting does not clear the dirty flag
-    let fs = open_filesystem_rw(tmp_path);
+    let fs = open_fs_rw(&tmp_path);
     let status_flags = fs.read_status_flags().unwrap();
     assert!(status_flags.dirty());
     assert!(!status_flags.io_error());
@@ -359,17 +343,20 @@ fn test_dirty_flag(tmp_path: &str) {
 
 #[test]
 fn test_dirty_flag_fat12() {
-    call_with_tmp_img(test_dirty_flag, FAT12_IMG, 7)
+    init_logger();
+    call_with_tmp_img(test_dirty_flag, FAT12_IMG)
 }
 
 #[test]
 fn test_dirty_flag_fat16() {
-    call_with_tmp_img(test_dirty_flag, FAT16_IMG, 7)
+    init_logger();
+    call_with_tmp_img(test_dirty_flag, FAT16_IMG)
 }
 
 #[test]
 fn test_dirty_flag_fat32() {
-    call_with_tmp_img(test_dirty_flag, FAT32_IMG, 7)
+    init_logger();
+    call_with_tmp_img(test_dirty_flag, FAT32_IMG)
 }
 
 fn test_multiple_files_in_directory(fs: FileSystem) {
@@ -388,15 +375,65 @@ fn test_multiple_files_in_directory(fs: FileSystem) {
 
 #[test]
 fn test_multiple_files_in_directory_fat12() {
-    call_with_fs(test_multiple_files_in_directory, FAT12_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT12_IMG)
 }
 
 #[test]
 fn test_multiple_files_in_directory_fat16() {
-    call_with_fs(test_multiple_files_in_directory, FAT16_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT16_IMG)
 }
 
 #[test]
 fn test_multiple_files_in_directory_fat32() {
-    call_with_fs(test_multiple_files_in_directory, FAT32_IMG, 8)
+    call_with_fs(test_multiple_files_in_directory, FAT32_IMG)
+}
+
+fn test_set_attributes(fs: FileSystem) {
+    let root_dir = fs.root_dir();
+    let mut file = root_dir.create_file("attrs.txt").unwrap();
+    assert_eq!(file.attributes(), fatfs::FileAttributes::empty());
+    file.write_all(TEST_STR.as_bytes()).unwrap();
+    file.set_attributes(
+        fatfs::FileAttributes::READ_ONLY | fatfs::FileAttributes::HIDDEN | fatfs::FileAttributes::SYSTEM,
+    );
+    drop(file);
+    let entry = root_dir
+        .iter()
+        .map(Result::unwrap)
+        .find(|e| e.file_name() == "attrs.txt")
+        .unwrap();
+    assert_eq!(
+        entry.attributes(),
+        fatfs::FileAttributes::READ_ONLY | fatfs::FileAttributes::HIDDEN | fatfs::FileAttributes::SYSTEM
+    );
+    // The directory and volume label bits cannot be set or cleared.
+    let mut file = root_dir.open_file("attrs.txt").unwrap();
+    file.set_attributes(fatfs::FileAttributes::DIRECTORY | fatfs::FileAttributes::ARCHIVE);
+    drop(file);
+    let entry = root_dir
+        .iter()
+        .map(Result::unwrap)
+        .find(|e| e.file_name() == "attrs.txt")
+        .unwrap();
+    assert_eq!(entry.attributes(), fatfs::FileAttributes::ARCHIVE);
+    assert!(entry.is_file());
+    // The contents are not touched.
+    let mut buf = Vec::new();
+    entry.to_file().read_to_end(&mut buf).unwrap();
+    assert_eq!(TEST_STR, str::from_utf8(&buf).unwrap());
+}
+
+#[test]
+fn test_set_attributes_fat12() {
+    call_with_fs(test_set_attributes, FAT12_IMG)
+}
+
+#[test]
+fn test_set_attributes_fat16() {
+    call_with_fs(test_set_attributes, FAT16_IMG)
+}
+
+#[test]
+fn test_set_attributes_fat32() {
+    call_with_fs(test_set_attributes, FAT32_IMG)
 }

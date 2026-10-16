@@ -1,33 +1,40 @@
-#![cfg(target_os = "linux")]
+mod common;
+
+use std::{
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use fatfs::{FatType, Write};
 
-const KB: u32 = 1024;
-const MB: u32 = KB * 1024;
+use crate::common::{create_temp_file_fs, init_logger, KB, MB};
 
-fn create_and_fsck_image(fat_type: FatType, size: u32) {
-    let mut disk_img =
-        tempfile::NamedTempFile::with_suffix(format!("-{fat_type:?}-{size}.img")).expect("create named tempfile");
-    let disk_img_path = disk_img.path().display().to_string();
+fn find_fsck_command(img_path: &Path) -> Option<Command> {
+    let fsck_names = &["fsck.vfat", "fsck_msdos"];
+    for name in fsck_names {
+        if Command::new(name).stdout(Stdio::null()).status().is_ok() {
+            let mut cmd = Command::new(name);
+            cmd.arg("-n").arg(img_path);
+            return Some(cmd);
+        }
+    }
+    None
+}
 
-    let image = disk_img.as_file_mut();
-    image.set_len(size as u64).expect("set_len on temp file");
+fn create_and_fsck_image(fat_type: FatType, size: u64) {
+    let opts = fatfs::FormatVolumeOptions::new()
+        .fat_type(fat_type)
+        .total_sectors((size / 512).try_into().unwrap());
+    let (fs, img_path) = create_temp_file_fs(opts, size);
 
-    fatfs::format_volume(
-        &mut fatfs::StdIoWrapper::from(image.try_clone().expect("clone tempfile")),
-        fatfs::FormatVolumeOptions::new()
-            .fat_type(fat_type)
-            .total_sectors(size / 512),
-    )
-    .expect("format volume");
+    let Some(mut fsck_command) = find_fsck_command(img_path.as_ref()) else {
+        log::warn!("fsck not available");
+        return;
+    };
 
-    let fsck_status = std::process::Command::new("fsck.vfat")
-        .args(&["-y", &disk_img_path])
-        .status()
-        .expect("get fsck.vfat status");
+    let fsck_status = fsck_command.status().unwrap();
     assert!(fsck_status.success(), "fsck was not successful ({fsck_status:?})");
 
-    let fs = fatfs::FileSystem::new(image, fatfs::FsOptions::new()).expect("open fs");
     fs.root_dir().create_dir("dir1").expect("create dir1");
     fs.root_dir()
         .create_file("root file.bin")
@@ -43,30 +50,24 @@ fn create_and_fsck_image(fat_type: FatType, size: u32) {
     core::mem::drop(dir2);
     core::mem::drop(fs);
 
-    let fsck_status = std::process::Command::new("fsck.vfat")
-        .args(&["-y", &disk_img_path])
-        .status()
-        .expect("get fsck.vfat status");
+    let fsck_status = fsck_command.status().unwrap();
     assert!(fsck_status.success(), "fsck was not successful ({fsck_status:?})");
 }
 
 #[test]
 fn test_fsck_1mb_fat12() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
+    init_logger();
     create_and_fsck_image(FatType::Fat12, MB);
 }
 
 #[test]
 fn test_fsck_33mb_fat16() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
+    init_logger();
     create_and_fsck_image(FatType::Fat16, 33 * MB);
 }
 
 #[test]
 fn test_fsck_33mb_fat32() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
+    init_logger();
     create_and_fsck_image(FatType::Fat32, 33 * MB);
 }

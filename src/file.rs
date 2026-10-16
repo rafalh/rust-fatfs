@@ -1,6 +1,6 @@
 use core::convert::TryFrom;
 
-use crate::dir_entry::DirEntryEditor;
+use crate::dir_entry::{DirEntryEditor, FileAttributes};
 use crate::error::Error;
 use crate::fs::{FileSystem, ReadWriteSeek};
 use crate::io::{IoBase, Read, Seek, SeekFrom, Write};
@@ -169,6 +169,31 @@ impl<'a, IO: ReadWriteSeek, TP, OCC> File<'a, IO, TP, OCC> {
     pub fn set_modified(&mut self, date_time: DateTime) {
         if let Some(ref mut e) = self.entry {
             e.set_modified(date_time);
+        }
+    }
+
+    /// Returns the attributes of this file.
+    ///
+    /// The root directory, which has no directory entry, reports `FileAttributes::DIRECTORY`.
+    #[must_use]
+    pub fn attributes(&self) -> FileAttributes {
+        match self.entry {
+            Some(ref e) => e.inner().attributes(),
+            None => FileAttributes::DIRECTORY,
+        }
+    }
+
+    /// Sets the read-only, hidden, system and archive attributes of this file.
+    ///
+    /// The other bits of `attrs` are ignored: whether the entry is a directory or a volume label
+    /// cannot be changed. The new attributes are written with the directory entry, when the file is
+    /// flushed or dropped. Nothing happens for the root directory, which has no directory entry.
+    pub fn set_attributes(&mut self, attrs: FileAttributes) {
+        if let Some(ref mut e) = self.entry {
+            let settable =
+                FileAttributes::READ_ONLY | FileAttributes::HIDDEN | FileAttributes::SYSTEM | FileAttributes::ARCHIVE;
+            let kept = e.inner().attributes() & !settable;
+            e.set_attributes(kept | (attrs & settable));
         }
     }
 

@@ -30,6 +30,8 @@ New features:
 * Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
 * Add `FormatVolumeOptions::reserved_sectors` to format a FAT32 volume with Microsoft's 32 reserved sectors, which
   the boot code of Windows NT needs.
+* Add `File::attributes` and `File::set_attributes` to read and change the read-only, hidden, system and archive
+  attributes of a file.
 * Fix index out of range panic when reading 248+ characters long file names with `alloc` feature disabled
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.71.0.
@@ -43,8 +45,11 @@ New features:
 * Undeprecate `set_created`, `set_accessed`, `set_modified` methods on `File` - there are scenarios where those methods are needed
 * Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
+* Bump the `env_logger` dev-dependency to 0.11.
 
 Bug fixes:
+* Update the `..` entry when moving a directory to a different parent
+* Fix panic when a file name starts with a multibyte UTF-8 character
 * Fix formatting volumes with size in range 4096-4199 KB
 * Always respect `fat_type` from `FormatVolumeOptions`
 * Fill FAT32 root directory clusters with zeros after allocation to avoid interpreting old data as directory entries
