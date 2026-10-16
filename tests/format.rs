@@ -1,27 +1,16 @@
-use std::io;
+mod common;
+
 use std::io::prelude::*;
 
-use fatfs::{FatType, StdIoWrapper};
-use fscommon::BufStream;
+use fatfs::FatType;
 
-const KB: u64 = 1024;
-const MB: u64 = KB * 1024;
+use crate::common::{create_temp_fs, init_logger, MemBackedFs as FileSystem, MB};
+
 const TEST_STR: &str = "Hi there Rust programmer!\n";
-
-type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<io::Cursor<Vec<u8>>>>>;
-
-fn init_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
 
 fn format_fs(opts: fatfs::FormatVolumeOptions, total_bytes: u64) -> FileSystem {
     init_logger();
-    // Init storage to 0xD1 bytes (value has been choosen to be parsed as normal file)
-    let storage_vec: Vec<u8> = vec![0xD1_u8; total_bytes as usize];
-    let storage_cur = io::Cursor::new(storage_vec);
-    let mut buffered_stream = fatfs::StdIoWrapper::from(BufStream::new(storage_cur));
-    fatfs::format_volume(&mut buffered_stream, opts).expect("format volume");
-    fatfs::FileSystem::new(buffered_stream, fatfs::FsOptions::new()).expect("open fs")
+    create_temp_fs(opts, total_bytes)
 }
 
 fn basic_fs_test(fs: &FileSystem) {

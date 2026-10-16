@@ -1,23 +1,18 @@
-use std::fs;
+mod common;
+
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::str;
 
-use fatfs::{FatType, FsOptions, StdIoWrapper};
-use fscommon::BufStream;
+use fatfs::FatType;
+
+use crate::common::{init_logger, open_fs_ro, FileBackedFs as FileSystem, FAT12_IMG, FAT16_IMG, FAT32_IMG};
 
 const TEST_TEXT: &str = "Rust is cool!\n";
-const FAT12_IMG: &str = "resources/fat12.img";
-const FAT16_IMG: &str = "resources/fat16.img";
-const FAT32_IMG: &str = "resources/fat32.img";
-
-type FileSystem = fatfs::FileSystem<StdIoWrapper<BufStream<fs::File>>>;
 
 fn call_with_fs<F: Fn(FileSystem)>(f: F, filename: &str) {
-    let _ = env_logger::builder().is_test(true).try_init();
-    let file = fs::File::open(filename).unwrap();
-    let buf_file = BufStream::new(file);
-    let fs = FileSystem::new(buf_file, FsOptions::new()).unwrap();
+    init_logger();
+    let fs = open_fs_ro(filename);
     f(fs);
 }
 
