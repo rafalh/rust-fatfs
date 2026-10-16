@@ -562,6 +562,20 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
         Ok(free_cluster_count)
     }
 
+    /// Flush filesystem bookkeeping and the underlying storage without unmounting.
+    ///
+    /// Open file handles must be flushed first to publish their directory entries.
+    /// The mounted dirty flag is retained; only `unmount` marks a clean release.
+    /// This does not invalidate a cache supplied by the caller's storage adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::Io` when bookkeeping or the storage flush fails.
+    pub fn flush(&self) -> Result<(), Error<IO::Error>> {
+        self.flush_fs_info()?;
+        self.disk.borrow_mut().flush().map_err(Error::Io)
+    }
+
     /// Unmounts the filesystem.
     ///
     /// Updates the FS Information Sector if needed.
