@@ -355,9 +355,11 @@ impl<T: std::io::Read + std::io::Write + std::io::Seek> IntoStorage<io::StdIoWra
 impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     /// Creates a new filesystem object instance.
     ///
-    /// Supplied `storage` parameter cannot be seeked. If there is a need to read a fragment of disk
-    /// image (e.g. partition) library user should wrap the file struct in a struct limiting
-    /// access to partition bytes only e.g. `fscommon::StreamSlice`.
+    /// Supplied `storage` parameter can be a non-partitioned device (like FDD) or a single
+    /// partition of a partitioned device (like HDD or SSD). Partitioned device must be
+    /// wrapped in a wrapper that limits access to partition bytes only (e.g. `fscommon::StreamSlice`),
+    /// so offet 0 is at the start of the partition.
+    /// The implementation seeks to the position 0, before reading anything.
     ///
     /// It is strongly recommended to use buffered I/O with `storage`.
     /// This library frequently performs small read and write operations; passing an
@@ -379,10 +381,14 @@ impl<IO: Read + Write + Seek, TP, OCC> FileSystem<IO, TP, OCC> {
     ///
     /// Panics in non-optimized build if `storage` position returned by `seek` is not zero.
     pub fn new<T: IntoStorage<IO>>(storage: T, options: FsOptions<TP, OCC>) -> Result<Self, Error<IO::Error>> {
-        // Make sure given image is not seeked
+        // seek to the volume beggining
         let mut disk = storage.into_storage();
         trace!("FileSystem::new");
-        debug_assert_eq!(disk.seek(SeekFrom::Current(0))?, 0);
+        let current_pos = disk.seek(SeekFrom::Current(0))?;
+        if disk.seek(SeekFrom::Current(0))? != 0 {
+            debug!("Seeking from position {} to the start of the volume", current_pos);
+            disk.seek(SeekFrom::Start(0))?;
+        }
 
         // read boot sector
         let bpb = {

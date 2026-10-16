@@ -48,6 +48,7 @@ New features:
 * Relax BPB validation by allowing non-zero values in both `total_sectors_32` and `total_sectors_16`
 * Add `strict` field in `FsOptions`, which allows disabling validation of boot signature to improve compatibility with old FAT images
 * Bump the `env_logger` dev-dependency to 0.11.
+* In `FileSystem::new` seek to position 0
 
 Bug fixes:
 * Update the `..` entry when moving a directory to a different parent
