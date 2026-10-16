@@ -28,6 +28,8 @@ New features:
 * Create directory entry with `VOLUME_ID` attribute when formatting if volume label was set in `FormatVolumeOptions`.
 * Fix creating directory entries when `lfn` feature is enabled and `alloc` feature is disabled
 * Fix `format_volume` function panicking in debug build for FAT12 volumes with size below 1 MB
+* Add `File::attributes` and `File::set_attributes` to read and change the read-only, hidden, system and archive
+  attributes of a file.
 * Fix index out of range panic when reading 248+ characters long file names with `alloc` feature disabled
 * Remove `byteorder` dependency.
 * Bump up minimal Rust compiler version to 1.71.0.

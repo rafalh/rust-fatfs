@@ -251,6 +251,14 @@ impl DirFileEntryData {
         self.modify_time = date_time.time.encode().0;
     }
 
+    pub(crate) fn attributes(&self) -> FileAttributes {
+        self.attrs
+    }
+
+    pub(crate) fn set_attributes(&mut self, attrs: FileAttributes) {
+        self.attrs = attrs;
+    }
+
     pub(crate) fn serialize<W: Write>(&self, wrt: &mut W) -> Result<(), W::Error> {
         wrt.write_all(&self.name)?;
         wrt.write_u8(self.attrs.bits())?;
@@ -508,6 +516,13 @@ impl DirEntryEditor {
     pub(crate) fn set_modified(&mut self, date_time: DateTime) {
         if date_time != self.data.modified() {
             self.data.set_modified(date_time);
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn set_attributes(&mut self, attrs: FileAttributes) {
+        if attrs != self.data.attrs {
+            self.data.set_attributes(attrs);
             self.dirty = true;
         }
     }
