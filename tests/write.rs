@@ -425,15 +425,15 @@ fn test_set_attributes(fs: FileSystem) {
 
 #[test]
 fn test_set_attributes_fat12() {
-    call_with_fs(test_set_attributes, FAT12_IMG, 9)
+    call_with_fs(test_set_attributes, FAT12_IMG)
 }
 
 #[test]
 fn test_set_attributes_fat16() {
-    call_with_fs(test_set_attributes, FAT16_IMG, 9)
+    call_with_fs(test_set_attributes, FAT16_IMG)
 }
 
 #[test]
 fn test_set_attributes_fat32() {
-    call_with_fs(test_set_attributes, FAT32_IMG, 9)
+    call_with_fs(test_set_attributes, FAT32_IMG)
 }
