@@ -597,11 +597,17 @@ fn try_fs_layout(
     fat_type: FatType,
     root_dir_sectors: u32,
     fats: u8,
+    reserved_sectors: Option<u16>,
 ) -> Result<(u16, u32), Error<()>> {
     // Note: most of implementations use 32 reserved sectors for FAT32 but it's wasting of space
-    // This implementation uses only 8. This is enough to fit in two boot sectors (main and backup) with additional
-    // bootstrap code and one FSInfo sector. It also makes FAT alligned to 4096 which is a nice number.
-    let reserved_sectors: u16 = if fat_type == FatType::Fat32 { 8 } else { 1 };
+    // This implementation uses only 8 by default. This is enough to fit in two boot sectors (main and backup) with
+    // additional bootstrap code and one FSInfo sector. It also makes FAT alligned to 4096 which is a nice number.
+    let min_reserved_sectors: u16 = if fat_type == FatType::Fat32 { 7 } else { 1 };
+    let reserved_sectors = reserved_sectors.unwrap_or(if fat_type == FatType::Fat32 { 8 } else { 1 });
+    if reserved_sectors < min_reserved_sectors {
+        error!("Too few reserved sectors for {:?}: {}", fat_type, reserved_sectors);
+        return Err(Error::InvalidInput);
+    }
 
     // Check if volume has enough space to accomodate reserved sectors, FAT, root directory and some data space
     // Having less than 8 sectors for FAT and data would make a little sense
@@ -687,6 +693,7 @@ fn determine_fs_layout<E: IoError>(options: &FormatVolumeOptions, total_sectors:
             fat_type,
             root_dir_sectors,
             options.fats,
+            options.reserved_sectors,
         );
         if let Ok((reserved_sectors, sectors_per_fat)) = result {
             return Ok(FsLayout {
