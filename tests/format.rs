@@ -152,7 +152,7 @@ fn test_zero_root_dir_clusters() {
 fn test_format_reserved_sectors() {
     init_logger();
     for (fat_type, reserved_sectors) in [(FatType::Fat16, 4_u16), (FatType::Fat32, 32)] {
-        let storage = io::Cursor::new(vec![0_u8; 64 * MB as usize]);
+        let storage = std::io::Cursor::new(vec![0_u8; 64 * MB as usize]);
         let mut stream = fatfs::StdIoWrapper::from(storage);
         let opts = fatfs::FormatVolumeOptions::new()
             .fat_type(fat_type)
@@ -166,7 +166,7 @@ fn test_format_reserved_sectors() {
         }
         // the first FAT starts right after them, with the media byte in its first entry
         assert_eq!(disk[usize::from(reserved_sectors) * 512], 0xF8);
-        let fs = fatfs::FileSystem::new(io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
+        let fs = fatfs::FileSystem::new(std::io::Cursor::new(disk), fatfs::FsOptions::new()).expect("open fs");
         assert_eq!(fs.fat_type(), fat_type);
         let mut file = fs.root_dir().create_file("test.txt").expect("create file");
         file.write_all(TEST_STR.as_bytes()).expect("write file");
@@ -176,7 +176,7 @@ fn test_format_reserved_sectors() {
 #[test]
 fn test_format_too_few_reserved_sectors() {
     init_logger();
-    let storage = io::Cursor::new(vec![0_u8; 64 * MB as usize]);
+    let storage = std::io::Cursor::new(vec![0_u8; 64 * MB as usize]);
     let mut stream = fatfs::StdIoWrapper::from(storage);
     let opts = fatfs::FormatVolumeOptions::new()
         .fat_type(FatType::Fat32)
